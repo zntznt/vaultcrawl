@@ -11,9 +11,28 @@ Contract checked here:
   * classic mode (architecture=False) is byte-for-byte unchanged: a 56x20 floor that
     renders whole (no camera), so the floor game and every existing test are untouched.
 
+  * the world is genuinely ROAMABLE + WINNABLE: a walkable flood-fill from the player's
+    start reaches every district's footprint and every boss -- so a careful player can
+    explore the whole vault and reach the core (open-exploration is not a dead end). This
+    is the world-correctness property, independent of whether a dumb auto-bot survives it.
+
 Run: cd /mnt/workspace/output/vaultcrawl && python3 -m tests.test_sandbox
 """
+from collections import deque
+
 from runtime.game import Game, load_manifest
+
+
+def _walkable_reach(level, start):
+    seen, q = {start}, deque([start])
+    while q:
+        x, y = q.popleft()
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= nx < level.w and 0 <= ny < level.h and (nx, ny) not in seen \
+                    and level.walkable(nx, ny):
+                seen.add((nx, ny))
+                q.append((nx, ny))
+    return seen
 
 
 def main():
@@ -57,6 +76,19 @@ def main():
 
     # --- no descent in the sandbox: floor stays put ---
     assert g.floor == 1, "sandbox has one world, not numbered floors"
+
+    # --- the world is roamable + winnable: every district footprint and every boss is
+    #     reachable on foot from the start (a careful player can explore + reach the core) ---
+    g.player.x, g.player.y = sx, sy
+    reach = _walkable_reach(g.level, (sx, sy))
+    all_notes = set(g._region_map.values())
+    reached_notes = {g._region_map[t] for t in reach if t in g._region_map}
+    unreachable = all_notes - reached_notes
+    assert not unreachable, f"{len(unreachable)} districts unreachable on foot: {unreachable}"
+    bosses = [a for a in g.actors if getattr(a, "is_boss", False)]
+    assert bosses, "the sandbox must place at least one boss (a destination to reach)"
+    for b in bosses:
+        assert (b.x, b.y) in reach, f"boss {b.name!r} at ({b.x},{b.y}) unreachable on foot"
 
     print(f"OK  sandbox: {g.level.w}x{g.level.h} world  actors={len(g.actors)}  "
           f"start-region={here['name']!r}  classic={g0.level.w}x{g0.level.h} unchanged")

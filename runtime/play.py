@@ -42,10 +42,41 @@ def bfs_step(level, start, goal, avoid=None):
 
 
 def auto_play(game: Game, floors: int, max_turns: int = 500):
-    """Drive the descent through the PLAYER'S BRAIN. The brain handles fight/flee/lure/loot;
-    this loop only descends when the brain has nothing left to do on the floor, and nudges
-    toward the stairs to avoid a stall."""
+    """Drive the run through the PLAYER'S BRAIN. The brain handles fight/flee/lure/loot.
+
+    Two shapes:
+      * sandbox (game.architecture): ONE world, no floors. The brain explores; when it
+        idles, we nudge toward the core (the final boss's district) instead of stairs, so
+        the bot actually roams the map. Ends on win / death / turn budget.
+      * classic: descend floor by floor; clear a floor, take the stairs, repeat.
+    """
     transcript = [game.render()]
+
+    def _goal(game):
+        """Where to nudge when the brain idles. Sandbox: the core (final boss), else stairs."""
+        if game.architecture:
+            for a in game.actors:
+                if getattr(a, "is_boss", False) and a.source == game.final_boss_source:
+                    return (a.x, a.y)
+            return game.level.stairs   # boss already dead/absent -> head for the deep tile
+        return game.level.stairs
+
+    if game.architecture:
+        turns = 0
+        budget = max_turns * max(1, floors)        # one continuous world: a bigger budget
+        while game.alive and not game.won and turns < budget:
+            ppos = (game.player.x, game.player.y)
+            dx, dy = game.player.brain.decide(game, game.player)
+            if dx == 0 and dy == 0:                # idle -> explore toward the core
+                step = bfs_step(game.level, ppos, _goal(game))
+                if not step or step == (0, 0):
+                    game.log("(no path forward — the world is explored)")
+                    break
+                dx, dy = step
+            game.try_move(dx, dy)
+            turns += 1
+        return transcript, 1                       # one world "cleared" (or died/won in it)
+
     cleared = 0
     while game.alive and not game.won and cleared < floors:
         turns = 0
