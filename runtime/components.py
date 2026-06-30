@@ -26,13 +26,7 @@ def world_materials(game) -> list:
         tok = str(a).strip().split()
         if tok:
             mats.append(tok[-1].lower())
-    # de-dupe preserving order
-    seen, out = set(), []
-    for m in mats:
-        if m not in seen:
-            seen.add(m)
-            out.append(m)
-    return out or ["scrap"]
+    return list(dict.fromkeys(mats)) or ["scrap"]   # de-dupe, order-preserving
 
 
 def _h(*parts) -> int:
@@ -54,12 +48,11 @@ def components_of(game, kind="thing", source="", tier=1, name="") -> dict:
 
 
 class Inventory:
-    """A pool of materials, plus a small list of carried (un-slotted) things."""
+    """A pool of materials banked from salvage."""
 
     def __init__(self):
         self.comp: dict = {}     # material -> count
         self.qual: dict = {}     # material -> best quality tier banked (for the forge floor)
-        self.held: list = []     # carried items/sigils not yet used (dicts)
 
     def add(self, comps: dict, quality: int = 0):
         for m, q in (comps or {}).items():

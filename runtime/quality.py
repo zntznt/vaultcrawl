@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import random
 
+from runtime.systems import System
+
 NORMAL, UNCOMMON, RARE, EPIC, LEGENDARY = 0, 1, 2, 3, 4
 NAMES = ["Normal", "Uncommon", "Rare", "Epic", "Legendary"]
 MARK = ["", "+", "*", "★", "✦"]   # terse tier marker for names/HUD
@@ -115,15 +117,15 @@ def _act_lunge(game, actor):
 
 register_action("mend", _act_mend)
 register_action("lunge", _act_lunge)
-register_perk("reinforced", "stat", lambda s: s.__setitem__("durability", s.get("durability", 2) + 1))
-register_perk("keen", "passive", None)   # a flag other systems may read
+# Perks (reinforced, keen, ...) are registered by the sigils module, which every
+# entrypoint loads; this registry just provides register_perk for it to call.
 
 
 # --------------------------------------------------------------------------- #
 # The QualitySystem — the authority that assigns + drives quality
 # --------------------------------------------------------------------------- #
 
-class QualitySystem:
+class QualitySystem(System):
     name = "quality"
 
     def __init__(self):
@@ -216,22 +218,6 @@ class QualitySystem:
     def status_line(self, game):
         elites = sum(1 for a in game.actors if getattr(a, "quality", 0) > 0)
         return f"Elites: {elites}" if elites else None
-
-    # full hook surface (no-ops)
-    def on_enemy_killed(self, game, enemy):
-        pass
-
-    def on_event(self, game, etype, data):
-        pass
-
-    def render_overlay(self, game, grid):
-        pass
-
-    def points_of_interest(self, game):
-        return []
-
-    def hazard_tiles(self, game):
-        return []
 
 
 def quality_of(thing) -> int:

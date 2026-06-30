@@ -13,8 +13,8 @@ and prints a before->after with a checkmark verdict computed from live state.
 Run:  cd /mnt/workspace/output/vaultcrawl && python3 -m runtime.scenario
 """
 from __future__ import annotations
+from runtime._showcase import OK, NO, show_logs, header, verdict
 
-import sys
 import traceback
 
 from runtime.game import Game, load_manifest
@@ -27,7 +27,6 @@ from runtime.history import HistorySystem
 from runtime.knowledge import KnowledgeSystem
 
 MANIFEST = "examples/world.json"
-OK, NO = "✓", "✗"   # checkmark / cross
 
 
 # ---------------------------------------------------------------- helpers ----
@@ -70,24 +69,6 @@ def anchor_for(game, region_id):
         if r["id"] == region_id:
             return r.get("sourceNoteId")
     return None
-
-
-def header(n, title):
-    print("\n" + "=" * 74)
-    print(f"SET-PIECE {n}: {title}")
-    print("-" * 74)
-
-
-def show_logs(game, start, indent="   | "):
-    for m in game.messages[start:]:
-        print(indent + str(m))
-
-
-def verdict(ok, text):
-    print(f"   {OK if ok else NO} {text}")
-    return bool(ok)
-
-
 # ------------------------------------------------------------- set-pieces ----
 def sp1_loud_vs_quiet():
     header(1, "Loud vs quiet kill  (reactions x factions)")

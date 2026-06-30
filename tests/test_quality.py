@@ -6,6 +6,7 @@ Run: cd /mnt/workspace/output/vaultcrawl && python3 -m tests.test_quality
 import random
 
 from runtime import quality as Q
+from runtime import sigils  # noqa: F401  -- import side-effect: registers the perks into Q.PERKS
 from runtime.game import Game, load_manifest
 from runtime.entities import make_enemy
 

@@ -15,6 +15,7 @@ import json
 
 
 def _t(note_id: str) -> str:
+    # ponytail: near-dup of llm._title; kept local so this CLI stays import-light (no llm module).
     return " ".join(w.capitalize() for w in str(note_id).replace("-", " ").replace("_", " ").split()) or "?"
 
 

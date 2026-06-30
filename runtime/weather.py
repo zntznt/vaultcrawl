@@ -162,11 +162,10 @@ class WeatherSystem(System):
 
     # ---- query API / HUD ----
     def current(self, game) -> str:
-        """The active weather word (for the HUD and any onlooker)."""
-        if self.weather:
-            return self.weather
-        element = game.region_for(game.floor).get("element", "inert")
-        return _WEATHER.get(element, _DEFAULT_WEATHER)
+        """The active weather word (for the HUD and any onlooker).
+
+        Always set: __init__ seeds _DEFAULT_WEATHER, on_floor_enter resets it."""
+        return self.weather
 
     def status_line(self, game):
         return f"Weather: {self.current(game)}"

@@ -24,19 +24,13 @@ from __future__ import annotations
 from runtime.sense import (
     Brain, register_brain,
     hostiles, nearest_hostile, is_dangerous,
-    step_toward, step_away, adjacent,
+    step_toward, step_away, adjacent, attack_dir,
 )
 
 
 # --------------------------------------------------------------------------- #
 # Shared helpers
 # --------------------------------------------------------------------------- #
-
-def _attack_dir(actor, target):
-    """Unit step from `actor` toward an adjacent `target` (resolved as a bump attack)."""
-    return ((target.x > actor.x) - (target.x < actor.x),
-            (target.y > actor.y) - (target.y < actor.y))
-
 
 def _low_hp(actor) -> bool:
     """Self-preservation threshold: strictly below 35% of max hp."""
@@ -71,7 +65,7 @@ class SurvivorBrain(Brain):
         if _low_hp(actor):
             return step_away(game, actor, target.x, target.y, safe=True)
         if dist <= 1:
-            return _attack_dir(actor, target)
+            return attack_dir(actor, target)
         return step_toward(game, actor, target.x, target.y, safe=True)
 
 
@@ -97,9 +91,9 @@ class OpportunistBrain(SurvivorBrain):
         if doomed:
             # deterministic tie-break by coordinate (order-independent, seed-free)
             victim = min(doomed, key=lambda h: (h.x, h.y))
-            return _attack_dir(actor, victim)
+            return attack_dir(actor, victim)
         if dist <= 1:
-            return _attack_dir(actor, target)
+            return attack_dir(actor, target)
         return step_toward(game, actor, target.x, target.y, safe=True)
 
 

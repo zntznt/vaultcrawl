@@ -18,19 +18,10 @@ from __future__ import annotations
 from runtime.sense import (
     Brain, register_brain,
     hostiles, nearest_hostile, is_dangerous, lure_step, step_toward, step_away,
-    points_of_interest, adjacent,
+    points_of_interest, adjacent, attack_dir,
 )
 
 WAIT = (0, 0)
-
-
-# --------------------------------------------------------------------------- #
-# Small deterministic helpers
-# --------------------------------------------------------------------------- #
-
-def _attack_dir(a, t):
-    """Unit step from `a` toward adjacent target `t` (a bump attack)."""
-    return ((t.x > a.x) - (t.x < a.x), (t.y > a.y) - (t.y < a.y))
 
 
 def _low_hp(actor, pct):
@@ -80,7 +71,7 @@ class TacticianBrain(Brain):
             # 3) target is adjacent AND already standing in a hazard -> land the killing
             #    blow while the terrain finishes the job
             if d <= 1 and is_dangerous(game, t.x, t.y):
-                return _attack_dir(actor, t)
+                return attack_dir(actor, t)
             # 4) the signature move: a safe step that makes the target's greedy chase
             #    next land it on a danger tile (kite onto the hazard)
             lure = lure_step(game, actor, t)
@@ -88,7 +79,7 @@ class TacticianBrain(Brain):
                 return lure
             # 5) adjacent with no kite available -> just attack
             if d <= 1:
-                return _attack_dir(actor, t)
+                return attack_dir(actor, t)
             # 6) close the gap without volunteering to stand in fire/acid
             return step_toward(game, actor, t.x, t.y, safe=True)
         except Exception:
@@ -129,7 +120,7 @@ class ExploiterBrain(Brain):
                 # 2) an adjacent monster that is already on a danger tile -> finish it
                 for h in hostiles(game, actor):
                     if adjacent(actor.x, actor.y, h.x, h.y) and is_dangerous(game, h.x, h.y):
-                        return _attack_dir(actor, h)
+                        return attack_dir(actor, h)
                 # 3) a monster within reach -> try to lead it onto a hazard
                 if d <= 2:
                     lure = lure_step(game, actor, t)
@@ -137,7 +128,7 @@ class ExploiterBrain(Brain):
                         return lure
                 # 4) cornered by an adjacent monster -> attack
                 if d <= 1:
-                    return _attack_dir(actor, t)
+                    return attack_dir(actor, t)
 
             # 5) no threat worth handling -> go grab the nearest sigil / loot
             goal = self._loot_goal(game, actor)

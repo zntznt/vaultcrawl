@@ -18,8 +18,8 @@ the REAL hooks / ``enemies_act`` and computes a ✓/✗ verdict from live state.
 Run:  cd /mnt/workspace/output/vaultcrawl && python3 -m runtime.ecology_scenario
 """
 from __future__ import annotations
+from runtime._showcase import OK, NO, show_logs, header, verdict
 
-import sys
 import traceback
 
 from runtime.game import Game, load_manifest
@@ -35,7 +35,6 @@ from runtime.structures import StructureSystem, SPIKE_DMG, DET_DMG
 from runtime.decay import DecaySystem
 
 MANIFEST = "examples/world.json"
-OK, NO = "✓", "✗"
 
 
 # ---------------------------------------------------------------- probe ------
@@ -128,24 +127,6 @@ def h_run(level, n, exclude=()):
             if all(is_floor(level, cx, cy) and (cx, cy) not in ex for cx, cy in run):
                 return run
     raise RuntimeError("no horizontal floor run found")
-
-
-def header(n, title):
-    print("\n" + "=" * 74)
-    print(f"SET-PIECE {n}: {title}")
-    print("-" * 74)
-
-
-def show_logs(game, start, indent="   | "):
-    for m in game.messages[start:]:
-        print(indent + str(m))
-
-
-def verdict(ok, text):
-    print(f"   {OK if ok else NO} {text}")
-    return bool(ok)
-
-
 # ------------------------------------------------------------ set-pieces -----
 def sp1_predation_thins_faction():
     header(1, "Predation thins the faction  (fauna x core x factions)")

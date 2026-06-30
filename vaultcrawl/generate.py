@@ -10,7 +10,7 @@ import json
 from . import prompts
 from .analyze import Analysis
 from .ingest import Vault
-from .llm import LLM, OfflineStubLLM
+from .llm import OfflineStubLLM
 
 
 def _clean(slot: dict) -> dict:
@@ -54,7 +54,7 @@ def _bible_inputs(vault: Vault, an: Analysis):
     return summary, {"seedKey": vault.seed, "clusters": clusters, "pairs": pairs}
 
 
-def generate_world(vault: Vault, an: Analysis, blueprint: dict, llm: LLM | None = None) -> dict:
+def generate_world(vault: Vault, an: Analysis, blueprint: dict, llm=None) -> dict:
     from . import __version__
     llm = llm or OfflineStubLLM()
 

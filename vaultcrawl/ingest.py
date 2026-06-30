@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 
 _WIKILINK = re.compile(r"\[\[([^\]|#^]+)(?:[#^][^\]|]*)?(?:\|[^\]]*)?\]\]")
 _TAG = re.compile(r"(?:^|\s)#([A-Za-z][\w/-]*)")
-_HEADING = re.compile(r"^(#{1,6})\s+(.*\S)\s*$", re.M)
 _TODO = re.compile(r"^\s*[-*]\s+\[ \]\s+(.+)$", re.M)
 _FRONTMATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.S)
 _IMG = re.compile(r"!\[\[([^\]]+)\]\]|!\[[^\]]*\]\(([^)]+)\)")
@@ -67,12 +66,9 @@ class Note:
     tags: list = field(default_factory=list)
     links: list = field(default_factory=list)        # resolved note ids
     raw_links: list = field(default_factory=list)     # all link targets (pre-resolution)
-    headings: list = field(default_factory=list)
     todos: list = field(default_factory=list)
     images: list = field(default_factory=list)
-    frontmatter: dict = field(default_factory=dict)
     mtime: float = 0.0
-    length: int = 0
 
 
 @dataclass
@@ -114,12 +110,9 @@ def load_vault(root: str) -> Vault:
             body=body.strip(),
             tags=sorted(set(tags)),
             raw_links=raw_links,
-            headings=[h for _lvl, h in _HEADING.findall(body)],
             todos=[t.strip() for t in _TODO.findall(body)],
             images=images,
-            frontmatter=fm,
             mtime=os.path.getmtime(path),
-            length=len(body),
         )
 
     # resolve links against existing note ids

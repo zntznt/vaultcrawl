@@ -35,18 +35,6 @@ _ELEMENT_PROP = {
 }
 
 # --- elemental affinity (cross-system: enemies vs. their home region's element) ---
-# Hazards are tracked by *tile property* (fire/acid/charged/...), but an enemy's home
-# affinity is a *region element* (flammable/corrosive/charged/...). This maps a tile
-# property back to the region element it expresses so the two can be compared:
-#   tile prop -> region element
-_TILEPROP_ELEMENT = {
-    "acid": "corrosive",
-    "ice": "frozen",
-    "fire": "flammable",
-    "charged": "charged",   # charged / wet / sacred share the name in both spaces
-    "wet": "wet",
-    "sacred": "sacred",
-}
 # Opposing region elements. An enemy is immune (0x) to its own element and takes 2x
 # from its opposite. Pairs (element space): charged<->wet, flammable<->frozen,
 # corrosive<->sacred  -- i.e. tile charged<->wet, fire<->ice, acid<->sacred.

@@ -33,10 +33,6 @@ class Upheaval:
         self.lost_floor: dict = {}   # floor -> [note ids]
 
     @classmethod
-    def empty(cls):
-        return cls()
-
-    @classmethod
     def from_events(cls, events: list, echo_span: int = 6):
         u = cls()
         for e in events:

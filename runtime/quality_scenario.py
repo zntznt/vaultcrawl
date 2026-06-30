@@ -14,6 +14,7 @@ a before->after with a ✓/✗ verdict computed from live state. Everything is d
 Run:  cd /mnt/workspace/output/vaultcrawl && python3 -m runtime.quality_scenario
 """
 from __future__ import annotations
+from runtime._showcase import OK, NO, header, verdict
 
 import random
 import traceback
@@ -38,7 +39,6 @@ from runtime.salvage import SalvageSystem
 from runtime.sigils import SigilSystem
 
 MANIFEST = "examples/world.json"
-OK, NO = "✓", "✗"
 
 # Collected for the closing report: (piece, how the quality contract was exercised).
 ACCESS: list = []
@@ -54,19 +54,6 @@ def build() -> Game:
     return Game(load_manifest(MANIFEST),
                 systems=[SigilSystem(), ReactionSystem(), SalvageSystem(),
                          ForgeSystem(), QualitySystem()])
-
-
-def header(n, title):
-    print("\n" + "=" * 74)
-    print(f"SET-PIECE {n}: {title}")
-    print("-" * 74)
-
-
-def verdict(ok, text):
-    print(f"   {OK if ok else NO} {text}")
-    return bool(ok)
-
-
 def access(piece, how):
     ACCESS.append((piece, how))
 

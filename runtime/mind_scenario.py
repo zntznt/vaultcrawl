@@ -20,6 +20,7 @@ Determinism: positions are fixed, hazards are acid (no rng), and the only stocha
 Run:  cd /mnt/workspace/output/vaultcrawl && python3 -m runtime.mind_scenario
 """
 from __future__ import annotations
+from runtime._showcase import OK, NO, header, verdict
 
 import traceback
 
@@ -45,7 +46,6 @@ for _mod in ("runtime.planner", "runtime.instincts"):
         _MODULE_ERR["runtime/" + _mod.split(".")[-1] + ".py"] = repr(_e)
 
 MANIFEST = "examples/world.json"
-OK, NO = "✓", "✗"
 
 
 # ---------------------------------------------------------------- helpers ----
@@ -129,19 +129,6 @@ def _fmt_goal(goal):
     if isinstance(goal, tuple) and goal and goal[0] == "engage":
         return "('engage', <foe>)"
     return repr(goal)
-
-
-def header(n, title):
-    print("\n" + "=" * 74)
-    print(f"SET-PIECE {n}: {title}")
-    print("-" * 74)
-
-
-def verdict(ok, text):
-    print(f"   {OK if ok else NO} {text}")
-    return bool(ok)
-
-
 def advance(g, run_enemies=False):
     """One faithful sub-turn: bump the clock (drives perception caching + memory decay),
     optionally let every NPC act through its brain, then run each system's on_player_act

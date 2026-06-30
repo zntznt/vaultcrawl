@@ -44,7 +44,7 @@ from collections import deque
 from runtime.sense import (
     Brain, register_brain,
     nearest_hostile, is_dangerous, danger_tiles, lure_step,
-    step_toward, step_away, adjacent, element_at, greedy_dir,
+    step_toward, step_away, adjacent, element_at, greedy_dir, attack_dir,
 )
 from runtime.memory import recalled_spot, alert_of, fears, mem
 
@@ -66,11 +66,6 @@ def _sign(a, b):
 
 def _cheb(ax, ay, bx, by):
     return max(abs(ax - bx), abs(ay - by))
-
-
-def _attack_dir(a, t):
-    """Unit step from `a` toward adjacent target `t` (resolved as a bump attack)."""
-    return ((t.x > a.x) - (t.x < a.x), (t.y > a.y) - (t.y < a.y))
 
 
 def _walkable_for(game, actor, x, y, avoid):
@@ -335,7 +330,7 @@ class MastermindBrain(Brain):
         # the trap sprang: the foe is on a hazard -> close in for the kill while it burns
         if is_dangerous(game, t.x, t.y):
             if d is not None and d <= 1:
-                return _attack_dir(actor, t)
+                return attack_dir(actor, t)
             return self._move_step(game, actor, t.x, t.y)
         # precise kite: a step that lands the foe's next greedy chase on a hazard
         lure = lure_step(game, actor, t)
@@ -346,7 +341,7 @@ class MastermindBrain(Brain):
         if led != WAIT:
             return led
         if d is not None and d <= 1:
-            return _attack_dir(actor, t)
+            return attack_dir(actor, t)
         return self._move_step(game, actor, t.x, t.y)
 
     def _exec_engage(self, game, actor):
@@ -355,7 +350,7 @@ class MastermindBrain(Brain):
             self.plan = []
             return self._react(game, actor)
         if d is not None and d <= 1:
-            return _attack_dir(actor, t)
+            return attack_dir(actor, t)
         lure = lure_step(game, actor, t)       # a new opening may appear mid-approach
         if lure is not None:
             return lure
@@ -378,12 +373,12 @@ class MastermindBrain(Brain):
         if t is None or d is None:
             return WAIT
         if d <= 1 and is_dangerous(game, t.x, t.y):
-            return _attack_dir(actor, t)
+            return attack_dir(actor, t)
         lure = lure_step(game, actor, t)
         if lure is not None:
             return lure
         if d <= 1:
-            return _attack_dir(actor, t)
+            return attack_dir(actor, t)
         return self._move_step(game, actor, t.x, t.y)
 
 

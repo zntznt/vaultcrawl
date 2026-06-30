@@ -195,6 +195,11 @@ def adjacent(ax, ay, bx, by):
     return max(abs(ax - bx), abs(ay - by)) <= 1
 
 
+def attack_dir(a, t):
+    """Unit step from `a` toward an adjacent target `t` (resolved as a bump attack)."""
+    return ((t.x > a.x) - (t.x < a.x), (t.y > a.y) - (t.y < a.y))
+
+
 def lure_step(game, actor, target):
     """1-ply kite: pick a safe step for `actor` such that `target`'s greedy chase next lands
     it on a danger tile. Returns the luring direction, or None if no such step exists."""

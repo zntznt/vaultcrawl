@@ -7,19 +7,13 @@ conforming to the schema). `context` is a convenience channel the offline stub u
 to stay fully deterministic without parsing the prompt string.
 
 The default OfflineStubLLM produces schema-valid, evocative, *deterministic* output so
-the entire pipeline runs end-to-end with no dependencies and no API key. Swap in
-AnthropicLLM (sketched at the bottom) to get real prose -- nothing else changes.
+the entire pipeline runs end-to-end with no dependencies and no API key. Any object with
+a matching `complete_json` method (e.g. an Anthropic-backed one) drops in unchanged.
 """
 from __future__ import annotations
 
 import hashlib
 import random
-from typing import Protocol
-
-
-class LLM(Protocol):
-    def complete_json(self, system: str, user: str, schema: dict, context: dict | None = None) -> dict:
-        ...
 
 
 # --------------------------------------------------------------------------- #
@@ -183,31 +177,3 @@ class OfflineStubLLM:
         verb = _QUEST_VERB.get(ctx.get("kind", "recover"), "Reclaim")
         return {"objective": f"{verb} the {rng.choice(_ADJ)} {rng.choice(_NOUN)} — "
                              f"an unfinished charge left in your own hand."}
-
-
-# --------------------------------------------------------------------------- #
-# Real-model drop-in (sketch). Uncomment and `pip install anthropic` to use.
-# The pipeline is identical -- only this class changes.
-# --------------------------------------------------------------------------- #
-#
-# import json, os
-# from anthropic import Anthropic
-#
-# class AnthropicLLM:
-#     def __init__(self, model="claude-opus-4-8"):
-#         self.client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-#         self.model = model
-#
-#     def complete_json(self, system, user, schema, context=None):
-#         # Force structured output with a single tool the model must call.
-#         tool = {"name": "emit", "description": "Return the world element.",
-#                 "input_schema": {k: v for k, v in schema.items() if not k.startswith("x-")}}
-#         resp = self.client.messages.create(
-#             model=self.model, max_tokens=1024, system=system,
-#             tools=[tool], tool_choice={"type": "tool", "name": "emit"},
-#             messages=[{"role": "user", "content": user}],
-#         )
-#         for block in resp.content:
-#             if block.type == "tool_use":
-#                 return block.input
-#         raise RuntimeError("model did not emit structured output")

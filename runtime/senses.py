@@ -23,6 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from . import sense as _S
+from .systems import System
 
 # sense modalities
 SIGHT, SOUND, SMELL, TOUCH, LIFE, MIND, MAGIC = \
@@ -270,7 +271,7 @@ def investigate_step(game, observer):
 # The SenseField system — gathers transient stimuli (sound) and the scent map
 # --------------------------------------------------------------------------- #
 
-class SenseField:
+class SenseField(System):
     name = "senses"
 
     def __init__(self):
@@ -319,19 +320,3 @@ class SenseField:
             if _cheb(observer.x, observer.y, x, y) <= rng and inten > bi:
                 best, bi = (x, y, inten), inten
         return best
-
-    # systems must implement the full hook surface; the rest are no-ops
-    def on_enemy_killed(self, game, enemy):
-        pass
-
-    def render_overlay(self, game, grid):
-        pass
-
-    def status_line(self, game):
-        return None
-
-    def points_of_interest(self, game):
-        return []
-
-    def hazard_tiles(self, game):
-        return []

@@ -28,7 +28,7 @@ from __future__ import annotations
 from runtime.sense import (
     Brain, register_brain,
     nearest_hostile, step_toward, step_away, greedy_step_toward,
-    is_dangerous, element_at, adjacent,
+    is_dangerous, element_at, adjacent, attack_dir,
 )
 from runtime.memory import mem, recalled_spot, alert_of, fears
 
@@ -56,11 +56,6 @@ _TILEPROP_ELEMENT = {
 # --------------------------------------------------------------------------- #
 # Small deterministic helpers
 # --------------------------------------------------------------------------- #
-
-def _attack_dir(a, t):
-    """Unit step from `a` toward an adjacent target `t` (a bump attack)."""
-    return ((t.x > a.x) - (t.x < a.x), (t.y > a.y) - (t.y < a.y))
-
 
 def _low_hp(actor, pct):
     mx = getattr(actor, "max_hp", 0) or 0
@@ -112,7 +107,7 @@ class TrackerBrain(Brain):
             if t is not None and d is not None:
                 # perceived foe -> engage: bump if adjacent, else close in safely
                 if d <= 1:
-                    return _attack_dir(actor, t)
+                    return attack_dir(actor, t)
                 return step_toward(game, actor, t.x, t.y, safe=True)
             spot = recalled_spot(game, actor)
             if spot is None:
@@ -164,7 +159,7 @@ class WaryBrain(Brain):
             if t is None or d is None:
                 return WAIT
             if d <= 1:
-                return _attack_dir(actor, t)      # a bump attack never enters a new tile
+                return attack_dir(actor, t)      # a bump attack never enters a new tile
             return self._advance(game, actor, t, high)
         except Exception:
             return WAIT

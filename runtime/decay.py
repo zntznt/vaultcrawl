@@ -15,20 +15,15 @@ Self-contained ``System`` subclass. It reads game state, talks to the rest of th
 world only through the bus + the reactions write-API (every cross-system call
 None-guarded), and never edits another system or game.py.
 
-Determinism: all randomness comes from ``random.Random(f"{seed}:{floor}:decay")``,
-created once per floor. The acid seep is additionally guaranteed on a fixed
-cadence, so behaviour is reproducible regardless of the rng stream.
+Determinism: rot is a pure countdown and the seep is a deterministic victim check,
+so behaviour is fully reproducible from board state alone — no rng.
 """
 from __future__ import annotations
-
-import random
 
 from runtime.systems import System
 
 _GLYPH = "%"            # corpse overlay (floor cells only)
 _CORPSE_TTL = 12        # turns a corpse lingers before it rots away
-_SEEP_PERIOD = 3        # a rotting corpse fouls its own tile every N turns
-_SEEP_CHANCE = 0.34     # extra per-turn chance to seep (flavour; cadence guarantees it)
 _MIASMA_DMG = 1         # health a living actor loses standing on a rotting corpse
 _MIN_HP = 1             # the miasma is light: it never reduces an actor below this
 
@@ -36,23 +31,13 @@ _MIN_HP = 1             # the miasma is light: it never reduces an actor below t
 class DecaySystem(System):
     name = "decay"
 
-    def __init__(self, ttl: int = _CORPSE_TTL):
+    def __init__(self):
         self.corpses: dict = {}     # (x, y) -> remaining rot turns
-        self.ttl = ttl
-        self.rng = None
 
     # ---- lifecycle ----
-    def on_world_start(self, game):
-        self._ensure_rng(game)
-
     def on_floor_enter(self, game):
         # corpses are positional, tied to the level; a fresh floor starts clean
         self.corpses = {}
-        self.rng = random.Random(f"{game.seed}:{game.floor}:{self.name}")
-
-    def _ensure_rng(self, game):
-        if self.rng is None:
-            self.rng = random.Random(f"{game.seed}:{game.floor}:{self.name}")
 
     # ---- bus: every death becomes a corpse ----
     def on_event(self, game, etype, data):
@@ -62,7 +47,7 @@ class DecaySystem(System):
         if not self._valid_pos(game, pos):
             return                       # missing / malformed / out-of-bounds -> ignore
         x, y = pos
-        self.corpses[(x, y)] = self.ttl
+        self.corpses[(x, y)] = _CORPSE_TTL
         # announce the fresh corpse so scavengers / other ecology can react
         game.emit("corpse_spawned", pos=(x, y))
 
@@ -79,30 +64,21 @@ class DecaySystem(System):
 
     # ---- per-turn rot ----
     def on_player_act(self, game):
-        if not self.corpses:
-            return
-        self._ensure_rng(game)
-        reactions = game.system("reactions")     # may be absent -> None-guard every call
         for (x, y) in list(self.corpses.keys()):
             ttl = self.corpses[(x, y)] - 1
             if ttl <= 0:
                 del self.corpses[(x, y)]          # fully rotted: the corpse is gone
                 continue
             self.corpses[(x, y)] = ttl
-            self._seep(game, reactions, x, y, ttl)
+            self._seep(game, x, y)
 
-    def _seep(self, game, reactions, x, y, ttl):
-        """A rotting corpse either gnaws a living actor on its tile OR fouls the
-        tile with an acid miasma — a small, capped, indifferent effect."""
+    def _seep(self, game, x, y):
+        """A rotting corpse gnaws a living actor standing on it — a small, capped,
+        indifferent effect; never lethal on its own. An empty corpse just rots in
+        plain view (it used to seep acid onto its own tile, hiding the '%')."""
         victim = self._living_actor_at(game, x, y)
-        if victim is not None:
-            # light miasma: shave a point, but never lethal on its own
-            if victim.hp > _MIN_HP:
-                victim.hp = max(_MIN_HP, victim.hp - _MIASMA_DMG)
-            return
-        # No one underfoot: the corpse just rots in plain view. (It used to seep acid onto
-        # its OWN tile, which hid the '%' beneath a ':' — the miasma is now felt only by a
-        # creature standing on it, above, so the corpse stays visible.)
+        if victim is not None and victim.hp > _MIN_HP:
+            victim.hp = max(_MIN_HP, victim.hp - _MIASMA_DMG)
 
     @staticmethod
     def _living_actor_at(game, x, y):

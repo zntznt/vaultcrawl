@@ -21,8 +21,8 @@ from live state.
 Run:  cd /mnt/workspace/output/vaultcrawl && python3 -m runtime.deepen_scenario
 """
 from __future__ import annotations
+from runtime._showcase import OK, NO, show_logs, header, verdict
 
-import sys
 import traceback
 
 from runtime.game import Game, load_manifest
@@ -39,7 +39,6 @@ from runtime.dialogue import DialogueSystem
 from runtime.machines import MachineSystem
 
 MANIFEST = "examples/world.json"
-OK, NO = "✓", "✗"   # checkmark / cross
 
 
 # ---------------------------------------------------------------- helpers ----
@@ -58,24 +57,6 @@ def the_npc(game):
     the one neutral `npc`-allegiance actor on the map (public `game.actors`)."""
     return next((a for a in game.actors
                  if getattr(a, "allegiance", "") == "npc"), None)
-
-
-def header(n, title):
-    print("\n" + "=" * 74)
-    print(f"SET-PIECE {n}: {title}")
-    print("-" * 74)
-
-
-def show_logs(game, start, indent="   | "):
-    for m in game.messages[start:]:
-        print(indent + str(m))
-
-
-def verdict(ok, text):
-    print(f"   {OK if ok else NO} {text}")
-    return bool(ok)
-
-
 # ------------------------------------------------------------- set-pieces ----
 def sp1_quest_from_a_note():
     header(1, "Quest from a note  (quests x factions)")

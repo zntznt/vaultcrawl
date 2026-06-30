@@ -15,6 +15,7 @@ because it bites for a flat 1 dmg/turn with no rng draw, so every outcome is rep
 Run:  cd /mnt/workspace/output/vaultcrawl && python3 -m runtime.brain_scenario
 """
 from __future__ import annotations
+from runtime._showcase import OK, NO, show_logs, header, verdict
 
 import traceback
 
@@ -31,7 +32,6 @@ import runtime.planner   # noqa: F401  registers mastermind (+ strategist)
 import runtime.instincts  # noqa: F401  registers tracker / wary
 
 MANIFEST = "examples/world.json"
-OK, NO = "✓", "✗"
 MISMATCHES: list = []   # (file/symbol, expected, actual) reported at the end
 
 
@@ -97,24 +97,6 @@ def tier_brain(name):
     if cls is None:
         raise LookupError(f"brain tier {name!r} not registered (is runtime.brains/tactics imported?)")
     return cls()
-
-
-def header(n, title):
-    print("\n" + "=" * 74)
-    print(f"SET-PIECE {n}: {title}")
-    print("-" * 74)
-
-
-def show_logs(g, start, indent="   | "):
-    for m in g.messages[start:]:
-        print(indent + str(m))
-
-
-def verdict(ok, text):
-    print(f"   {OK if ok else NO} {text}")
-    return bool(ok)
-
-
 def step(g, react, stop=None):
     """One real engine sub-turn: every NPC acts through its brain, then the reactive
     matter ticks (the same order `Game.try_move` uses). Returns True to stop early."""

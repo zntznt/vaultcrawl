@@ -20,7 +20,7 @@ class Game:
     def __init__(self, manifest: dict, width: int = MAP_W, height: int = MAP_H,
                  upheaval=None, systems=None):
         self.m = manifest
-        self.up = upheaval or Upheaval.empty()
+        self.up = upheaval or Upheaval()
         self.systems = systems or []
         self.announced: set = set()
         self.seed = manifest["seed"]

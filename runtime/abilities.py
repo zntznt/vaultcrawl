@@ -15,9 +15,7 @@ the action declines (`return False`) -- nothing is placed.
 
 DETERMINISM -- no clock, no global rng. Every choice is a pure function of board state:
 candidate tiles are ranked by a fully-ordered key (distance, then y, then x), so two
-identically-seeded games make byte-identical decisions. (Helpers to derive a seeded
-`random.Random` from `game.seed`+pos+`game.turn` are provided for any future action that
-needs noise, but the current set is rng-free.)
+identically-seeded games make byte-identical decisions.
 
 CAPS -- every stat buff is bounded so an elite can't snowball: enrage/shield/rally each
 cap their cumulative bonus at +3; split only fires above an HP threshold and its offspring
@@ -25,8 +23,6 @@ are flagged so they can never split again (no chain explosion); summon spawns a 
 tier-1 body with no actions of its own.
 """
 from __future__ import annotations
-
-import random
 
 from . import quality
 from .dungeon import free_floor_tiles
@@ -75,17 +71,6 @@ def _free_tiles(game) -> list:
 def _nearest(tiles, x, y):
     """Pick the tile closest to (x, y); deterministic tie-break by (dist2, y, x)."""
     return min(tiles, key=lambda t: ((t[0] - x) ** 2 + (t[1] - y) ** 2, t[1], t[0]))
-
-
-def _rng(game, actor, salt: str = "") -> random.Random:
-    """A deterministic rng derived from seed + actor position + turn (no clock).
-
-    Unused by the current rng-free action set, but provided so future actions can add
-    noise without reaching for the wall clock.
-    """
-    seed = getattr(game, "seed", 0)
-    turn = getattr(game, "turn", 0)
-    return random.Random(f"{seed}:{actor.x}:{actor.y}:{turn}:{salt}")
 
 
 def _tame(child: Actor, allegiance: str) -> Actor:
