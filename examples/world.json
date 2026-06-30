@@ -2,7 +2,7 @@
   "version": "0.1.0",
   "seed": "ccee0b8af9afe4f7",
   "generatedFrom": {
-    "vaultPath": "/mnt/workspace/output/vaultcrawl/sample_vault",
+    "vaultPath": "/Users/zntznt/Documents/exploring-ai-generated-roguelike-world-2026-06-28/output/vaultcrawl/sample_vault",
     "noteCount": 10,
     "linkCount": 19,
     "communityCount": 2,
@@ -50,8 +50,12 @@
       "discipline": {
         "title": "Discipline",
         "pagerank": 0.05139,
+        "betweenness": 0.0,
         "degree": 2,
         "community": 0,
+        "members": [
+          0
+        ],
         "bridge": false,
         "role": "cluster",
         "activity": 0.0,
@@ -67,11 +71,15 @@
       "ecs": {
         "title": "ECS",
         "pagerank": 0.14771,
+        "betweenness": 0.0,
         "degree": 2,
         "community": 1,
+        "members": [
+          1
+        ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.333,
+        "activity": 0.0,
         "tags": [
           "architecture",
           "gamedev",
@@ -85,19 +93,25 @@
       "grocery list": {
         "title": "Grocery List",
         "pagerank": 0.01639,
+        "betweenness": 0.0,
         "degree": 0,
         "community": -1,
+        "members": [],
         "bridge": false,
         "role": "orphan",
-        "activity": 0.333,
+        "activity": 0.167,
         "tags": [],
         "neighbors": []
       },
       "journaling": {
         "title": "Journaling",
         "pagerank": 0.09787,
+        "betweenness": 0.41667,
         "degree": 3,
         "community": 0,
+        "members": [
+          0
+        ],
         "bridge": false,
         "role": "cluster",
         "activity": 0.333,
@@ -114,11 +128,15 @@
       "memento mori": {
         "title": "Memento Mori",
         "pagerank": 0.05139,
+        "betweenness": 0.0,
         "degree": 1,
         "community": 0,
+        "members": [
+          0
+        ],
         "bridge": false,
         "role": "leaf",
-        "activity": 0.333,
+        "activity": 0.5,
         "tags": [
           "mortality",
           "philosophy"
@@ -130,11 +148,15 @@
       "procedural generation": {
         "title": "Procedural Generation",
         "pagerank": 0.07538,
+        "betweenness": 0.0,
         "degree": 2,
         "community": 1,
+        "members": [
+          1
+        ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.667,
+        "activity": 0.5,
         "tags": [
           "gamedev",
           "project"
@@ -147,8 +169,13 @@
       "roguelike project": {
         "title": "Roguelike Project",
         "pagerank": 0.20818,
+        "betweenness": 0.43056,
         "degree": 4,
         "community": 1,
+        "members": [
+          0,
+          1
+        ],
         "bridge": true,
         "role": "bridge",
         "activity": 0.667,
@@ -166,11 +193,15 @@
       "rust": {
         "title": "Rust",
         "pagerank": 0.17019,
+        "betweenness": 0.01389,
         "degree": 3,
         "community": 1,
+        "members": [
+          1
+        ],
         "bridge": false,
         "role": "hub",
-        "activity": 0.667,
+        "activity": 0.833,
         "tags": [
           "lang",
           "project"
@@ -184,11 +215,16 @@
       "second brain": {
         "title": "Second Brain",
         "pagerank": 0.05799,
+        "betweenness": 0.44444,
         "degree": 2,
         "community": 0,
+        "members": [
+          0,
+          1
+        ],
         "bridge": true,
         "role": "bridge",
-        "activity": 1.0,
+        "activity": 0.833,
         "tags": [
           "pkm",
           "system"
@@ -201,8 +237,12 @@
       "stoicism": {
         "title": "Stoicism",
         "pagerank": 0.12351,
+        "betweenness": 0.19444,
         "degree": 3,
         "community": 0,
+        "members": [
+          0
+        ],
         "bridge": false,
         "role": "cluster",
         "activity": 1.0,
@@ -216,7 +256,64 @@
           "memento mori"
         ]
       }
-    }
+    },
+    "edges": [
+      {
+        "a": "discipline",
+        "b": "journaling",
+        "interlock": 2
+      },
+      {
+        "a": "discipline",
+        "b": "stoicism",
+        "interlock": 3
+      },
+      {
+        "a": "ecs",
+        "b": "rust",
+        "interlock": 3
+      },
+      {
+        "a": "ecs",
+        "b": "roguelike project",
+        "interlock": 4
+      },
+      {
+        "a": "journaling",
+        "b": "second brain",
+        "interlock": 2
+      },
+      {
+        "a": "journaling",
+        "b": "stoicism",
+        "interlock": 3
+      },
+      {
+        "a": "memento mori",
+        "b": "stoicism",
+        "interlock": 3
+      },
+      {
+        "a": "procedural generation",
+        "b": "rust",
+        "interlock": 2
+      },
+      {
+        "a": "procedural generation",
+        "b": "roguelike project",
+        "interlock": 4
+      },
+      {
+        "a": "roguelike project",
+        "b": "second brain",
+        "interlock": 1
+      },
+      {
+        "a": "roguelike project",
+        "b": "rust",
+        "interlock": 3
+      }
+    ]
   },
   "regions": [
     {
@@ -258,7 +355,7 @@
         "lang",
         "project"
       ],
-      "activity": 0.583,
+      "activity": 0.5,
       "name": "The Fevered Engine-Yard",
       "flavor": "Grown from your note 'Roguelike Project'. Old ink clings to every surface here."
     }

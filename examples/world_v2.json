@@ -2,7 +2,7 @@
   "version": "0.1.0",
   "seed": "63ffa6026b912760",
   "generatedFrom": {
-    "vaultPath": "/mnt/workspace/output/vaultcrawl/sample_vault_v2",
+    "vaultPath": "/Users/zntznt/Documents/exploring-ai-generated-roguelike-world-2026-06-28/output/vaultcrawl/sample_vault_v2",
     "noteCount": 11,
     "linkCount": 23,
     "communityCount": 3,
@@ -57,8 +57,12 @@
       "discipline": {
         "title": "Discipline",
         "pagerank": 0.0469,
+        "betweenness": 0.0,
         "degree": 3,
         "community": 1,
+        "members": [
+          1
+        ],
         "bridge": false,
         "role": "cluster",
         "activity": 0.0,
@@ -75,11 +79,15 @@
       "ecs": {
         "title": "ECS",
         "pagerank": 0.1144,
+        "betweenness": 0.0,
         "degree": 2,
         "community": 0,
+        "members": [
+          0
+        ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.333,
+        "activity": 0.2,
         "tags": [
           "architecture",
           "gamedev",
@@ -93,11 +101,15 @@
       "guitar": {
         "title": "Guitar",
         "pagerank": 0.09091,
+        "betweenness": 0.0,
         "degree": 1,
         "community": 2,
+        "members": [
+          2
+        ],
         "bridge": false,
         "role": "leaf",
-        "activity": 0.333,
+        "activity": 0.2,
         "tags": [
           "hobby",
           "music"
@@ -109,11 +121,16 @@
       "journaling": {
         "title": "Journaling",
         "pagerank": 0.07502,
+        "betweenness": 0.33333,
         "degree": 4,
         "community": 1,
+        "members": [
+          0,
+          1
+        ],
         "bridge": true,
         "role": "bridge",
-        "activity": 0.333,
+        "activity": 0.4,
         "tags": [
           "philosophy",
           "writing"
@@ -128,11 +145,15 @@
       "memento mori": {
         "title": "Memento Mori",
         "pagerank": 0.08145,
+        "betweenness": 0.0,
         "degree": 3,
         "community": 1,
+        "members": [
+          1
+        ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.333,
+        "activity": 0.4,
         "tags": [
           "mortality",
           "philosophy"
@@ -146,11 +167,15 @@
       "music theory": {
         "title": "Music Theory",
         "pagerank": 0.09091,
+        "betweenness": 0.0,
         "degree": 1,
         "community": 2,
+        "members": [
+          2
+        ],
         "bridge": false,
         "role": "leaf",
-        "activity": 0.667,
+        "activity": 0.6,
         "tags": [
           "music",
           "theory"
@@ -162,11 +187,15 @@
       "procedural generation": {
         "title": "Procedural Generation",
         "pagerank": 0.05838,
+        "betweenness": 0.0,
         "degree": 2,
         "community": 0,
+        "members": [
+          0
+        ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.667,
+        "activity": 0.6,
         "tags": [
           "gamedev",
           "project"
@@ -179,11 +208,15 @@
       "roguelike project": {
         "title": "Roguelike Project",
         "pagerank": 0.15791,
+        "betweenness": 0.34444,
         "degree": 4,
         "community": 0,
+        "members": [
+          0
+        ],
         "bridge": false,
         "role": "hub",
-        "activity": 0.667,
+        "activity": 0.8,
         "tags": [
           "gamedev",
           "project"
@@ -198,11 +231,15 @@
       "rust": {
         "title": "Rust",
         "pagerank": 0.13181,
+        "betweenness": 0.01111,
         "degree": 3,
         "community": 0,
+        "members": [
+          0
+        ],
         "bridge": false,
         "role": "hub",
-        "activity": 1.0,
+        "activity": 0.8,
         "tags": [
           "lang",
           "project"
@@ -216,11 +253,16 @@
       "second brain": {
         "title": "Second Brain",
         "pagerank": 0.03489,
+        "betweenness": 0.35556,
         "degree": 2,
         "community": 0,
+        "members": [
+          0,
+          1
+        ],
         "bridge": true,
         "role": "bridge",
-        "activity": 1.0,
+        "activity": 0.8,
         "tags": [
           "pkm",
           "system"
@@ -233,8 +275,12 @@
       "stoicism": {
         "title": "Stoicism",
         "pagerank": 0.11741,
+        "betweenness": 0.0,
         "degree": 3,
         "community": 1,
+        "members": [
+          1
+        ],
         "bridge": false,
         "role": "hub",
         "activity": 1.0,
@@ -248,7 +294,79 @@
           "memento mori"
         ]
       }
-    }
+    },
+    "edges": [
+      {
+        "a": "discipline",
+        "b": "stoicism",
+        "interlock": 3
+      },
+      {
+        "a": "discipline",
+        "b": "memento mori",
+        "interlock": 2
+      },
+      {
+        "a": "discipline",
+        "b": "journaling",
+        "interlock": 2
+      },
+      {
+        "a": "ecs",
+        "b": "rust",
+        "interlock": 3
+      },
+      {
+        "a": "ecs",
+        "b": "roguelike project",
+        "interlock": 4
+      },
+      {
+        "a": "guitar",
+        "b": "music theory",
+        "interlock": 3
+      },
+      {
+        "a": "journaling",
+        "b": "stoicism",
+        "interlock": 3
+      },
+      {
+        "a": "journaling",
+        "b": "memento mori",
+        "interlock": 2
+      },
+      {
+        "a": "journaling",
+        "b": "second brain",
+        "interlock": 2
+      },
+      {
+        "a": "memento mori",
+        "b": "stoicism",
+        "interlock": 3
+      },
+      {
+        "a": "procedural generation",
+        "b": "rust",
+        "interlock": 2
+      },
+      {
+        "a": "procedural generation",
+        "b": "roguelike project",
+        "interlock": 4
+      },
+      {
+        "a": "roguelike project",
+        "b": "rust",
+        "interlock": 3
+      },
+      {
+        "a": "roguelike project",
+        "b": "second brain",
+        "interlock": 1
+      }
+    ]
   },
   "regions": [
     {
@@ -269,7 +387,7 @@
         "project",
         "system"
       ],
-      "activity": 0.733,
+      "activity": 0.64,
       "name": "The Recursive Assembly",
       "flavor": "Grown from your note 'Roguelike Project'. Damp clings to every surface here."
     },
@@ -290,7 +408,7 @@
         "philosophy",
         "writing"
       ],
-      "activity": 0.417,
+      "activity": 0.45,
       "name": "The Severed Star-Loom",
       "flavor": "Grown from your note 'Stoicism'. Lamplight clings to every surface here."
     },
@@ -309,7 +427,7 @@
         "music",
         "theory"
       ],
-      "activity": 0.5,
+      "activity": 0.4,
       "name": "The Annotated Lens-Hall",
       "flavor": "Grown from your note 'Music Theory'. Damp clings to every surface here."
     }
