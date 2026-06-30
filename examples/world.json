@@ -1,0 +1,447 @@
+{
+  "version": "0.1.0",
+  "seed": "ccee0b8af9afe4f7",
+  "generatedFrom": {
+    "vaultPath": "/mnt/workspace/output/vaultcrawl/sample_vault",
+    "noteCount": 10,
+    "linkCount": 19,
+    "communityCount": 2,
+    "padded": false
+  },
+  "bible": {
+    "worldName": "The Philosophy Archives",
+    "tone": "luminous and overgrown",
+    "namingConventions": "Places take the form 'The <adjective> <structure>'; powers borrow the vocabulary of brass and moss.",
+    "aesthetic": [
+      "lamplight",
+      "brass",
+      "moss",
+      "vellum"
+    ],
+    "factions": [
+      {
+        "id": "faction_0",
+        "name": "House Philosophy",
+        "ethos": "They guard the borders where one idea bleeds into another.",
+        "clusterId": 0,
+        "relations": [
+          {
+            "factionId": "faction_1",
+            "stance": "neutral"
+          }
+        ]
+      },
+      {
+        "id": "faction_1",
+        "name": "House Project",
+        "ethos": "They worship the deepest, most-linked truth and fear its silence.",
+        "clusterId": 1,
+        "relations": [
+          {
+            "factionId": "faction_0",
+            "stance": "neutral"
+          }
+        ]
+      }
+    ]
+  },
+  "graph": {
+    "nodes": {
+      "discipline": {
+        "title": "Discipline",
+        "pagerank": 0.05139,
+        "degree": 2,
+        "community": 0,
+        "bridge": false,
+        "role": "cluster",
+        "activity": 0.0,
+        "tags": [
+          "habit",
+          "philosophy"
+        ],
+        "neighbors": [
+          "journaling",
+          "stoicism"
+        ]
+      },
+      "ecs": {
+        "title": "ECS",
+        "pagerank": 0.14771,
+        "degree": 2,
+        "community": 1,
+        "bridge": false,
+        "role": "cluster",
+        "activity": 0.333,
+        "tags": [
+          "architecture",
+          "gamedev",
+          "project"
+        ],
+        "neighbors": [
+          "roguelike project",
+          "rust"
+        ]
+      },
+      "grocery list": {
+        "title": "Grocery List",
+        "pagerank": 0.01639,
+        "degree": 0,
+        "community": -1,
+        "bridge": false,
+        "role": "orphan",
+        "activity": 0.333,
+        "tags": [],
+        "neighbors": []
+      },
+      "journaling": {
+        "title": "Journaling",
+        "pagerank": 0.09787,
+        "degree": 3,
+        "community": 0,
+        "bridge": false,
+        "role": "cluster",
+        "activity": 0.333,
+        "tags": [
+          "philosophy",
+          "writing"
+        ],
+        "neighbors": [
+          "discipline",
+          "second brain",
+          "stoicism"
+        ]
+      },
+      "memento mori": {
+        "title": "Memento Mori",
+        "pagerank": 0.05139,
+        "degree": 1,
+        "community": 0,
+        "bridge": false,
+        "role": "leaf",
+        "activity": 0.333,
+        "tags": [
+          "mortality",
+          "philosophy"
+        ],
+        "neighbors": [
+          "stoicism"
+        ]
+      },
+      "procedural generation": {
+        "title": "Procedural Generation",
+        "pagerank": 0.07538,
+        "degree": 2,
+        "community": 1,
+        "bridge": false,
+        "role": "cluster",
+        "activity": 0.667,
+        "tags": [
+          "gamedev",
+          "project"
+        ],
+        "neighbors": [
+          "roguelike project",
+          "rust"
+        ]
+      },
+      "roguelike project": {
+        "title": "Roguelike Project",
+        "pagerank": 0.20818,
+        "degree": 4,
+        "community": 1,
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.667,
+        "tags": [
+          "gamedev",
+          "project"
+        ],
+        "neighbors": [
+          "ecs",
+          "procedural generation",
+          "rust",
+          "second brain"
+        ]
+      },
+      "rust": {
+        "title": "Rust",
+        "pagerank": 0.17019,
+        "degree": 3,
+        "community": 1,
+        "bridge": false,
+        "role": "hub",
+        "activity": 0.667,
+        "tags": [
+          "lang",
+          "project"
+        ],
+        "neighbors": [
+          "ecs",
+          "procedural generation",
+          "roguelike project"
+        ]
+      },
+      "second brain": {
+        "title": "Second Brain",
+        "pagerank": 0.05799,
+        "degree": 2,
+        "community": 0,
+        "bridge": true,
+        "role": "bridge",
+        "activity": 1.0,
+        "tags": [
+          "pkm",
+          "system"
+        ],
+        "neighbors": [
+          "journaling",
+          "roguelike project"
+        ]
+      },
+      "stoicism": {
+        "title": "Stoicism",
+        "pagerank": 0.12351,
+        "degree": 3,
+        "community": 0,
+        "bridge": false,
+        "role": "cluster",
+        "activity": 1.0,
+        "tags": [
+          "mind",
+          "philosophy"
+        ],
+        "neighbors": [
+          "discipline",
+          "journaling",
+          "memento mori"
+        ]
+      }
+    }
+  },
+  "regions": [
+    {
+      "id": "region_0",
+      "biome": "observatory",
+      "element": "corrosive",
+      "depthBand": [
+        4,
+        18
+      ],
+      "factionId": "faction_0",
+      "sourceNoteId": "stoicism",
+      "themeTags": [
+        "habit",
+        "mind",
+        "mortality",
+        "philosophy",
+        "pkm",
+        "system",
+        "writing"
+      ],
+      "activity": 0.533,
+      "name": "The Patient Meridian",
+      "flavor": "Grown from your note 'Stoicism'. Damp clings to every surface here."
+    },
+    {
+      "id": "region_1",
+      "biome": "foundry",
+      "element": "charged",
+      "depthBand": [
+        12,
+        26
+      ],
+      "factionId": "faction_1",
+      "sourceNoteId": "roguelike project",
+      "themeTags": [
+        "architecture",
+        "gamedev",
+        "lang",
+        "project"
+      ],
+      "activity": 0.583,
+      "name": "The Fevered Engine-Yard",
+      "flavor": "Grown from your note 'Roguelike Project'. Old ink clings to every surface here."
+    }
+  ],
+  "enemies": [
+    {
+      "id": "enemy_0",
+      "archetype": "shade",
+      "tier": 2,
+      "damageType": "blade",
+      "regionId": "region_0",
+      "sourceNoteId": "discipline",
+      "name": "Gilded Shade of the Choir",
+      "flavor": "A shade that drifted out of 'Discipline', dealing blade to the unwary."
+    },
+    {
+      "id": "enemy_1",
+      "archetype": "warden",
+      "tier": 4,
+      "damageType": "frost",
+      "regionId": "region_0",
+      "sourceNoteId": "journaling",
+      "name": "Annotated Warden",
+      "flavor": "A warden that drifted out of 'Journaling', dealing frost to the unwary."
+    },
+    {
+      "id": "enemy_2",
+      "archetype": "echo",
+      "tier": 2,
+      "damageType": "arc",
+      "regionId": "region_0",
+      "sourceNoteId": "memento mori",
+      "name": "Quiet Echo",
+      "flavor": "A echo that drifted out of 'Memento Mori', dealing arc to the unwary."
+    },
+    {
+      "id": "enemy_3",
+      "archetype": "echo",
+      "tier": 3,
+      "damageType": "flame",
+      "regionId": "region_0",
+      "sourceNoteId": "second brain",
+      "name": "Hollow Echo of the Engine",
+      "flavor": "A echo that drifted out of 'Second Brain', dealing flame to the unwary."
+    },
+    {
+      "id": "enemy_4",
+      "archetype": "construct",
+      "tier": 5,
+      "damageType": "frost",
+      "regionId": "region_1",
+      "sourceNoteId": "ecs",
+      "name": "Hollow Construct",
+      "flavor": "A construct that drifted out of 'Ecs', dealing frost to the unwary."
+    },
+    {
+      "id": "enemy_5",
+      "archetype": "scribe",
+      "tier": 3,
+      "damageType": "decay",
+      "regionId": "region_1",
+      "sourceNoteId": "procedural generation",
+      "name": "Patient Scribe",
+      "flavor": "A scribe that drifted out of 'Procedural Generation', dealing decay to the unwary."
+    },
+    {
+      "id": "enemy_6",
+      "archetype": "echo",
+      "tier": 5,
+      "damageType": "decay",
+      "regionId": "region_1",
+      "sourceNoteId": "rust",
+      "name": "Brimming Echo",
+      "flavor": "A echo that drifted out of 'Rust', dealing decay to the unwary."
+    }
+  ],
+  "bosses": [
+    {
+      "id": "boss_0",
+      "tier": 4,
+      "depth": 18,
+      "regionId": "region_0",
+      "sourceNoteId": "stoicism",
+      "name": "Stoicism, the Unfiled",
+      "title": "Warden of the Orrery",
+      "flavor": "The most-linked thought in the vault, made flesh; 3 roads lead to it and none lead away."
+    },
+    {
+      "id": "boss_1",
+      "tier": 5,
+      "depth": 26,
+      "regionId": "region_1",
+      "sourceNoteId": "roguelike project",
+      "name": "Roguelike Project, the Overgrown",
+      "title": "Warden of the Forge",
+      "flavor": "The most-linked thought in the vault, made flesh; 4 roads lead to it and none lead away."
+    }
+  ],
+  "items": [
+    {
+      "id": "item_0",
+      "slot": "trinket",
+      "rarity": "rare",
+      "powerBudget": 14,
+      "sourceNoteId": "procedural generation",
+      "name": "Wake of the Recurring",
+      "flavor": "A rare trinket salvaged from 'Procedural Generation'."
+    },
+    {
+      "id": "item_1",
+      "slot": "armor",
+      "rarity": "legendary",
+      "powerBudget": 32,
+      "sourceNoteId": "roguelike project",
+      "name": "Causeway of the Half-Remembered",
+      "flavor": "A legendary armor salvaged from 'Roguelike Project'."
+    },
+    {
+      "id": "item_2",
+      "slot": "weapon",
+      "rarity": "epic",
+      "powerBudget": 22,
+      "sourceNoteId": "journaling",
+      "name": "Sigil of the Recurring",
+      "flavor": "A epic weapon salvaged from 'Journaling'."
+    },
+    {
+      "id": "item_3",
+      "slot": "trinket",
+      "rarity": "legendary",
+      "powerBudget": 32,
+      "sourceNoteId": "rust",
+      "name": "The Fevered Wake",
+      "flavor": "A legendary trinket salvaged from 'Rust'."
+    },
+    {
+      "id": "item_4",
+      "slot": "relic",
+      "rarity": "epic",
+      "powerBudget": 22,
+      "sourceNoteId": "stoicism",
+      "name": "The Cold Atrium",
+      "flavor": "A epic relic salvaged from 'Stoicism'."
+    }
+  ],
+  "secrets": [
+    {
+      "id": "secret_0",
+      "kind": "hidden_room",
+      "sourceNoteId": "grocery list",
+      "flavor": "An orphaned note with no links in or out — 'Grocery List' — sealed away as a lost reliquary."
+    }
+  ],
+  "quests": [
+    {
+      "id": "quest_0",
+      "kind": "recover",
+      "sourceNoteId": "grocery list",
+      "objective": "Reclaim the Annotated Lantern — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_1",
+      "kind": "slay",
+      "sourceNoteId": "discipline",
+      "objective": "Unmake the Marginal Annex — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_2",
+      "kind": "slay",
+      "sourceNoteId": "roguelike project",
+      "objective": "Unmake the Ashen Sigil — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_3",
+      "kind": "recover",
+      "sourceNoteId": "roguelike project",
+      "objective": "Reclaim the Patient Atrium — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_4",
+      "kind": "cleanse",
+      "sourceNoteId": "roguelike project",
+      "objective": "Purge the Gilded Lantern — an unfinished charge left in your own hand."
+    }
+  ]
+}

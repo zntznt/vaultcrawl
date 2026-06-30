@@ -1,0 +1,505 @@
+{
+  "version": "0.1.0",
+  "seed": "63ffa6026b912760",
+  "generatedFrom": {
+    "vaultPath": "/mnt/workspace/output/vaultcrawl/sample_vault_v2",
+    "noteCount": 11,
+    "linkCount": 23,
+    "communityCount": 3,
+    "padded": false
+  },
+  "bible": {
+    "worldName": "Project's Wake",
+    "tone": "a hushed, archival melancholy",
+    "namingConventions": "Places take the form 'The <adjective> <structure>'; powers borrow the vocabulary of glass and marginalia.",
+    "aesthetic": [
+      "dust",
+      "glass",
+      "marginalia",
+      "ledgers"
+    ],
+    "factions": [
+      {
+        "id": "faction_0",
+        "name": "The Order of Project",
+        "ethos": "They guard the borders where one idea bleeds into another.",
+        "clusterId": 0,
+        "relations": [
+          {
+            "factionId": "faction_1",
+            "stance": "rival"
+          }
+        ]
+      },
+      {
+        "id": "faction_1",
+        "name": "House Philosophy",
+        "ethos": "They guard the borders where one idea bleeds into another.",
+        "clusterId": 1,
+        "relations": [
+          {
+            "factionId": "faction_0",
+            "stance": "rival"
+          }
+        ]
+      },
+      {
+        "id": "faction_2",
+        "name": "The Order of Music",
+        "ethos": "They guard the borders where one idea bleeds into another.",
+        "clusterId": 2,
+        "relations": []
+      }
+    ]
+  },
+  "graph": {
+    "nodes": {
+      "discipline": {
+        "title": "Discipline",
+        "pagerank": 0.0469,
+        "degree": 3,
+        "community": 1,
+        "bridge": false,
+        "role": "cluster",
+        "activity": 0.0,
+        "tags": [
+          "habit",
+          "philosophy"
+        ],
+        "neighbors": [
+          "journaling",
+          "memento mori",
+          "stoicism"
+        ]
+      },
+      "ecs": {
+        "title": "ECS",
+        "pagerank": 0.1144,
+        "degree": 2,
+        "community": 0,
+        "bridge": false,
+        "role": "cluster",
+        "activity": 0.333,
+        "tags": [
+          "architecture",
+          "gamedev",
+          "project"
+        ],
+        "neighbors": [
+          "roguelike project",
+          "rust"
+        ]
+      },
+      "guitar": {
+        "title": "Guitar",
+        "pagerank": 0.09091,
+        "degree": 1,
+        "community": 2,
+        "bridge": false,
+        "role": "leaf",
+        "activity": 0.333,
+        "tags": [
+          "hobby",
+          "music"
+        ],
+        "neighbors": [
+          "music theory"
+        ]
+      },
+      "journaling": {
+        "title": "Journaling",
+        "pagerank": 0.07502,
+        "degree": 4,
+        "community": 1,
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.333,
+        "tags": [
+          "philosophy",
+          "writing"
+        ],
+        "neighbors": [
+          "discipline",
+          "memento mori",
+          "second brain",
+          "stoicism"
+        ]
+      },
+      "memento mori": {
+        "title": "Memento Mori",
+        "pagerank": 0.08145,
+        "degree": 3,
+        "community": 1,
+        "bridge": false,
+        "role": "cluster",
+        "activity": 0.333,
+        "tags": [
+          "mortality",
+          "philosophy"
+        ],
+        "neighbors": [
+          "discipline",
+          "journaling",
+          "stoicism"
+        ]
+      },
+      "music theory": {
+        "title": "Music Theory",
+        "pagerank": 0.09091,
+        "degree": 1,
+        "community": 2,
+        "bridge": false,
+        "role": "leaf",
+        "activity": 0.667,
+        "tags": [
+          "music",
+          "theory"
+        ],
+        "neighbors": [
+          "guitar"
+        ]
+      },
+      "procedural generation": {
+        "title": "Procedural Generation",
+        "pagerank": 0.05838,
+        "degree": 2,
+        "community": 0,
+        "bridge": false,
+        "role": "cluster",
+        "activity": 0.667,
+        "tags": [
+          "gamedev",
+          "project"
+        ],
+        "neighbors": [
+          "roguelike project",
+          "rust"
+        ]
+      },
+      "roguelike project": {
+        "title": "Roguelike Project",
+        "pagerank": 0.15791,
+        "degree": 4,
+        "community": 0,
+        "bridge": false,
+        "role": "hub",
+        "activity": 0.667,
+        "tags": [
+          "gamedev",
+          "project"
+        ],
+        "neighbors": [
+          "ecs",
+          "procedural generation",
+          "rust",
+          "second brain"
+        ]
+      },
+      "rust": {
+        "title": "Rust",
+        "pagerank": 0.13181,
+        "degree": 3,
+        "community": 0,
+        "bridge": false,
+        "role": "hub",
+        "activity": 1.0,
+        "tags": [
+          "lang",
+          "project"
+        ],
+        "neighbors": [
+          "ecs",
+          "procedural generation",
+          "roguelike project"
+        ]
+      },
+      "second brain": {
+        "title": "Second Brain",
+        "pagerank": 0.03489,
+        "degree": 2,
+        "community": 0,
+        "bridge": true,
+        "role": "bridge",
+        "activity": 1.0,
+        "tags": [
+          "pkm",
+          "system"
+        ],
+        "neighbors": [
+          "journaling",
+          "roguelike project"
+        ]
+      },
+      "stoicism": {
+        "title": "Stoicism",
+        "pagerank": 0.11741,
+        "degree": 3,
+        "community": 1,
+        "bridge": false,
+        "role": "hub",
+        "activity": 1.0,
+        "tags": [
+          "mind",
+          "philosophy"
+        ],
+        "neighbors": [
+          "discipline",
+          "journaling",
+          "memento mori"
+        ]
+      }
+    }
+  },
+  "regions": [
+    {
+      "id": "region_0",
+      "biome": "foundry",
+      "element": "charged",
+      "depthBand": [
+        1,
+        26
+      ],
+      "factionId": "faction_0",
+      "sourceNoteId": "roguelike project",
+      "themeTags": [
+        "architecture",
+        "gamedev",
+        "lang",
+        "pkm",
+        "project",
+        "system"
+      ],
+      "activity": 0.733,
+      "name": "The Recursive Assembly",
+      "flavor": "Grown from your note 'Roguelike Project'. Damp clings to every surface here."
+    },
+    {
+      "id": "region_1",
+      "biome": "observatory",
+      "element": "corrosive",
+      "depthBand": [
+        3,
+        21
+      ],
+      "factionId": "faction_1",
+      "sourceNoteId": "stoicism",
+      "themeTags": [
+        "habit",
+        "mind",
+        "mortality",
+        "philosophy",
+        "writing"
+      ],
+      "activity": 0.417,
+      "name": "The Severed Star-Loom",
+      "flavor": "Grown from your note 'Stoicism'. Lamplight clings to every surface here."
+    },
+    {
+      "id": "region_2",
+      "biome": "observatory",
+      "element": "sacred",
+      "depthBand": [
+        13,
+        16
+      ],
+      "factionId": "faction_2",
+      "sourceNoteId": "music theory",
+      "themeTags": [
+        "hobby",
+        "music",
+        "theory"
+      ],
+      "activity": 0.5,
+      "name": "The Annotated Lens-Hall",
+      "flavor": "Grown from your note 'Music Theory'. Damp clings to every surface here."
+    }
+  ],
+  "enemies": [
+    {
+      "id": "enemy_0",
+      "archetype": "construct",
+      "tier": 4,
+      "damageType": "frost",
+      "regionId": "region_0",
+      "sourceNoteId": "ecs",
+      "name": "Severed Construct of the Wake",
+      "flavor": "A construct that drifted out of 'Ecs', dealing frost to the unwary."
+    },
+    {
+      "id": "enemy_1",
+      "archetype": "scribe",
+      "tier": 2,
+      "damageType": "decay",
+      "regionId": "region_0",
+      "sourceNoteId": "procedural generation",
+      "name": "Iron Scribe",
+      "flavor": "A scribe that drifted out of 'Procedural Generation', dealing decay to the unwary."
+    },
+    {
+      "id": "enemy_2",
+      "archetype": "echo",
+      "tier": 5,
+      "damageType": "decay",
+      "regionId": "region_0",
+      "sourceNoteId": "rust",
+      "name": "Recursive Echo",
+      "flavor": "A echo that drifted out of 'Rust', dealing decay to the unwary."
+    },
+    {
+      "id": "enemy_3",
+      "archetype": "echo",
+      "tier": 1,
+      "damageType": "flame",
+      "regionId": "region_0",
+      "sourceNoteId": "second brain",
+      "name": "Bound Echo of the Causeway",
+      "flavor": "A echo that drifted out of 'Second Brain', dealing flame to the unwary."
+    },
+    {
+      "id": "enemy_4",
+      "archetype": "shade",
+      "tier": 1,
+      "damageType": "blade",
+      "regionId": "region_1",
+      "sourceNoteId": "discipline",
+      "name": "Cold Shade",
+      "flavor": "A shade that drifted out of 'Discipline', dealing blade to the unwary."
+    },
+    {
+      "id": "enemy_5",
+      "archetype": "warden",
+      "tier": 2,
+      "damageType": "frost",
+      "regionId": "region_1",
+      "sourceNoteId": "journaling",
+      "name": "Severed Warden of the Lantern",
+      "flavor": "A warden that drifted out of 'Journaling', dealing frost to the unwary."
+    },
+    {
+      "id": "enemy_6",
+      "archetype": "echo",
+      "tier": 3,
+      "damageType": "arc",
+      "regionId": "region_1",
+      "sourceNoteId": "memento mori",
+      "name": "Veiled Echo",
+      "flavor": "A echo that drifted out of 'Memento Mori', dealing arc to the unwary."
+    },
+    {
+      "id": "enemy_7",
+      "archetype": "swarm",
+      "tier": 4,
+      "damageType": "psychic",
+      "regionId": "region_2",
+      "sourceNoteId": "guitar",
+      "name": "Sunken Swarm",
+      "flavor": "A swarm that drifted out of 'Guitar', dealing psychic to the unwary."
+    }
+  ],
+  "bosses": [
+    {
+      "id": "boss_0",
+      "tier": 5,
+      "depth": 26,
+      "regionId": "region_0",
+      "sourceNoteId": "roguelike project",
+      "name": "Roguelike Project, the Severed",
+      "title": "Warden of the Kiln",
+      "flavor": "The most-linked thought in the vault, made flesh; 4 roads lead to it and none lead away."
+    },
+    {
+      "id": "boss_1",
+      "tier": 5,
+      "depth": 21,
+      "regionId": "region_1",
+      "sourceNoteId": "stoicism",
+      "name": "Stoicism, the Unfiled",
+      "title": "Warden of the Lens-Hall",
+      "flavor": "The most-linked thought in the vault, made flesh; 3 roads lead to it and none lead away."
+    },
+    {
+      "id": "boss_2",
+      "tier": 4,
+      "depth": 16,
+      "regionId": "region_2",
+      "sourceNoteId": "music theory",
+      "name": "Music Theory, the Overlinked",
+      "title": "Warden of the Orrery",
+      "flavor": "The most-linked thought in the vault, made flesh; 1 roads lead to it and none lead away."
+    }
+  ],
+  "items": [
+    {
+      "id": "item_0",
+      "slot": "trinket",
+      "rarity": "uncommon",
+      "powerBudget": 8,
+      "sourceNoteId": "procedural generation",
+      "name": "The Ashen Wake",
+      "flavor": "A uncommon trinket salvaged from 'Procedural Generation'."
+    },
+    {
+      "id": "item_1",
+      "slot": "weapon",
+      "rarity": "uncommon",
+      "powerBudget": 8,
+      "sourceNoteId": "journaling",
+      "name": "The Ashen Annex",
+      "flavor": "A uncommon weapon salvaged from 'Journaling'."
+    },
+    {
+      "id": "item_2",
+      "slot": "armor",
+      "rarity": "legendary",
+      "powerBudget": 32,
+      "sourceNoteId": "roguelike project",
+      "name": "Choir of the Overgrown",
+      "flavor": "A legendary armor salvaged from 'Roguelike Project'."
+    },
+    {
+      "id": "item_3",
+      "slot": "trinket",
+      "rarity": "common",
+      "powerBudget": 4,
+      "sourceNoteId": "discipline",
+      "name": "The Severed Annex",
+      "flavor": "A common trinket salvaged from 'Discipline'."
+    },
+    {
+      "id": "item_4",
+      "slot": "relic",
+      "rarity": "rare",
+      "powerBudget": 14,
+      "sourceNoteId": "memento mori",
+      "name": "Atrium of the Overgrown",
+      "flavor": "A rare relic salvaged from 'Memento Mori'."
+    }
+  ],
+  "secrets": [],
+  "quests": [
+    {
+      "id": "quest_0",
+      "kind": "slay",
+      "sourceNoteId": "discipline",
+      "objective": "Unmake the Sunken Causeway — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_1",
+      "kind": "slay",
+      "sourceNoteId": "roguelike project",
+      "objective": "Unmake the Forgotten Wake — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_2",
+      "kind": "recover",
+      "sourceNoteId": "roguelike project",
+      "objective": "Reclaim the Veiled Hollow — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_3",
+      "kind": "cleanse",
+      "sourceNoteId": "roguelike project",
+      "objective": "Purge the Forgotten Annex — an unfinished charge left in your own hand."
+    }
+  ]
+}

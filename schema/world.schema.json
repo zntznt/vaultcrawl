@@ -1,0 +1,205 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://vaultcrawl/world.schema.json",
+  "title": "Vaultcrawl World Manifest",
+  "description": "The baked, deterministic world artifact consumed by the roguelike runtime. The mechanical fields (tier, depth, powerBudget, *Id references, enums) are authored by the deterministic mapping layer and are load-bearing for balance and solvability. The semantic fields (name, title, flavor, ethos, aesthetic) are authored by the LLM and never affect mechanics.",
+  "type": "object",
+  "required": ["version", "seed", "generatedFrom", "bible", "regions", "enemies", "bosses", "items"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "string" },
+    "seed": { "type": "string", "description": "Hex digest of the vault content snapshot. Same content -> same world." },
+    "generatedFrom": {
+      "type": "object",
+      "required": ["vaultPath", "noteCount", "linkCount"],
+      "properties": {
+        "vaultPath": { "type": "string" },
+        "noteCount": { "type": "integer", "minimum": 0 },
+        "linkCount": { "type": "integer", "minimum": 0 },
+        "communityCount": { "type": "integer", "minimum": 0 },
+        "padded": { "type": "boolean", "description": "True if default content was injected because the vault was too sparse." }
+      }
+    },
+
+    "bible": {
+      "type": "object",
+      "description": "Pass-1 global output. Constrains every Pass-2 local generation so the world reads as one place.",
+      "required": ["worldName", "tone", "namingConventions", "aesthetic", "factions"],
+      "properties": {
+        "worldName": { "type": "string", "minLength": 1 },
+        "tone": { "type": "string", "minLength": 1 },
+        "namingConventions": { "type": "string" },
+        "aesthetic": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "factions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "ethos", "clusterId", "relations"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^faction_[0-9]+$" },
+              "name": { "type": "string", "minLength": 1 },
+              "ethos": { "type": "string" },
+              "clusterId": { "type": "integer", "minimum": 0 },
+              "relations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["factionId", "stance"],
+                  "properties": {
+                    "factionId": { "type": "string", "pattern": "^faction_[0-9]+$" },
+                    "stance": { "enum": ["ally", "rival", "vassal", "neutral", "war"] }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "graph": {
+      "type": "object",
+      "description": "Per-note graph data consumed by runtime systems (sigils, knowledge, history).",
+      "properties": {
+        "nodes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "title": { "type": "string" },
+              "pagerank": { "type": "number" },
+              "betweenness": { "type": "number", "description": "Normalized flow centrality (Brandes) — the facilitator signal for promenades/gateways." },
+              "degree": { "type": "integer" },
+              "community": { "type": "integer" },
+              "members": { "type": "array", "items": { "type": "integer" },
+                "description": "Communities this note + its neighbours span (the semilattice). |members|>=2 => a shared court." },
+              "bridge": { "type": "boolean" },
+              "role": { "enum": ["hub", "bridge", "orphan", "leaf", "cluster"] },
+              "activity": { "type": "number" },
+              "tags": { "type": "array", "items": { "type": "string" } },
+              "neighbors": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "description": "Undirected interlock-weighted edges: weight = 1 + shared-tags + (mutual-link?1:0).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "a": { "type": "string" },
+              "b": { "type": "string" },
+              "interlock": { "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+
+    "regions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "biome", "depthBand", "factionId", "sourceNoteId", "themeTags", "activity"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^region_[0-9]+$" },
+          "name": { "type": "string", "minLength": 1 },
+          "biome": { "enum": ["archive", "garden", "foundry", "catacomb", "observatory", "marsh", "spire", "wastes"] },
+          "element": { "enum": ["charged", "wet", "flammable", "frozen", "sacred", "corrosive", "inert"],
+            "description": "Reactive element generated from the region's dominant tags; seeds tile properties at runtime." },
+          "depthBand": {
+            "type": "array", "items": { "type": "integer", "minimum": 1 },
+            "minItems": 2, "maxItems": 2,
+            "description": "[minFloor, maxFloor] inclusive."
+          },
+          "factionId": { "type": "string", "pattern": "^faction_[0-9]+$" },
+          "sourceNoteId": { "type": "string" },
+          "themeTags": { "type": "array", "items": { "type": "string" } },
+          "activity": { "type": "number", "minimum": 0, "maximum": 1, "description": "Edit-recency 0..1; scales spawn density." },
+          "flavor": { "type": "string" }
+        }
+      }
+    },
+
+    "enemies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "archetype", "tier", "damageType", "regionId", "sourceNoteId", "flavor"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^enemy_[0-9]+$" },
+          "name": { "type": "string", "minLength": 1 },
+          "archetype": { "enum": ["scribe", "golem", "swarm", "warden", "echo", "beast", "construct", "shade"] },
+          "tier": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "damageType": { "enum": ["blade", "flame", "frost", "venom", "psychic", "decay", "arc"] },
+          "regionId": { "type": "string", "pattern": "^region_[0-9]+$" },
+          "sourceNoteId": { "type": "string" },
+          "flavor": { "type": "string" }
+        }
+      }
+    },
+
+    "bosses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "title", "tier", "depth", "regionId", "sourceNoteId", "flavor"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^boss_[0-9]+$" },
+          "name": { "type": "string", "minLength": 1 },
+          "title": { "type": "string" },
+          "tier": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "depth": { "type": "integer", "minimum": 1, "description": "Floor; monotonic with note centrality." },
+          "regionId": { "type": "string", "pattern": "^region_[0-9]+$" },
+          "sourceNoteId": { "type": "string" },
+          "flavor": { "type": "string" }
+        }
+      }
+    },
+
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "slot", "rarity", "powerBudget", "sourceNoteId", "flavor"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^item_[0-9]+$" },
+          "name": { "type": "string", "minLength": 1 },
+          "slot": { "enum": ["weapon", "armor", "trinket", "consumable", "relic"] },
+          "rarity": { "enum": ["common", "uncommon", "rare", "epic", "legendary"] },
+          "powerBudget": { "type": "integer", "minimum": 1, "description": "Abstract power points; clamped by rarity band in the validator." },
+          "sourceNoteId": { "type": "string" },
+          "flavor": { "type": "string" }
+        }
+      }
+    },
+
+    "secrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "sourceNoteId", "flavor"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^secret_[0-9]+$" },
+          "kind": { "enum": ["hidden_room", "lost_artifact", "hidden_boss"] },
+          "sourceNoteId": { "type": "string" },
+          "flavor": { "type": "string" }
+        }
+      }
+    },
+
+    "quests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "objective", "kind", "sourceNoteId"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^quest_[0-9]+$" },
+          "objective": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["fetch", "slay", "escort", "cleanse", "recover"] },
+          "sourceNoteId": { "type": "string" }
+        }
+      }
+    }
+  }
+}
