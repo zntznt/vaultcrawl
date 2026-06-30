@@ -122,6 +122,8 @@ def main(argv=None) -> int:
                     help="disable the Qud/Cogmind-inspired systems layer (sigils, reactions, ...)")
     ap.add_argument("--brain", default="exploiter",
                     help="player brain: exploiter (default), survivor, hunter/dumb")
+    ap.add_argument("--sandbox", action="store_true",
+                    help="grow the WHOLE vault as one persistent open-world map (no floors)")
     a = ap.parse_args(argv)
 
     manifest = load_manifest(a.world)
@@ -169,7 +171,8 @@ def main(argv=None) -> int:
                    FactionSystem(), QualitySystem(),   # quality grades all spawned foes (incl. hunters)
                    HistorySystem(), KnowledgeSystem()]
 
-    game = Game(manifest, a.width, a.height, upheaval=upheaval, systems=systems)
+    game = Game(manifest, a.width, a.height, upheaval=upheaval, systems=systems,
+                architecture=a.sandbox)
 
     # Register the brain tiers (import = registration), then give the player its chosen
     # brain. Monsters get theirs lazily by tier via brain_for: tier-1 grunts charge (hunter),

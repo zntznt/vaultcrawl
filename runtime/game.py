@@ -18,13 +18,16 @@ MAP_W, MAP_H = 56, 20
 
 class Game:
     def __init__(self, manifest: dict, width: int = MAP_W, height: int = MAP_H,
-                 upheaval=None, systems=None):
+                 upheaval=None, systems=None, architecture=False):
         self.m = manifest
         self.up = upheaval or Upheaval()
         self.systems = systems or []
         self.announced: set = set()
         self.seed = manifest["seed"]
         self.width, self.height = width, height
+        # opt-in: grow+carve living architecture from the vault graph instead of rooms+MST
+        # (ARCHITECTURE_SPEC Phase 6). Default off, so existing behavior is unchanged.
+        self.architecture = architecture
         self.floor = 0
         self.max_floor = max((b["depth"] for b in manifest["bosses"]), default=1)
         self.final_boss_source = max(manifest["bosses"], key=lambda b: b["depth"])["sourceNoteId"]
@@ -42,13 +45,19 @@ class Game:
         self.actors: list = []
         self.items: list = []
         self.region_name = ""
+        # note id -> region (for sandbox region_at); a region's note is its sourceNoteId
+        self._region_by_note = {r["sourceNoteId"]: r for r in manifest["regions"]}
+        self._region_map: dict = {}
         self._build_zones()
         for s in self.systems:
             s.on_world_start(self)
         if self.up.total:
             self.messages.append(
                 f"~ The world has shifted since you last descended: {self.up.total} upheaval(s). ~")
-        self.descend()  # enter floor 1
+        if self.architecture:
+            self._build_world()     # one persistent sandbox world (no floors)
+        else:
+            self.descend()          # classic: enter floor 1
 
     # ---- content selection ----
     def _build_zones(self):
@@ -71,6 +80,16 @@ class Game:
             return self._zones[-1][1]
         return self.m["regions"][0]
 
+    def region_at(self, x: int, y: int) -> dict:
+        """Sandbox: the region whose district the tile (x,y) sits in -- resolved by the
+        carved world's tile->note map, not by floor. Falls back to the floor region."""
+        note = getattr(self, "_region_map", {}).get((x, y)) if self.architecture else None
+        if note is not None:
+            r = self._region_by_note.get(note)
+            if r is not None:
+                return r
+        return self.region_for(self.floor)
+
     def log(self, msg: str):
         self.messages.append(msg)
 
@@ -86,6 +105,60 @@ class Game:
         """Broadcast a semantic event to every system's on_event hook."""
         for s in self.systems:
             s.on_event(self, etype, data)
+
+    # ---- sandbox: one persistent world (no floors) ----
+    def _build_world(self):
+        """Carve the WHOLE vault as one world and spawn each note's content into its own
+        district, once. Open-exploration: no descent, no per-floor reset -- you walk it."""
+        from runtime.dungeon import build_world
+        self.floor = 1
+        self.level, self._region_map, plan = build_world(self.m.get("graph", {}), self.seed)
+        px, py = self.level.player_start
+        self.player = make_player(px, py)
+        self.actors, self.items = [], []
+        rng = random.Random(f"{self.seed}:world:spawn")
+
+        # tiles available per note-district, so each note's enemies spawn inside ITS rooms
+        tiles_by_note: dict = {}
+        occupied = {(px, py), self.level.stairs}
+        for (x, y), note in self._region_map.items():
+            if (x, y) not in occupied and self.level.walkable(x, y):
+                tiles_by_note.setdefault(note, []).append((x, y))
+        for v in tiles_by_note.values():
+            rng.shuffle(v)
+
+        # spawn each region's enemies in the district of its anchor note (fall back to any)
+        for e in self.m["enemies"]:
+            note = e["sourceNoteId"]
+            pool = tiles_by_note.get(note) or next((v for v in tiles_by_note.values() if v), None)
+            if not pool:
+                continue
+            spec = {**e, "tier": max(1, min(e["tier"], 3))}   # cap power; identity stays
+            en = make_enemy(spec, *pool.pop())
+            if note in self.up.ascended:
+                empower(en)
+            elif note in self.up.waned:
+                diminish(en)
+            self.actors.append(en)
+
+        # bosses, each in its own region's district
+        for b in self.m["bosses"]:
+            note = b["sourceNoteId"]
+            pool = tiles_by_note.get(note) or next((v for v in tiles_by_note.values() if v), None)
+            if pool:
+                self.actors.append(make_boss(b, *pool.pop()))
+
+        # items / sigils scattered across the world (only in the bare game; systems replace loot)
+        if not self.systems:
+            allfree = [t for v in tiles_by_note.values() for t in v]
+            rng.shuffle(allfree)
+            for spec in self.m["items"]:
+                if allfree:
+                    self.items.append(make_item(spec, *allfree.pop()))
+
+        self.region_name = self.region_at(px, py).get("name", "")
+        for s in self.systems:
+            s.on_floor_enter(self)
 
     # ---- floor lifecycle ----
     def descend(self):
@@ -283,6 +356,21 @@ class Game:
             a.x, a.y = tx, ty
 
     # ---- rendering ----
+    # viewport for the sandbox: a window this big follows the player. Levels smaller than
+    # this (the classic 56x20) render whole and unchanged; only big carved worlds get a camera.
+    VIEW_W, VIEW_H = 56, 20
+
+    def _camera(self):
+        """Top-left (cx, cy) of the viewport, clamped so it never scrolls past the map edge
+        and centers on the player otherwise. Returns the full map for small levels."""
+        lvl = self.level
+        if lvl.w <= self.VIEW_W and lvl.h <= self.VIEW_H:
+            return 0, 0, lvl.w, lvl.h
+        vw, vh = min(self.VIEW_W, lvl.w), min(self.VIEW_H, lvl.h)
+        cx = max(0, min(self.player.x - vw // 2, lvl.w - vw))
+        cy = max(0, min(self.player.y - vh // 2, lvl.h - vh))
+        return cx, cy, vw, vh
+
     def render(self, last_n: int = 6) -> str:
         grid = [row[:] for row in self.level.tiles]
         for it in self.items:
@@ -292,10 +380,13 @@ class Game:
         grid[self.player.y][self.player.x] = "@"
         for s in self.systems:
             s.render_overlay(self, grid)
-        body = "\n".join("".join(r) for r in grid)
+        cx, cy, vw, vh = self._camera()
+        body = "\n".join("".join(grid[y][cx:cx + vw]) for y in range(cy, cy + vh))
         p = self.player
-        hud = (f"Floor {self.floor}/{self.max_floor}  HP {max(0, p.hp)}/{p.max_hp}  "
-               f"ATK {p.atk}  DEF {p.defense}  | {self.region_name}")
+        place = (f"Floor {self.floor}/{self.max_floor}" if not self.architecture
+                 else f"@({p.x},{p.y})")
+        hud = (f"{place}  HP {max(0, p.hp)}/{p.max_hp}  "
+               f"ATK {p.atk}  DEF {p.defense}  | {self.region_at(p.x, p.y).get('name', self.region_name)}")
         extras = "  ·  ".join(e for e in (s.status_line(self) for s in self.systems) if e)
         tail = ("\n" + extras) if extras else ""
         return f"{body}\n{hud}{tail}\n" + "\n".join(self.messages[-last_n:])
