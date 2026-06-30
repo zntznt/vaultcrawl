@@ -214,9 +214,17 @@ def _connect_semilattice(plan, link_adj):
         a, b = C.get(s.a), C.get(s.b)
         if not a or not b:
             continue
-        if len(a.members) >= 2 or len(b.members) >= 2:
-            s.kind = "shared_court"                       # P6 — the overlap made spatial
-        elif a.home != b.home and a.home >= 0 and b.home >= 0:
+        cross = a.home != b.home and a.home >= 0 and b.home >= 0
+        # P6 — a shared court is a GENUINE overlap: a multi-member endpoint whose two
+        # districts actually MEET here (the seam joins differing member-sets). Tagging every
+        # seam that merely touches a multi-member node makes "everything a court" in dense
+        # vaults (a court everywhere is a court nowhere); requiring differing member-sets
+        # keeps courts at the real district seams while still firing inside dense clusters.
+        multi = max(len(a.members), len(b.members)) >= 2
+        overlap_boundary = set(a.members) != set(b.members)
+        if multi and overlap_boundary:
+            s.kind = "shared_court"
+        elif cross:
             s.kind = "gateway"                            # P8 — crossing a district boundary
 
     # (b) discoveries: orphans (no links) hang off their nearest inflection point (P12)

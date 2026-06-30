@@ -138,11 +138,26 @@ def boundaries(plan):
 
 
 def alternating_repetition(plan):
-    order = plan.growth_order or sorted(plan.centers)
-    seq = [plan.centers[c] for c in order if c in plan.centers]
-    if len(seq) < 3:
+    """Rhythm in SPACE: size alternates as you walk the connected map (big room ->
+    small court -> big room), not along the growth order (which is size-sorted, so it
+    can never alternate -- the old bug that pinned this to 0). We BFS the seam graph
+    from the strongest center and score sign-flips of the size delta along that walk."""
+    placed = plan.placed()
+    if len(placed) < 3:
         return None
-    vals = [_value(c) for c in seq]
+    adj = plan.adjacency()
+    start = max(placed, key=lambda c: c.intensity).id
+    seen, order, q = {start}, [start], [start]
+    while q:                                            # deterministic BFS
+        cur = q.pop(0)
+        for nb in adj.get(cur, []):
+            if nb not in seen and nb in plan.centers and plan.centers[nb].footprint:
+                seen.add(nb)
+                order.append(nb)
+                q.append(nb)
+    vals = [_value(plan.centers[c]) for c in order]
+    if len(vals) < 3:
+        return None
     deltas = [vals[i + 1] - vals[i] for i in range(len(vals) - 1)]
     flips = sum(1 for i in range(len(deltas) - 1)
                 if deltas[i] != 0 and deltas[i + 1] != 0 and (deltas[i] > 0) != (deltas[i + 1] > 0))

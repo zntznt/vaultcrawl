@@ -1,0 +1,204 @@
+{
+  "version": "0.1.0",
+  "seed": "da01c837cc4fde14",
+  "generatedFrom": {
+    "vaultPath": "/Users/zntznt/Documents/exploring-ai-generated-roguelike-world-2026-06-28/output/vaultcrawl/sample_vault_hamlet",
+    "noteCount": 3,
+    "linkCount": 4,
+    "communityCount": 1,
+    "padded": false
+  },
+  "bible": {
+    "worldName": "Lower Ritual",
+    "tone": "wry bureaucratic dread",
+    "namingConventions": "Places take the form 'The <adjective> <structure>'; powers borrow the vocabulary of cold iron and wax seals.",
+    "aesthetic": [
+      "moss",
+      "cold iron",
+      "wax seals",
+      "running water"
+    ],
+    "factions": [
+      {
+        "id": "faction_0",
+        "name": "Keepers of Ritual",
+        "ethos": "They guard the borders where one idea bleeds into another.",
+        "clusterId": 0,
+        "relations": []
+      }
+    ]
+  },
+  "graph": {
+    "nodes": {
+      "morning": {
+        "title": "Morning",
+        "pagerank": 0.05,
+        "betweenness": 0.0,
+        "degree": 2,
+        "community": 0,
+        "members": [
+          0
+        ],
+        "bridge": false,
+        "role": "cluster",
+        "activity": 1.0,
+        "tags": [
+          "ritual"
+        ],
+        "neighbors": [
+          "patience",
+          "tea"
+        ]
+      },
+      "patience": {
+        "title": "Patience",
+        "pagerank": 0.475,
+        "betweenness": 0.0,
+        "degree": 2,
+        "community": 0,
+        "members": [
+          0
+        ],
+        "bridge": false,
+        "role": "hub",
+        "activity": 0.386,
+        "tags": [
+          "virtue"
+        ],
+        "neighbors": [
+          "morning",
+          "tea"
+        ]
+      },
+      "tea": {
+        "title": "Tea",
+        "pagerank": 0.475,
+        "betweenness": 0.0,
+        "degree": 2,
+        "community": 0,
+        "members": [
+          0
+        ],
+        "bridge": false,
+        "role": "hub",
+        "activity": 0.0,
+        "tags": [
+          "ritual"
+        ],
+        "neighbors": [
+          "morning",
+          "patience"
+        ]
+      }
+    },
+    "edges": [
+      {
+        "a": "morning",
+        "b": "tea",
+        "interlock": 2
+      },
+      {
+        "a": "morning",
+        "b": "patience",
+        "interlock": 1
+      },
+      {
+        "a": "patience",
+        "b": "tea",
+        "interlock": 2
+      }
+    ]
+  },
+  "regions": [
+    {
+      "id": "region_0",
+      "biome": "marsh",
+      "element": "sacred",
+      "depthBand": [
+        1,
+        26
+      ],
+      "factionId": "faction_0",
+      "sourceNoteId": "tea",
+      "themeTags": [
+        "ritual",
+        "virtue"
+      ],
+      "activity": 0.462,
+      "name": "The Severed Sloughs",
+      "flavor": "Grown from your note 'Tea'. Damp clings to every surface here."
+    }
+  ],
+  "enemies": [
+    {
+      "id": "enemy_0",
+      "archetype": "shade",
+      "tier": 2,
+      "damageType": "frost",
+      "regionId": "region_0",
+      "sourceNoteId": "morning",
+      "name": "Annotated Shade",
+      "flavor": "A shade that drifted out of 'Morning', dealing frost to the unwary."
+    },
+    {
+      "id": "enemy_1",
+      "archetype": "shade",
+      "tier": 5,
+      "damageType": "blade",
+      "regionId": "region_0",
+      "sourceNoteId": "patience",
+      "name": "Marginal Shade of the Choir",
+      "flavor": "A shade that drifted out of 'Patience', dealing blade to the unwary."
+    }
+  ],
+  "bosses": [
+    {
+      "id": "boss_0",
+      "tier": 5,
+      "depth": 26,
+      "regionId": "region_0",
+      "sourceNoteId": "tea",
+      "name": "Tea, the Indexed",
+      "title": "Warden of the Drafting-Mire",
+      "flavor": "The most-linked thought in the vault, made flesh; 2 roads lead to it and none lead away."
+    }
+  ],
+  "items": [
+    {
+      "id": "item_0",
+      "slot": "consumable",
+      "rarity": "uncommon",
+      "powerBudget": 8,
+      "sourceNoteId": "morning",
+      "name": "Sigil of the Unfiled",
+      "flavor": "A uncommon consumable salvaged from 'Morning'."
+    },
+    {
+      "id": "item_1",
+      "slot": "weapon",
+      "rarity": "legendary",
+      "powerBudget": 32,
+      "sourceNoteId": "patience",
+      "name": "Engine of the Unmoved",
+      "flavor": "A legendary weapon salvaged from 'Patience'."
+    },
+    {
+      "id": "item_2",
+      "slot": "weapon",
+      "rarity": "legendary",
+      "powerBudget": 32,
+      "sourceNoteId": "tea",
+      "name": "Annex of the Patient",
+      "flavor": "A legendary weapon salvaged from 'Tea'."
+    }
+  ],
+  "secrets": [],
+  "quests": [
+    {
+      "id": "quest_0",
+      "kind": "escort",
+      "sourceNoteId": "tea",
+      "objective": "Shepherd the Brimming Annex — an unfinished charge left in your own hand."
+    }
+  ]
+}
