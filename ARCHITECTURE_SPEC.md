@@ -379,14 +379,24 @@ Simplicity/Calm prune (#14) and boundaries (P13) counteract it. (d) Determinism 
 the greedy argmax (stable tie-breaks, seeded rng).
 
 **Phasing (proposed build order, each a fleet-able chunk):**
-1. **Metrics** — betweenness + multi-membership + interlock weights in `analyze.py`/manifest.
-2. **SitePlan + wholeness** — the data model (§2) and the scorer (§4), pure, unit-tested.
-3. **Growth + semilattice** — §5 + §6, producing a SitePlan (no carving yet); assert it's a
-   connected semilattice with cycles and shared courts.
-4. **Pattern catalogue** — §3 as registered operators (like brains), each advancing its
-   properties; the carver (§7) → `Level`s.
+1. **[DONE]** **Metrics** — betweenness + multi-membership + interlock weights in
+   `analyze.py`/manifest. (`tests/test_metrics.py`)
+2. **[DONE]** **SitePlan + wholeness** — the data model (§2, `runtime/arch/model.py`) and the
+   scorer (§4, `runtime/arch/wholeness.py`), pure, unit-tested. (`tests/test_wholeness.py`)
+3. **[DONE]** **Growth + semilattice** — §5 + §6 (`runtime/arch/grow.py`), producing a
+   SitePlan; asserted a connected semilattice with cycles and shared courts.
+   (`tests/test_grow.py`)
+4. **[DONE]** **Carver + patterns** — §7 (`runtime/arch/carve.py`): footprints → floor, seams
+   dispatched by pattern (gateway narrow-then-open P8, promenade with bays P7, plain path),
+   focal voids hollowed at strong centers (P10) with the great center keeping the Void (P13),
+   a roughness/edge pass (P15). Connectivity enforced LAST so no operator can strand a room.
+   `grid_wholeness()` is the carve's regression metric (§4/§11): the §7 carve scores ~0.97 vs
+   ~0.70 for a plain stamp on the sample worlds. (`tests/test_carve.py`)
+   *Still open within §3:* the full pattern *catalogue* as registered operators (Megastructure,
+   Wing, Activity Node, Growth Ring, Echo-motif) — the carver implements the load-bearing
+   operators, not yet all 15 as pluggable Pattern objects.
 5. **Prototype/visualizer** — render maps + wholeness report across sample vaults (the "seen"
-   gate) and tune.
+   gate) and tune the weights against maps a human judges alive.
 6. **Integrate** — wire into `dungeon.py`/`mapping.py` behind the fallback; full-stack
    integration + wholeness regression; README.
 
