@@ -28,10 +28,14 @@ for _k in ("alternating_repetition", "deep_interlock", "contrast",
 
 _AREA_MIN, _AREA_MAX = 4, 64          # levels of scale: leaf nook .. the great void
 _GAP = 1                              # one-cell wall between rooms (boundaries + positive space)
+_SPRAWL = 1.0                          # world-scale factor set by grow(sprawl=...): areas
+                                       # scale by it, separations by sqrt of it on top of
+                                       # the bigger radii, so distance grows ~linearly
 
 
 def _area_of(intensity: float) -> int:
-    return int(round(_AREA_MIN + (_AREA_MAX - _AREA_MIN) * (max(0.0, intensity) ** 1.6)))
+    base = _AREA_MIN + (_AREA_MAX - _AREA_MIN) * (max(0.0, intensity) ** 1.6)
+    return int(round(base * _SPRAWL))
 
 
 def _radius(area: int) -> float:
@@ -90,22 +94,26 @@ def _candidate_seeds(plan, c, link_adj, rng):
         nx, ny = nb.pos
         rn = _radius(nb.area)
         for ux, uy in _ANGLES:
-            d = rn + rc + _GAP + 1
+            d = (rn + rc + _GAP + 1) * math.sqrt(_SPRAWL)
             seeds.append((int(round(nx + ux * d)), int(round(ny + uy * d))))
     # fallback: spiral around the global core so a disconnected piece can still land
     cx, cy = (plan.centers[plan.growth_order[0]].pos if plan.growth_order
               and plan.centers[plan.growth_order[0]].footprint else (0, 0))
     for ring in range(2, 40, 3):
         for ux, uy in _ANGLES:
-            seeds.append((int(round(cx + ux * ring * 3)), int(round(cy + uy * ring * 3))))
+            step = ring * 3 * math.sqrt(_SPRAWL)
+            seeds.append((int(round(cx + ux * step)), int(round(cy + uy * step))))
         if len(seeds) > 80:
             break
     return seeds
 
 
-def grow(graph: dict, seed="arch") -> SitePlan:
+def grow(graph: dict, seed="arch", sprawl: float = 1.0) -> SitePlan:
+    global _SPRAWL
+    _SPRAWL = max(1.0, float(sprawl))
     plan = from_graph(graph)
     rng = random.Random(f"{seed}:grow")
+
     link_adj = plan.adjacency()                          # from the interlock edges
 
     order = sorted(plan.centers.values(), key=lambda c: (-c.intensity, c.id))
@@ -140,6 +148,7 @@ def grow(graph: dict, seed="arch") -> SitePlan:
             c.sub_centers = [Center(id=c.id + ".focal")]
     order[0].sub_centers = [Center(id=order[0].id + ".void")]   # the great void's calm centre
 
+    _explode(plan)
     _normalize(plan)
     _connect_semilattice(plan, link_adj)
     return plan
@@ -163,6 +172,62 @@ def _spiral_place(c, area, occupied, rng):
                 return (fp, _centroid(fp))
     fp = {(rng.randint(500, 600), rng.randint(500, 600))}   # never happens in practice
     return (fp, _centroid(fp))
+
+
+# how tightly a district's own buildings are pulled toward their local center
+# (0 = leave as grown, spread out; 0.55 = gathered into a compact settlement).
+_GATHER = 0.55
+
+
+def _explode(plan):
+    """Sprawl AND gather: push each community RADIALLY OUT from the world centroid
+    so districts separate (real wilderness between them), while pulling each
+    community's own buildings IN toward their local center so a settlement is
+    COMPACT — dense towns, sparse wild. Buildings never overlap (gather stops at a
+    one-cell gap), so the carve/connectivity stay valid."""
+    placed = plan.placed()
+    if not placed:
+        return
+    gx = sum(c.pos[0] for c in placed) / len(placed)
+    gy = sum(c.pos[1] for c in placed) / len(placed)
+    groups: dict = {}
+    for c in placed:
+        groups.setdefault(c.members[0] if c.members else -1, []).append(c)
+    for cs in groups.values():
+        cx = sum(c.pos[0] for c in cs) / len(cs)
+        cy = sum(c.pos[1] for c in cs) / len(cs)
+        sep = (_SPRAWL - 1.0)   # 0 when sprawl==1
+        occupied: set = set()
+        # gather buildings inward toward their local center, then separate districts
+        for c in sorted(cs, key=lambda c: (c.pos[0] - cx) ** 2 + (c.pos[1] - cy) ** 2):
+            ix = int(round((cx - c.pos[0]) * _GATHER))
+            iy = int(round((cy - c.pos[1]) * _GATHER))
+            ox = int(round((cx - gx) * sep)) + ix
+            oy = int(round((cy - gy) * sep)) + iy
+            # back off the inward pull until the footprint clears its neighbours
+            fp0 = c.footprint
+            while ix or iy:
+                moved = {(x + ox, y + oy) for (x, y) in fp0}
+                if not (moved & occupied) and not _touch(moved, occupied):
+                    break
+                # ease the inward component by one step toward the outward-only offset
+                ix -= (1 if ix > 0 else -1 if ix < 0 else 0)
+                iy -= (1 if iy > 0 else -1 if iy < 0 else 0)
+                ox = int(round((cx - gx) * sep)) + ix
+                oy = int(round((cy - gy) * sep)) + iy
+            c.footprint = {(x + ox, y + oy) for (x, y) in fp0}
+            c.pos = (c.pos[0] + ox, c.pos[1] + oy)
+            occupied |= c.footprint
+
+
+def _touch(cells, occupied):
+    """True if any cell in `cells` is orthogonally adjacent to an occupied cell
+    (so we keep a one-tile wall gap between gathered buildings)."""
+    for (x, y) in cells:
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            if (x + dx, y + dy) in occupied:
+                return True
+    return False
 
 
 def _normalize(plan):

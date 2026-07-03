@@ -435,3 +435,32 @@ class Pattern:
   the whole pipeline is corpus-driven, aesthetic-free.
 - *"sprawling megastructures, smaller discoveries, organic cities"* → §3 P1 / P12 / P2; §8
   scaling by corpus size.
+
+---
+
+## 13. Realms & thresholds — the world-graph is a semilattice (the "JRPG shape")
+
+Agreed with Zeo (re-established 2026-07-02 after the original conversation was lost;
+LOGGED THIS TIME). One flat map is still a tree — branches on a plane. A chain of
+floors is still a tree. The structure that is neither: a GRAPH OF MAPS.
+
+- **Realms are nodes**: the surface overworld (§8's grown world) plus one
+  depths-realm per region. Depths use the classic rooms+MST generator; both kinds of
+  map carry note-rooms, tints, motifs, caches.
+- **Gates are edges**: each district's TOWN (its anchor room — settled ground, its
+  Keeper, rest, no hostile may enter) holds the door (>) down into its region's
+  depths, where the region's warden dwells. A stair (<) climbs home. And PASSAGES (>)
+  join the depths of BORDERING regions — the bridge notes made spatial.
+- **Loops abound**: down through one district's door, across beneath the border, up
+  another district's stair — a cycle no tree contains. "A City is Not a Tree" is now
+  true of the map-graph itself, not only of each map's corridors.
+- **Realms persist** (engine snapshots per realm): what you kill stays dead, what you
+  search stays searched. Travel is geography, not an encounter generator.
+
+Alexander mapping: towns = activity nodes / common land (safe, social hearts);
+gates = P8 Main Gateway (a threshold that changes the rules); surface-to-depths =
+the intimacy gradient (public square above, private depths, the innermost room —
+the warden — at the bottom); the realm graph = semilattice (§6, lifted a level).
+
+Implementation: `Game.traverse()` + `_generate_depths()` + per-realm snapshots
+(`runtime/game.py`); tests in `tests/test_realms.py`.

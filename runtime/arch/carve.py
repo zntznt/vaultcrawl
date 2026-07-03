@@ -241,6 +241,11 @@ def carve(plan, seed="carve") -> Level:
         if c.sub_centers:
             _carve_focal_void(tiles, c, w, h)
 
+    # 3.5) room-scale interior patterns -- themed substructures matched by each
+    # center's own dynamics (role, age, membership); see interiors.py
+    from .interiors import apply_interiors
+    apply_interiors(plan, tiles, w, h, seed)
+
     # 4) P15 -- roughness + echo: adapt the edges so nothing reads as stamped/gridded
     _roughness_echo(tiles, plan, w, h, rng)
 
