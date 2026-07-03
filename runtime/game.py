@@ -441,17 +441,15 @@ class Game:
                 break
         if best is not None:
             self.player.x, self.player.y = best[1]
-            # the ground where you wake is settled: a safe clearing to start from, and
-            # any creature that begins too close is nudged back to its own building so
-            # nothing is breathing down your neck at the very first turn.
+            # the spot was already chosen clear of creatures (foe_dist filter above);
+            # mark the clearing around it settled so nothing hostile crosses in while
+            # you get your bearings.
             bx, by = best[1]
-            safe = set()
             for dx in range(-4, 5):
                 for dy in range(-4, 5):
                     t = (bx + dx, by + dy)
                     if self.level.walkable(*t) and self.room_at(*t) is None:
                         self._town_tiles.add(t)
-                        safe.add(t)
 
     def _interest_near(self, x, y) -> bool:
         """True if a discovery is adjacent to (x,y): a cache, a wild landmark, a gate,
@@ -523,6 +521,11 @@ class Game:
                          getattr(self, "_region_of", {}),
                          getattr(self, "_fixtures", {}),
                          getattr(self, "_fixture_room", {})),
+                # the render overlay + per-region environments are realm-specific
+                # (depths clears _overlay to {}); without these a surface return
+                # comes back with blank biome terrain and the wrong ambient voice.
+                "overlay": (getattr(self, "_overlay", {}),
+                            getattr(self, "_region_env", {})),
                 "pos": (self.player.x, self.player.y)}
 
     def _restore(self, s: dict, arrive=None):
@@ -537,6 +540,7 @@ class Game:
          self._frictions, self._cell_region) = s["felt"]
         (self._wild_structs, self._region_of,
          self._fixtures, self._fixture_room) = s.get("wild", ({}, {}, {}, {}))
+        self._overlay, self._region_env = s.get("overlay", ({}, {}))
         self.player.x, self.player.y = arrive or s["pos"]
 
     def traverse(self) -> bool:

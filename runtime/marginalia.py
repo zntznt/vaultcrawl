@@ -38,7 +38,9 @@ def weave(community: dict, note_id: str, rng, max_words: int = 18) -> str:
         return ""
     strip = ".,!?;:\"'"   # match words, not their sentence-position punctuation
     vocab = {w.strip(strip) for ln in (lines or []) for w in ln.split()}
-    words = rng.choice(starters).split(" ")
+    words = [w for w in rng.choice(starters).split(" ") if w]
+    if len(words) < 2:   # a malformed/older starter can't seed an order-2 walk
+        return " ".join(words) if words else ""
     while len(words) < max_words:
         nxt = chain.get(f"{words[-2]} {words[-1]}")
         if not nxt:
@@ -47,10 +49,10 @@ def weave(community: dict, note_id: str, rng, max_words: int = 18) -> str:
         w = rng.choice(own) if own and rng.random() < 0.7 else rng.choice(nxt)
         words.append(w)
         # stop at a sentence end, but not before the line has any body to it
-        if w[-1] in ".!?" and len(words) >= 6:
+        if w and w[-1] in ".!?" and len(words) >= 6:
             break
     line = " ".join(words)
-    return line if line[-1] in ".!?" else line + "..."
+    return line if line and line[-1] in ".!?" else line + "..."
 
 
 class MarginaliaSystem(System):

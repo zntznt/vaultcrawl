@@ -24,15 +24,22 @@ def test_corpus_baked_and_deterministic():
 
 
 def test_weave_uses_only_the_vaults_words():
+    # a woven line is either an intact note sentence or a chain-walk; every word
+    # must still come from the vault (the chain OR the note's own lines), never
+    # a template. Punctuation is stripped before comparison.
     comm = next(iter(_manifest()["corpus"].values()))
+    strip = ".,!?;:\"'"
     vocab = set()
     for prefix, nexts in comm["chain"].items():
-        vocab.update(prefix.split(" "))
-        vocab.update(nexts)
+        vocab.update(w.strip(strip) for w in prefix.split(" "))
+        vocab.update(w.strip(strip) for w in nexts)
+    for lines in comm.get("lines", {}).values():
+        for ln in lines:
+            vocab.update(w.strip(strip) for w in ln.split(" "))
     nid = next(iter(comm["starters"]))
     line = weave(comm, nid, random.Random(1))
     assert line
-    assert all(w in vocab for w in line.rstrip(".").split(" ") if w), line
+    assert all(w.strip(strip) in vocab for w in line.split(" ") if w.strip(strip)), line
 
 
 def test_weave_is_seeded():
@@ -115,6 +122,15 @@ def test_chain_is_prose_not_structure():
     assert "lantern still" in joined
 
 
+def test_weave_survives_malformed_starters():
+    # a single-word or empty starter must not IndexError (older/hand-authored
+    # manifests, or corpus-shape drift) — degrade to inert, per the docstring
+    assert weave({"chain": {"x y": ["z."]}, "starters": {"n": ["solo"]}, "lines": {}},
+                 "n", random.Random(0)) in ("solo", "solo...")
+    assert weave({"chain": {}, "starters": {"n": [""]}, "lines": {}},
+                 "n", random.Random(0)) == ""
+
+
 def test_marginalia_inert_without_corpus():
     m = _manifest()
     del m["corpus"]
@@ -127,6 +143,7 @@ if __name__ == "__main__":
                test_weave_is_seeded, test_marginalia_lands_in_its_notes_room_and_reads,
                test_lines_keep_prose_and_drop_structure, test_weave_prefers_intact_sentences,
                test_weave_walk_leans_home, test_chain_is_prose_not_structure,
+               test_weave_survives_malformed_starters,
                test_marginalia_inert_without_corpus):
         fn()
         print(f"ok {fn.__name__}")

@@ -77,9 +77,26 @@ def test_the_map_graph_is_not_a_tree():
         "surfaced through a DIFFERENT door: the loop no tree contains"
 
 
+def test_surface_overlay_survives_the_round_trip():
+    """Down to the depths and back: the surface must return with its biome overlay
+    and per-region environments intact (the depths clear _overlay to {})."""
+    g = _game()
+    overlay_before = dict(g._overlay)
+    envs_before = dict(g._region_env)
+    assert overlay_before, "the surface has a biome overlay to lose"
+    door, _rid = _enter_first_depths(g)
+    assert g._overlay == {}, "the depths clear the surface overlay"
+    up = next(p for p, d in g._gates.items() if d == "surface")
+    g.player.x, g.player.y = up
+    g.ascend()
+    assert g._overlay == overlay_before, "surface biome terrain came back intact"
+    assert g._region_env == envs_before, "per-region environments came back intact"
+
+
 if __name__ == "__main__":
     for fn in (test_towns_are_settled_ground,
                test_depths_hold_the_warden_and_the_way_home,
-               test_realms_persist, test_the_map_graph_is_not_a_tree):
+               test_realms_persist, test_the_map_graph_is_not_a_tree,
+               test_surface_overlay_survives_the_round_trip):
         fn()
         print(f"ok {fn.__name__}")
