@@ -125,8 +125,13 @@ def load_vault(root: str) -> Vault:
     # an excluded note leaves NO trace: even its title is scrubbed from the kept
     # bodies (a private note's filename can itself be sensitive), so nothing of
     # it reaches the seed, the corpus, or an LLM prompt
-    if excluded_titles:
-        rx = re.compile("|".join(re.escape(t) for t in sorted(excluded_titles)),
+    # word-BOUNDARY anchored: a bare re.escape substring scrub silently corrupts
+    # every kept body when a private note has a short/common title (a note titled
+    # "AI" would strip "ai" out of "said", "detail", "maintain"). Anchor to whole
+    # words, and skip 1-2 char titles entirely (too ambiguous to redact safely).
+    titles = sorted({t for t in excluded_titles if len(t) >= 3}, key=len, reverse=True)
+    if titles:
+        rx = re.compile(r"\b(?:" + "|".join(re.escape(t) for t in titles) + r")\b",
                         re.IGNORECASE)
         for n in notes.values():
             n.body = rx.sub("", n.body)

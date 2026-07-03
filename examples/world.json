@@ -363,73 +363,73 @@
   "enemies": [
     {
       "id": "enemy_0",
-      "archetype": "shade",
+      "archetype": "chorus",
       "tier": 2,
       "damageType": "blade",
       "regionId": "region_0",
       "sourceNoteId": "discipline",
-      "name": "Gilded Shade of the Choir",
-      "flavor": "A shade that drifted out of 'Discipline', dealing blade to the unwary."
+      "name": "the Chorus of 'Discipline'",
+      "flavor": "A chorus that drifted out of 'Discipline', dealing blade to the unwary."
     },
     {
       "id": "enemy_1",
-      "archetype": "warden",
+      "archetype": "chorus",
       "tier": 4,
       "damageType": "frost",
       "regionId": "region_0",
       "sourceNoteId": "journaling",
-      "name": "Annotated Warden",
-      "flavor": "A warden that drifted out of 'Journaling', dealing frost to the unwary."
+      "name": "the Chorus of 'Journaling'",
+      "flavor": "A chorus that drifted out of 'Journaling', dealing frost to the unwary."
     },
     {
       "id": "enemy_2",
-      "archetype": "echo",
+      "archetype": "scribe",
       "tier": 2,
       "damageType": "arc",
       "regionId": "region_0",
       "sourceNoteId": "memento mori",
-      "name": "Quiet Echo",
-      "flavor": "A echo that drifted out of 'Memento Mori', dealing arc to the unwary."
+      "name": "the Scribe of 'Memento Mori'",
+      "flavor": "A scribe that drifted out of 'Memento Mori', dealing arc to the unwary."
     },
     {
       "id": "enemy_3",
-      "archetype": "echo",
+      "archetype": "revenant",
       "tier": 3,
       "damageType": "flame",
       "regionId": "region_0",
       "sourceNoteId": "second brain",
-      "name": "Hollow Echo of the Engine",
-      "flavor": "A echo that drifted out of 'Second Brain', dealing flame to the unwary."
+      "name": "the Revenant of 'Second Brain'",
+      "flavor": "A revenant that drifted out of 'Second Brain', dealing flame to the unwary."
     },
     {
       "id": "enemy_4",
-      "archetype": "construct",
+      "archetype": "myriad",
       "tier": 5,
       "damageType": "frost",
       "regionId": "region_1",
       "sourceNoteId": "ecs",
-      "name": "Hollow Construct",
-      "flavor": "A construct that drifted out of 'Ecs', dealing frost to the unwary."
+      "name": "the Myriad of 'ECS'",
+      "flavor": "A myriad that drifted out of 'ECS', dealing frost to the unwary."
     },
     {
       "id": "enemy_5",
-      "archetype": "scribe",
+      "archetype": "swarm",
       "tier": 3,
       "damageType": "decay",
       "regionId": "region_1",
       "sourceNoteId": "procedural generation",
-      "name": "Patient Scribe",
-      "flavor": "A scribe that drifted out of 'Procedural Generation', dealing decay to the unwary."
+      "name": "the Swarm of 'Procedural Generation'",
+      "flavor": "A swarm that drifted out of 'Procedural Generation', dealing decay to the unwary."
     },
     {
       "id": "enemy_6",
-      "archetype": "echo",
+      "archetype": "seraph",
       "tier": 5,
       "damageType": "decay",
       "regionId": "region_1",
       "sourceNoteId": "rust",
-      "name": "Brimming Echo",
-      "flavor": "A echo that drifted out of 'Rust', dealing decay to the unwary."
+      "name": "the Seraph of 'Rust'",
+      "flavor": "A seraph that drifted out of 'Rust', dealing decay to the unwary."
     }
   ],
   "bosses": [
@@ -544,9 +544,6 @@
   "corpus": {
     "0": {
       "chain": {
-        "Discipline Freedom": [
-          "is"
-        ],
         "Freedom is": [
           "downstream"
         ],
@@ -557,37 +554,9 @@
           "discipline."
         ],
         "of discipline.": [
-          "The"
-        ],
-        "discipline. The": [
-          "structure"
-        ],
-        "The structure": [
-          "I"
-        ],
-        "structure I": [
-          "resent"
-        ],
-        "I resent": [
-          "on"
-        ],
-        "resent on": [
-          "Monday"
-        ],
-        "on Monday": [
-          "is"
-        ],
-        "Monday is": [
-          "the"
-        ],
-        "is the": [
-          "structure",
-          "load-bearing"
-        ],
-        "the structure": [
           "that"
         ],
-        "structure that": [
+        "discipline. that": [
           "protects"
         ],
         "that protects": [
@@ -619,39 +588,6 @@
         ],
         "into a": [
           "self."
-        ],
-        "a self.": [
-          "Define"
-        ],
-        "self. Define": [
-          "one"
-        ],
-        "Define one": [
-          "keystone"
-        ],
-        "one keystone": [
-          "habit"
-        ],
-        "keystone habit": [
-          "for"
-        ],
-        "habit for": [
-          "next"
-        ],
-        "for next": [
-          "month"
-        ],
-        "next month": [
-          "Related:"
-        ],
-        "month Related:": [
-          "Stoicism,"
-        ],
-        "Related: Stoicism,": [
-          "Journaling."
-        ],
-        "Journaling Writing": [
-          "is"
         ],
         "Writing is": [
           "how"
@@ -700,15 +636,9 @@
           "back."
         ],
         "talks back.": [
-          "A"
-        ],
-        "back. A": [
-          "daily"
-        ],
-        "A daily": [
           "entry"
         ],
-        "daily entry": [
+        "back. entry": [
           "is"
         ],
         "entry is": [
@@ -785,21 +715,6 @@
         "see Second": [
           "Brain."
         ],
-        "Second Brain.": [
-          "Anchored"
-        ],
-        "Brain. Anchored": [
-          "by"
-        ],
-        "Anchored by": [
-          "Stoicism."
-        ],
-        "Memento Mori": [
-          "Remember"
-        ],
-        "Mori Remember": [
-          "that"
-        ],
         "Remember that": [
           "you"
         ],
@@ -872,21 +787,6 @@
         "loses its": [
           "grip."
         ],
-        "its grip.": [
-          "See"
-        ],
-        "grip. See": [
-          "also"
-        ],
-        "See also": [
-          "Stoicism."
-        ],
-        "Second Brain": [
-          "The"
-        ],
-        "Brain The": [
-          "vault"
-        ],
         "The vault": [
           "is"
         ],
@@ -915,21 +815,9 @@
           "thought."
         ],
         "as thought.": [
-          "The"
-        ],
-        "thought. The": [
-          "interesting"
-        ],
-        "The interesting": [
-          "claim"
-        ],
-        "interesting claim": [
-          "is"
-        ],
-        "claim is": [
           "that"
         ],
-        "is that": [
+        "thought. that": [
           "structure"
         ],
         "that structure": [
@@ -986,63 +874,6 @@
         "and my": [
           "making."
         ],
-        "my making.": [
-          "It"
-        ],
-        "making. It": [
-          "connects"
-        ],
-        "It connects": [
-          "Journaling"
-        ],
-        "connects Journaling": [
-          "to"
-        ],
-        "Journaling to": [
-          "the"
-        ],
-        "to the": [
-          "Roguelike"
-        ],
-        "the Roguelike": [
-          "Project,"
-        ],
-        "Roguelike Project,": [
-          "because"
-        ],
-        "Project, because": [
-          "both"
-        ],
-        "because both": [
-          "are"
-        ],
-        "both are": [
-          "about"
-        ],
-        "are about": [
-          "turning"
-        ],
-        "about turning": [
-          "a"
-        ],
-        "turning a": [
-          "private"
-        ],
-        "a private": [
-          "graph"
-        ],
-        "private graph": [
-          "into"
-        ],
-        "graph into": [
-          "something"
-        ],
-        "into something": [
-          "walkable."
-        ],
-        "Stoicism The": [
-          "practice"
-        ],
         "The practice": [
           "of"
         ],
@@ -1075,15 +906,9 @@
           "is"
         ],
         "is not.": [
-          "Everything"
-        ],
-        "not. Everything": [
-          "else"
-        ],
-        "Everything else": [
           "follows"
         ],
-        "else follows": [
+        "not. follows": [
           "from"
         ],
         "follows from": [
@@ -1094,102 +919,65 @@
         ],
         "that one": [
           "cut."
-        ],
-        "one cut.": [
-          "The"
-        ],
-        "cut. The": [
-          "dichotomy"
-        ],
-        "The dichotomy": [
-          "of"
-        ],
-        "dichotomy of": [
-          "control"
-        ],
-        "of control": [
-          "is"
-        ],
-        "control is": [
-          "the"
-        ],
-        "the load-bearing": [
-          "idea"
-        ],
-        "load-bearing idea": [
-          "I"
-        ],
-        "idea I": [
-          "keep"
-        ],
-        "I keep": [
-          "returning"
-        ],
-        "keep returning": [
-          "to."
-        ],
-        "returning to.": [
-          "Connected"
-        ],
-        "to. Connected": [
-          "ideas:"
-        ],
-        "Connected ideas:": [
-          "Memento"
-        ],
-        "ideas: Memento": [
-          "Mori,"
-        ],
-        "Memento Mori,": [
-          "Discipline,"
-        ],
-        "Mori, Discipline,": [
-          "Journaling."
         ]
       },
       "starters": {
         "discipline": [
           "Freedom is",
-          "The structure",
           "that protects",
-          "Small repeated",
-          "Define one",
-          "Related: Stoicism,"
+          "Small repeated"
         ],
         "journaling": [
           "Writing is",
           "The page",
           "entry is",
-          "This is",
-          "Anchored by"
+          "This is"
         ],
         "memento mori": [
           "Remember that",
           "Not as",
-          "The hours",
-          "See also"
+          "The hours"
         ],
         "second brain": [
           "The vault",
-          "The interesting",
           "that structure",
-          "This idea",
-          "It connects",
-          "Roguelike Project,"
+          "This idea"
         ],
         "stoicism": [
           "The practice",
-          "follows from",
-          "The dichotomy",
-          "Connected ideas:"
+          "follows from"
+        ]
+      },
+      "lines": {
+        "discipline": [
+          "Freedom is downstream of discipline.",
+          "that protects me by Friday.",
+          "Small repeated acts compound into a self."
+        ],
+        "journaling": [
+          "Writing is how I find out what I think.",
+          "The page is a mirror that talks back.",
+          "entry is less about the record and more about the act of noticing.",
+          "This is also where my inner life meets my systems — see Second Brain."
+        ],
+        "memento mori": [
+          "Remember that you will die.",
+          "Not as morbidity but as a lens that sharpens attention.",
+          "The hours are not infinite, so the trivial loses its grip."
+        ],
+        "second brain": [
+          "The vault is a second brain: notes as nodes, links as thought.",
+          "that structure emerges — clusters form around obsessions without me planning them.",
+          "This idea bridges my inner practice and my making."
+        ],
+        "stoicism": [
+          "The practice of separating what is in my control from what is not.",
+          "follows from that one cut."
         ]
       }
     },
     "1": {
       "chain": {
-        "ECS Entity-Component-System:": [
-          "data"
-        ],
         "Entity-Component-System: data": [
           "in"
         ],
@@ -1215,55 +1003,9 @@
           "entities."
         ],
         "in entities.": [
-          "A"
-        ],
-        "entities. A": [
-          "clean"
-        ],
-        "A clean": [
-          "fit"
-        ],
-        "clean fit": [
-          "for"
-        ],
-        "fit for": [
-          "a"
-        ],
-        "for a": [
-          "roguelike",
-          "seed-driven"
-        ],
-        "a roguelike": [
-          "where"
-        ],
-        "roguelike where": [
-          "everything"
-        ],
-        "where everything": [
-          "is"
-        ],
-        "everything is": [
-          "\"a"
-        ],
-        "is \"a": [
-          "thing"
-        ],
-        "\"a thing": [
-          "with"
-        ],
-        "thing with": [
-          "stats"
-        ],
-        "with stats": [
-          "and"
-        ],
-        "stats and": [
-          "tags.\""
-        ],
-        "and tags.\"": [
           "Part"
         ],
-        "tags.\" Part": [
+        "entities. Part": [
           "of"
         ],
         "Part of": [
@@ -1285,12 +1027,6 @@
         ],
         "implemented in": [
           "Rust."
-        ],
-        "Procedural Generation": [
-          "The"
-        ],
-        "Generation The": [
-          "art"
         ],
         "The art": [
           "of"
@@ -1318,15 +1054,9 @@
           "markdown"
         ],
         "a seed.": [
-          "Connectivity"
-        ],
-        "seed. Connectivity": [
-          "first"
-        ],
-        "Connectivity first": [
           "(Delaunay"
         ],
-        "first (Delaunay": [
+        "seed. (Delaunay": [
           "+"
         ],
         "(Delaunay +": [
@@ -1354,18 +1084,9 @@
           "decorate."
         ],
         "then decorate.": [
-          "Never"
-        ],
-        "decorate. Never": [
-          "let"
-        ],
-        "Never let": [
-          "the"
-        ],
-        "let the": [
           "decorator"
         ],
-        "the decorator": [
+        "decorate. decorator": [
           "touch"
         ],
         "decorator touch": [
@@ -1385,7 +1106,6 @@
         ],
         "Roguelike Project": [
           "and",
-          "A",
           "and"
         ],
         "Project and": [
@@ -1397,9 +1117,6 @@
         ],
         "leans on": [
           "Rust."
-        ],
-        "Project A": [
-          "traditional"
         ],
         "A traditional": [
           "roguelike"
@@ -1426,15 +1143,9 @@
           "vault."
         ],
         "markdown vault.": [
-          "The"
-        ],
-        "vault. The": [
-          "pitch:"
-        ],
-        "The pitch:": [
           "definite"
         ],
-        "pitch: definite": [
+        "vault. definite": [
           "mechanical"
         ],
         "definite mechanical": [
@@ -1458,87 +1169,6 @@
         "layer on": [
           "top."
         ],
-        "on top.": [
-          "Decide"
-        ],
-        "top. Decide": [
-          "on"
-        ],
-        "Decide on": [
-          "the"
-        ],
-        "on the": [
-          "world-manifest"
-        ],
-        "the world-manifest": [
-          "schema"
-        ],
-        "world-manifest schema": [
-          "Prototype"
-        ],
-        "schema Prototype": [
-          "the"
-        ],
-        "Prototype the": [
-          "graph"
-        ],
-        "the graph": [
-          "->"
-        ],
-        "graph ->": [
-          "dungeon"
-        ],
-        "-> dungeon": [
-          "mapping"
-        ],
-        "dungeon mapping": [
-          "Wire"
-        ],
-        "mapping Wire": [
-          "up"
-        ],
-        "Wire up": [
-          "a"
-        ],
-        "up a": [
-          "real"
-        ],
-        "a real": [
-          "model"
-        ],
-        "real model": [
-          "for"
-        ],
-        "model for": [
-          "flavor"
-        ],
-        "for flavor": [
-          "Built"
-        ],
-        "flavor Built": [
-          "on"
-        ],
-        "Built on": [
-          "Procedural"
-        ],
-        "on Procedural": [
-          "Generation,"
-        ],
-        "Procedural Generation,": [
-          "Rust,"
-        ],
-        "Generation, Rust,": [
-          "and"
-        ],
-        "Rust, and": [
-          "an"
-        ],
-        "and an": [
-          "ECS."
-        ],
-        "Rust Memory": [
-          "safety"
-        ],
         "Memory safety": [
           "without"
         ],
@@ -1552,33 +1182,9 @@
           "collector."
         ],
         "garbage collector.": [
-          "The"
-        ],
-        "collector. The": [
-          "borrow"
-        ],
-        "The borrow": [
-          "checker"
-        ],
-        "borrow checker": [
-          "is"
-        ],
-        "checker is": [
-          "a"
-        ],
-        "is a": [
-          "strict"
-        ],
-        "a strict": [
-          "teacher"
-        ],
-        "strict teacher": [
-          "but"
-        ],
-        "teacher but": [
           "the"
         ],
-        "but the": [
+        "collector. the": [
           "determinism"
         ],
         "the determinism": [
@@ -1601,6 +1207,9 @@
         ],
         "it for": [
           "a"
+        ],
+        "for a": [
+          "seed-driven"
         ],
         "a seed-driven": [
           "game."
@@ -1633,40 +1242,48 @@
       "starters": {
         "ecs": [
           "Entity-Component-System: data",
-          "A clean",
           "Part of"
         ],
         "procedural generation": [
           "The art",
           "(Delaunay +",
-          "Never let",
           "decorator touch",
           "Feeds the"
         ],
         "roguelike project": [
           "A traditional",
-          "definite mechanical",
-          "Decide on",
-          "Prototype the",
-          "Wire up",
-          "Built on"
+          "definite mechanical"
         ],
         "rust": [
           "Memory safety",
-          "The borrow",
           "the determinism",
           "Used across"
+        ]
+      },
+      "lines": {
+        "ecs": [
+          "Entity-Component-System: data in components, behavior in systems, identity in entities.",
+          "Part of the Roguelike Project, implemented in Rust."
+        ],
+        "procedural generation": [
+          "The art of generating fair, surprising content from a seed.",
+          "(Delaunay + minimum spanning tree guarantees a path), then decorate.",
+          "decorator touch the guarantees.",
+          "Feeds the Roguelike Project and leans on Rust."
+        ],
+        "roguelike project": [
+          "A traditional roguelike whose world is generated from a markdown vault.",
+          "definite mechanical structures, a generative semantic layer on top."
+        ],
+        "rust": [
+          "Memory safety without a garbage collector.",
+          "the determinism and speed are worth it for a seed-driven game.",
+          "Used across the Roguelike Project and pairs naturally with an ECS."
         ]
       }
     },
     "-1": {
       "chain": {
-        "Grocery List": [
-          "Oat"
-        ],
-        "List Oat": [
-          "milk,"
-        ],
         "Oat milk,": [
           "lentils,"
         ],
@@ -1683,36 +1300,9 @@
           "sourdough."
         ],
         "oil, sourdough.": [
-          "A"
-        ],
-        "sourdough. A": [
-          "note"
-        ],
-        "A note": [
-          "with"
-        ],
-        "note with": [
-          "no"
-        ],
-        "with no": [
-          "links"
-        ],
-        "no links": [
-          "and"
-        ],
-        "links and": [
-          "no"
-        ],
-        "and no": [
-          "tags"
-        ],
-        "no tags": [
-          "—"
-        ],
-        "tags —": [
           "an"
         ],
-        "— an": [
+        "sourdough. an": [
           "orphan"
         ],
         "an orphan": [
@@ -1741,29 +1331,18 @@
         ],
         "a hidden": [
           "room."
-        ],
-        "hidden room.": [
-          "Actually"
-        ],
-        "room. Actually": [
-          "go"
-        ],
-        "Actually go": [
-          "to"
-        ],
-        "go to": [
-          "the"
-        ],
-        "to the": [
-          "store"
         ]
       },
       "starters": {
         "grocery list": [
           "Oat milk,",
-          "A note",
-          "an orphan",
-          "Actually go"
+          "an orphan"
+        ]
+      },
+      "lines": {
+        "grocery list": [
+          "Oat milk, lentils, coffee, olive oil, sourdough.",
+          "an orphan in the graph, destined to become a hidden room."
         ]
       }
     }
