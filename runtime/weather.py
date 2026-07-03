@@ -108,7 +108,7 @@ class WeatherSystem(System):
         if self.rng.random() < _LIGHTNING_P:
             x, y = self.rng.choice(free)
             r.ignite(x, y, _BOLT_LIFE)
-            game.log("Lightning splits the dark.")
+            game.log("Lightning splits the dark.", ambient=True)
 
     def _rising_damp(self, game, r, free):
         # damp creeps out from whatever is already wet, plus one fresh seep so it keeps rising

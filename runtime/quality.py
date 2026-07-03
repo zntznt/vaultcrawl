@@ -64,8 +64,13 @@ def scale_creature(actor, tier: int):
     actor.atk += tier
     actor.defense = getattr(actor, "defense", 0) + tier // 2
     base = getattr(actor, "name", "creature")
-    if not base.startswith(NAMES[tier]):
-        actor.name = f"{NAMES[tier]} {base}"
+    if NAMES[tier] not in base:
+        # note-titled names read "the Seraph of 'X'": the tier slots INSIDE the
+        # article ("the Rare Seraph of 'X'"), not awkwardly in front of it
+        if base.startswith("the "):
+            actor.name = f"the {NAMES[tier]} {base[4:]}"
+        else:
+            actor.name = f"{NAMES[tier]} {base}"
 
 
 # --------------------------------------------------------------------------- #
@@ -182,7 +187,46 @@ class QualitySystem(System):
         pool = list(SPECIAL_ACTIONS.keys())
         actor._special_actions = [pool[(r.randint(0, 10_000) + i) % len(pool)]
                                   for i in range(tier)] if pool else []
-        game.log(f"A {actor.name} stirs.")   # name already carries the quality prefix
+        if tier >= LEGENDARY:
+            self._enlegend(game, actor, r)
+        # only NAMED beings announce themselves (a note made flesh, or a Rare+ beast);
+        # 261 anonymous critters each logging a stir buried the wake in noise
+        if getattr(actor, "allegiance", "") != "monster" and tier < RARE:
+            return
+        if actor.name.startswith("the "):
+            game.log(f"{actor.name} stirs.")   # log() capitalizes: "The Seraph of 'X' stirs."
+        else:
+            art = "An" if actor.name[:1].upper() in "AEIOU" else "A"
+            game.log(f"{art} {actor.name} stirs.")
+
+    def _enlegend(self, game, actor, r):
+        """A Legendary spawn is a PERSON: it takes a name woven from its own note's
+        words, negotiation comes easier to it, it holds no grudge -- and its fall
+        leaves a named relic of legendary matter."""
+        actor._legend = True
+        try:
+            from .marginalia import weave
+            node = game.m.get("graph", {}).get("nodes", {}).get(actor.source, {})
+            comm = (game.m.get("corpus") or {}).get(str(node.get("community", -1)))
+            words = weave(comm, actor.source, r, max_words=3) if comm else ""
+            nick = " ".join(w.strip('.!?,;:"').title()
+                            for w in words.split(" ")[:2] if w.strip('.!?,;:"'))
+        except Exception:
+            nick = ""
+        if nick:
+            actor.name = f'{actor.name} "{nick}"'
+
+    def on_event(self, game, etype, data):
+        # a fallen legend leaves its named relic: legendary matter to salvage
+        if etype != "actor_died":
+            return
+        actor = (data or {}).get("actor")
+        if actor is None or not getattr(actor, "_legend", False):
+            return
+        game.log(f"{actor.name} falls; its relic remains where it stood.")
+        game.emit("broke", kind="relic", source=getattr(actor, "source", ""),
+                  name=actor.name, tier=LEGENDARY,
+                  pos=(data or {}).get("pos", (actor.x, actor.y)))
 
     # -- equippables (called by sigils.py / forge.py) --
     def qualify_sigil(self, game, sigil, floor=0, bias=0.0, additives=None):

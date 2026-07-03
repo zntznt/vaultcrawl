@@ -226,3 +226,84 @@ quality.register_action("spit", act_spit)
 quality.register_action("blink", act_blink)
 quality.register_action("summon", act_summon)
 quality.register_action("split", act_split)
+
+
+# --------------------------------------------------------------------------- #
+# Player-cast body verbs -- the same actions, aimed symmetrically.
+# --------------------------------------------------------------------------- #
+
+def player_cast(game, name: str) -> bool:
+    """Cast one of the controlled body's special actions (Qud mutations: the body
+    IS the build). Self-buffs share the elite code path; targeted verbs aim at
+    your nearest perceived hostile (who stands where the player stands for
+    elites); spawners ally their offspring to you as companions."""
+    p = game.player
+    if name == "enrage":
+        return act_enrage(game, p)
+    if name == "shield":
+        return act_shield(game, p)
+    if name == "rally":
+        for a in getattr(game, "actors", []):
+            if a.allegiance != "companion":
+                continue
+            if max(abs(a.x - p.x), abs(a.y - p.y)) != 1:
+                continue
+            stacks = getattr(a, "_rally_stacks", 0)
+            if stacks >= RALLY_CAP:
+                continue
+            a._rally_stacks = stacks + 1
+            a.atk += 1
+            game.log(f"You rally {a.name} (+1 ATK).")
+            return True
+        return False
+    if name in ("summon", "split"):
+        before = len(game.actors)
+        done = (act_summon if name == "summon" else act_split)(game, p)
+        for child in game.actors[before:]:
+            child.allegiance = "companion"       # your offspring walk with you
+            child.faction = getattr(p, "faction", "")
+            child.brain = None
+            game.log(f"{child.name} takes shape beside you.")
+        return done
+    from .sense import nearest_hostile
+    t, _d = nearest_hostile(game, p)
+    if t is None:
+        return False
+    if name == "blink":
+        cur = max(abs(p.x - t.x), abs(p.y - t.y))
+        nearer = [c for c in _free_tiles(game)
+                  if max(abs(c[0] - t.x), abs(c[1] - t.y)) < cur]
+        if not nearer:
+            return False
+        p.x, p.y = min(nearer, key=lambda c: (max(abs(c[0] - t.x), abs(c[1] - t.y)),
+                                              (c[0] - t.x) ** 2 + (c[1] - t.y) ** 2,
+                                              c[1], c[0]))
+        game.log(f"You blink toward {t.name}.")
+        return True
+    if name == "spit":
+        dx, dy = t.x - p.x, t.y - p.y
+        if (dx != 0 and dy != 0) or (dx == 0 and dy == 0) or abs(dx) + abs(dy) > SPIT_RANGE:
+            return False
+        sx, sy = (dx > 0) - (dx < 0), (dy > 0) - (dy < 0)
+        cx, cy = p.x + sx, p.y + sy
+        while (cx, cy) != (t.x, t.y):
+            if not game.level.walkable(cx, cy) or game.actor_at(cx, cy) is not None:
+                return False
+            cx += sx
+            cy += sy
+        dmg = max(1, SPIT_DAMAGE - getattr(t, "defense", 0))
+        t.hp -= dmg
+        game.log(f"You spit at {t.name} for {dmg}.")
+        if t.hp <= 0:
+            if getattr(t, "is_boss", False) and t.source == game.final_boss_source:
+                game.won = True
+                game.log("The deepest thought in the vault falls silent. You win.")
+            if t.allegiance == "monster":
+                game.kills += 1
+                game.log(f"You destroy {t.name}.")
+                for s in game.systems:
+                    s.on_enemy_killed(game, t)
+                game.emit("enemy_killed", enemy=t, cause="spit")
+            game.kill(t, "spit")
+        return True
+    return False

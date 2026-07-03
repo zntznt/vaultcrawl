@@ -8,7 +8,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 ARCH_GLYPH = {"scribe": "s", "golem": "g", "swarm": "w", "warden": "r",
-              "echo": "e", "beast": "b", "construct": "c", "shade": "h"}
+              "echo": "e", "beast": "b", "construct": "c", "shade": "h",
+              # the expanded bestiary (kind read from a note's role + age)
+              "seraph": "q", "wisp": "u", "colossus": "G", "chorus": "m",
+              "revenant": "j", "gloom": "k", "sentinel": "y", "drifter": "d",
+              "hound": "f", "myriad": "v"}
 ITEM_GLYPH = {"weapon": ")", "armor": "[", "trinket": "=", "relic": "*", "consumable": "!"}
 
 
@@ -27,7 +31,9 @@ class Actor:
     is_boss: bool = False
     source: str = ""
     allegiance: str = "monster"   # "player" | "monster" (faction foes) | "wild" (fauna)
+    faction: str = ""             # the house it belongs to; relations decide hostility
     quality: int = 0              # Factorio-style grade 0..4 (set by the QualitySystem)
+    flavor: str = ""              # baked note-derived prose, surfaced on examine/first blood
 
     @property
     def alive(self) -> bool:
@@ -81,13 +87,15 @@ def make_enemy(spec: dict, x: int, y: int) -> Actor:
     hp, atk = enemy_stats(spec["tier"])
     return Actor(x=x, y=y, glyph=ARCH_GLYPH.get(spec["archetype"], "?"),
                  name=spec["name"], hp=hp, max_hp=hp, atk=atk,
-                 tier=spec["tier"], source=spec["sourceNoteId"])
+                 tier=spec["tier"], source=spec["sourceNoteId"],
+                 flavor=spec.get("flavor", ""))
 
 
 def make_boss(spec: dict, x: int, y: int) -> Actor:
     hp, atk = boss_stats(spec["tier"])
     return Actor(x=x, y=y, glyph="M", name=spec["name"], hp=hp, max_hp=hp, atk=atk,
-                 tier=spec["tier"], is_boss=True, source=spec["sourceNoteId"])
+                 tier=spec["tier"], is_boss=True, source=spec["sourceNoteId"],
+                 flavor=spec.get("flavor", ""))
 
 
 def make_item(spec: dict, x: int, y: int) -> Item:

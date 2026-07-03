@@ -132,7 +132,15 @@ class OfflineStubLLM:
     def _region(self, ctx, seed):
         rng = _rng("region", seed)
         nouns = _BIOME_NOUNS.get(ctx.get("biome", "archive"), _NOUN)
+        # never two regions with one name: a place you can confuse with another
+        # place is no place at all. Re-roll deterministically until unique.
+        used = getattr(self, "_used_region_names", None)
+        if used is None:
+            used = self._used_region_names = set()
         name = f"The {rng.choice(_ADJ)} {rng.choice(nouns)}"
+        while name in used:
+            name = f"The {rng.choice(_ADJ)} {rng.choice(nouns + _NOUN)}"
+        used.add(name)
         return {"name": name,
                 "flavor": f"Grown from your note '{_title(ctx.get('title'))}'. "
                           f"{rng.choice(['Lamplight', 'Damp', 'Static', 'Old ink'])} "
@@ -151,11 +159,15 @@ class OfflineStubLLM:
     def _enemy(self, ctx, seed):
         rng = _rng("enemy", seed)
         arch = ctx.get("archetype", "shade")
-        name = f"{rng.choice(_ADJ)} {arch.capitalize()}"
-        if rng.random() < 0.5:
-            name += f" of the {rng.choice(_NOUN)}"
-        return {"name": name,
-                "flavor": f"A {arch} that drifted out of '{_title(ctx.get('title'))}', "
+        # recognition over template: a creature IS a note, so its NAME carries the
+        # note's real title ("the Seraph of 'ATLAS'"), never a random adjective.
+        # (Random-adjective names made every vault's bestiary read identically.)
+        title = " ".join(str(ctx.get("title") or "a lost page").split()[:5])
+        if len(title) > 30:
+            title = title[:30].rsplit(" ", 1)[0]
+        art = "An" if arch[:1] in "aeiou" else "A"
+        return {"name": f"the {arch.capitalize()} of '{title}'",
+                "flavor": f"{art} {arch} that drifted out of '{title}', "
                           f"dealing {ctx.get('damageType','decay')} to the unwary."}
 
     def _item(self, ctx, seed):

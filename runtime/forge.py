@@ -142,7 +142,8 @@ class ForgeSystem(System):
         if sigils is None:
             return False
         slots = getattr(sigils, "slots", None)
-        if slots is None or len(slots) >= MAX_SLOTS:
+        cap = sigils.max_slots(game) if hasattr(sigils, "max_slots") else MAX_SLOTS
+        if slots is None or len(slots) >= cap:
             return False
         ability = ability or self._default_ability(game)
         cost = self.cost(game)
@@ -185,11 +186,15 @@ class ForgeSystem(System):
         return True
 
     # ---- auto-forge ---------------------------------------------------------
+    # `auto` stays True for the headless demo/tests; the interactive UI sets it False
+    # so the `f` key is a real choice instead of a race the autopilot always wins.
+    auto = True
+
     def on_player_act(self, game):
         """Whenever there's a free slot and enough matter, auto-craft the missing ability,
         so a run visibly recovers after a sigil shatters. forge() is fully guarded, so this
         is a safe no-op when a craft isn't possible."""
-        if not getattr(game, "alive", True):
+        if not self.auto or not getattr(game, "alive", True):
             return
         self.forge(game)
 
@@ -198,6 +203,7 @@ class ForgeSystem(System):
         sigils = game.system("sigils")
         if sigils is None:
             return None
-        if len(getattr(sigils, "slots", [])) >= MAX_SLOTS:
+        cap = sigils.max_slots(game) if hasattr(sigils, "max_slots") else MAX_SLOTS
+        if len(getattr(sigils, "slots", [])) >= cap:
             return None
         return "Forge: ready" if inv(game.player).can_pay(self.cost(game)) else None

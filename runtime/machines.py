@@ -80,8 +80,16 @@ class MachineSystem(System):
         tile of their own, so we ground the neighbourhood in a deterministically
         chosen room center (F near a hub room, T near a bridge room). None when no
         such note or no rooms exist, in which case placement is purely free-tile."""
-        if not self._role_notes(game, role):
+        notes = self._role_notes(game, role)
+        if not notes:
             return None
+        # the machine belongs in its note's own room when that note holds one here
+        room_of = getattr(game, "room_of_note", None)
+        if room_of:
+            for nid in sorted(notes):
+                room = room_of(nid)
+                if room is not None:
+                    return room.center
         rooms = list(getattr(game.level, "rooms", []) or [])
         if not rooms:
             return None

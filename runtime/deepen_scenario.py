@@ -122,7 +122,7 @@ def sp2_npc_parley():
     fid = fac.faction_of(npc.source)
     m0, st0, k0 = inv(g.player).total(), fac.standing_of(fid), kn.is_known("stoicism")
     print(f"   Before: matter={m0}  standing[{fid}]={st0}  is_known('stoicism')={k0}")
-    print(f"\n   game.emit(interact, target=<Keeper>)   (the bump path's parley event)")
+    print(f"\n   game.emit(interact, target=<Keeper>)   (the `t` verb's parley event)")
     s = len(g.messages)
     g.emit("interact", target=npc, pos=(npc.x, npc.y))
     show_logs(g, s)
@@ -223,24 +223,32 @@ def sp5_npcs_are_neutral():
     safe = npc.hp == hp0 and npc in g.actors
     print(f"   Keeper hp {hp0} -> {npc.hp}; still on the floor: {npc in g.actors}")
 
-    # Now the player bumps the Keeper: the bump must PARLEY, not attack.  Stand the
-    # player one orthogonal step away on whichever adjacent tile is walkable.
+    # Now the player bumps the Keeper: the bump must SWAP PLACES, never attack
+    # (a friendly body never blocks a way; talking is the explicit `t` verb,
+    # which emits `interact` -- exercised below).
     px = npc.x - 1 if g.level.walkable(npc.x - 1, npc.y) else npc.x + 1
     g.player.x, g.player.y = px, npc.y
     dx, dy = npc.x - g.player.x, npc.y - g.player.y
     hp_pre, active_pre = npc.hp, len(q.active)
-    print(f"\n   game.try_move({dx},{dy})   (player steps INTO the Keeper -> bump)")
+    npc_pre, player_pre = (npc.x, npc.y), (g.player.x, g.player.y)
+    print(f"\n   game.try_move({dx},{dy})   (player steps INTO the Keeper -> swap)")
     s = len(g.messages)
     g.try_move(dx, dy)
+    show_logs(g, s)
+    swapped = ((g.player.x, g.player.y) == npc_pre and (npc.x, npc.y) == player_pre)
+    no_attack = npc.hp == hp_pre
+    print(f"   Keeper hp {hp_pre} -> {npc.hp}; positions swapped: {swapped}.")
+    print(f"\n   game.emit(interact, ...)   (the `t` verb: talking is a command)")
+    s = len(g.messages)
+    g.emit("interact", target=npc, pos=(npc.x, npc.y))
     show_logs(g, s)
     parleyed = len(q.active) > active_pre or any(
         "entrusts you" in str(m) or "offering" in str(m) or "murmurs" in str(m)
         for m in g.messages[s:])
-    no_attack = npc.hp == hp_pre
-    print(f"   Keeper hp {hp_pre} -> {npc.hp}; active quests {active_pre} -> {len(q.active)}.")
-    return verdict(safe and no_attack and parleyed,
+    print(f"   active quests {active_pre} -> {len(q.active)}.")
+    return verdict(safe and no_attack and swapped and parleyed,
                    "monster ignored the Keeper (0 damage over 5 turns); the player's "
-                   "bump parleyed (a charge offered), never an attack.")
+                   "bump swapped places, never an attack; `t` (interact) parleyed.")
 
 
 # -------------------------------------------------------------------- main ----

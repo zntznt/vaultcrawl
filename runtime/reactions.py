@@ -212,6 +212,9 @@ class ReactionSystem(System):
             chained_any = True
         if ppos in acid_tiles:
             p_dmg += 1
+        eff = game.system("effects")
+        if eff is not None and eff.can_drift(game):
+            p_dmg = 0   # 'drift' effect: you go weightless over hazard, unharmed
         if p_dmg:
             applied = min(p_dmg, _PLAYER_CAP, game.player.hp)
             game.player.hp -= applied
