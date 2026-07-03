@@ -26,6 +26,13 @@ from .systems import System
 RADIUS = 4          # base Chebyshev sight radius (the dark DEPTHS: fog is tension)
 SURFACE_RADIUS = 12  # the open SURFACE: you see the vista you wander (exploration)
 
+# CANOPY: dense biome growth you can walk through but not see PAST — a thicket, a
+# reed-wall, a grove. Overlay glyphs in this set occlude sight, so the visible
+# field bulges into clearings and closes in the deep green: a forest to thread,
+# without touching walkability or the deterministic tile map. (These are overlay
+# glyphs, painted by terrain.py; walls '#' occlude too, handled separately.)
+CANOPY = frozenset("(o]|")   # thicket/grove/leaf-wall/reed families
+
 
 class KnowledgeSystem(System):
     name = "knowledge"
@@ -137,14 +144,40 @@ class KnowledgeSystem(System):
         eff = game.system("effects")
         return base + (eff.perception_bonus(game) if eff is not None else 0)
 
+    def _occludes(self, game, x, y) -> bool:
+        """A tile blocks the view PAST it: a wall, or dense canopy in the overlay."""
+        tiles = game.level.tiles
+        if not (0 <= y < len(tiles) and 0 <= x < len(tiles[0])):
+            return True
+        if tiles[y][x] == "#":
+            return True
+        return getattr(game, "_overlay", {}).get((x, y)) in CANOPY
+
+    def _visible(self, game, px, py, r) -> set:
+        """RAYCAST the currently-visible cells: cast a ray to each cell on the sight-
+        square's rim; walk it and stop at the first occluder (wall or canopy),
+        revealing that tile but nothing behind it. On the open surface foliage is the
+        only thing that closes the view, so a clearing reads open and a thicket reads
+        deep; in the depths walls occlude (the classic dark-corridor reveal)."""
+        vis = {(px, py)}
+        rim = []
+        for d in range(-r, r + 1):
+            rim += [(d, -r), (d, r), (-r, d), (r, d)]
+        for tx, ty in rim:
+            steps = max(abs(tx), abs(ty)) or 1
+            for i in range(1, steps + 1):
+                cx = px + round(tx * i / steps)
+                cy = py + round(ty * i / steps)
+                vis.add((cx, cy))
+                if self._occludes(game, cx, cy):
+                    break
+        return vis
+
     def on_player_act(self, game):
         self.game = game
         seen = self.seen.setdefault(game.floor, set())
         px, py = game.player.x, game.player.y
-        r = self._sight(game)
-        for dy in range(-r, r + 1):
-            for dx in range(-r, r + 1):
-                seen.add((px + dx, py + dy))
+        seen |= self._visible(game, px, py, self._sight(game))
 
     # ---- cross-system bus ----
     def on_event(self, game, etype, data):
@@ -184,9 +217,12 @@ class KnowledgeSystem(System):
         # depths keep hard fog: there, the dark is the point.
         surface = getattr(game, "_on_surface", lambda: False)()
         overlay = getattr(game, "_overlay", {})
+        # "near" = currently in line of sight (raycast), so canopy and walls hide the
+        # live things (actors/loot) behind them, not just the far fog.
+        vis = self._visible(game, px, py, r)
         for y, row in enumerate(grid):
             for x in range(len(row)):
-                near = abs(x - px) <= r and abs(y - py) <= r
+                near = (x, y) in vis
                 if not near and (x, y) not in seen:
                     if surface:
                         row[x] = overlay.get((x, y)) if tiles[y][x] == "." else None

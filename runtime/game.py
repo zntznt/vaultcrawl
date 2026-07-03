@@ -198,7 +198,7 @@ class Game:
             with open(self.site_cache, "r", encoding="utf-8") as fh:
                 d = json.load(fh)
             if (d.get("seed") != self.seed or d.get("sprawl", 1.0) != self.sprawl
-                    or d.get("fmt") != 6):
+                    or d.get("fmt") != 7):
                 return None
             from .dungeon import Level
             level = Level(w=d["w"], h=d["h"],
@@ -226,7 +226,7 @@ class Game:
             return
         try:
             with open(self.site_cache, "w", encoding="utf-8") as fh:
-                json.dump({"seed": self.seed, "sprawl": self.sprawl, "fmt": 6,
+                json.dump({"seed": self.seed, "sprawl": self.sprawl, "fmt": 7,
                            "w": level.w, "h": level.h,
                            "tiles": ["".join(r) for r in level.tiles],
                            "player_start": list(level.player_start),

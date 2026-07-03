@@ -58,6 +58,11 @@ def _region_of_all(level, cell_region):
     return region_of
 
 
+# overlay glyphs that occlude sight (mirror knowledge.CANOPY): a region whose head
+# feature is one of these grows THICKETS you thread through
+_CANOPY_GLYPHS = frozenset("(o]|")
+
+
 def _grow_patch(tiles, biome, cx, cy, size, glyph, rng, region_of, rid, w, h):
     """Flood a soft organic blob of `glyph` into the biome OVERLAY (not level.tiles,
     so spawning stays biome-independent and cache-deterministic)."""
@@ -78,6 +83,39 @@ def _grow_patch(tiles, biome, cx, cy, size, glyph, rng, region_of, rid, w, h):
                 seen.add(n)
                 frontier.append(n)
     return filled
+
+
+def _grow_thicket(tiles, biome, cx, cy, size, glyph, rng, region_of, rid, w, h):
+    """A DENSE, near-contiguous body of `glyph` (a thicket/grove/stack-maze) with a
+    couple of CLEARINGS punched in it. Unlike _grow_patch's porous strew, this fills
+    almost solid so it actually blocks sight — a wall of the region's own growth you
+    can walk into but not see across. Overlay-only; walkability is never touched."""
+    if not (0 <= cx < w and 0 <= cy < h) or tiles[cy][cx] != FLOOR:
+        return 0
+    body, frontier, seen = [], [(cx, cy)], {(cx, cy)}
+    while frontier and len(body) < size:
+        x, y = frontier.pop(rng.randrange(len(frontier)))
+        if (tiles[y][x] == FLOOR and region_of.get((x, y)) == rid
+                and (x, y) not in biome):
+            biome[(x, y)] = glyph
+            body.append((x, y))
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            n = (x + dx, y + dy)
+            if (n not in seen and 0 <= n[0] < w and 0 <= n[1] < h
+                    and rng.random() < 0.92):     # near-solid, so it occludes
+                seen.add(n)
+                frontier.append(n)
+    # punch 1-2 clearings so a thicket has glades — somewhere to break through into
+    for _ in range(rng.randint(1, 2)):
+        if len(body) < 20:
+            break
+        gx, gy = body[rng.randrange(len(body))]
+        for (bx, by) in list(body):
+            if abs(bx - gx) + abs(by - gy) <= rng.randint(2, 3):
+                biome.pop((bx, by), None)
+    return len(body)
+
+
 
 
 def _weighted(feats, r):
@@ -131,6 +169,9 @@ def paint_biomes(level, cell_region, region_env, building_cells=(), seed="biome"
     region_of = _region_of_all(level, cell_region)
     biome: dict = {}
     rng = random.Random(f"{seed}:patches")
+    # distance to nearest building, once (thickets keep clear of settled ground)
+    REACH = 16
+    near = _near_field(level, set(building_cells), REACH) if building_cells else {}
 
     # ---- layer A: SIGNATURE FIELDS (the meso scale sameyness lacked) ----
     # A region is recognized by its one big thing: THE reed-marsh, THE slag-field,
@@ -154,14 +195,27 @@ def paint_biomes(level, cell_region, region_env, building_cells=(), seed="biome"
             _grow_patch(tiles, biome, x, y, rng.randint(40, 120), g,
                         rng, region_of, rid, w, h)
 
+        # ---- THICKETS: dense, sight-blocking bodies to THREAD (the forest feel) ----
+        # if the region's head feature is a canopy glyph (foliage, stacks, pipe-maze),
+        # grow a few SOLID thicket bodies far from buildings, then punch CLEARINGS in
+        # them. You walk through freely but can't see past, so the wild reads as a
+        # place to get lost in, not an open field. Overlay-only: walkability untouched.
+        if primary in _CANOPY_GLYPHS:
+            deep = [c for c in cells if near.get(c, REACH) >= 10]
+            n_thk = len(deep) // 1400
+            for _ in range(n_thk):
+                if not deep:
+                    break
+                cx, cy = deep[rng.randrange(len(deep))]
+                _grow_thicket(tiles, biome, cx, cy, rng.randint(60, 160),
+                              primary, rng, region_of, rid, w, h)
+
     # ---- layer B: fine texture, with real CONTRAST between regions ----
     # density spans austere to thick (a bare gravel plain is an identity too);
     # near buildings the ground is thick with the district's stuff; the deep wild
     # tapers to open travel-country.
     _DENSITY = {"dense": 0.95, "broken": 0.75, "linear": 0.6,
                 "open": 0.4, "scattered": 0.22}
-    REACH = 16
-    near = _near_field(level, set(building_cells), REACH) if building_cells else {}
     step = 3          # fine grid -> dense feature coverage where it matters
     for gy in range(1, h, step):
         for gx in range(1, w, step):
