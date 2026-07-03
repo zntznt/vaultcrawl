@@ -25,6 +25,7 @@ from runtime.dungeon import FLOOR, Level, STAIRS, WALL
 
 ROAD = "░"
 _DIRS8 = [(dx, dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1) if dx or dy]
+_ORTH2 = ((1, 0), (-1, 0), (0, 1), (0, -1))
 
 
 def _line(a, b):
@@ -65,6 +66,118 @@ def _way(a, b, rng):
     return pts
 
 
+def _bbox(cells):
+    xs = [c[0] for c in cells]
+    ys = [c[1] for c in cells]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _partition_complex(tiles, inner, w, h, rng):
+    """Turn a big single-room footprint into a COMPLEX: recursively split the interior
+    with internal walls, each wall pierced by a doorway, so one building becomes wings
+    and halls. The largest chambers open a COURTYARD (a walled hole of open land inside
+    the building) so a complex reads as buildings-around-a-space, not one packed box.
+
+    Only writes WALL/FLOOR onto tiles ALREADY inside `inner` (never touches the
+    perimeter or the world outside), and every split leaves a doorway, so the interior
+    stays fully connected. Returns the set of tiles turned to internal wall.
+
+    Deterministic: all randomness comes from the passed-in seeded rng.
+    """
+    walls: set = set()
+
+    def split(cells, depth):
+        if depth <= 0 or len(cells) < 22:
+            return
+        x0, y0, x1, y1 = _bbox(cells)
+        bw, bh = x1 - x0, y1 - y0
+        if max(bw, bh) < 6:
+            return
+        vertical = bw >= bh          # cut across the longer axis
+        # cut line biased to the middle third, so wings vary in size
+        lo, hi = (x0 + 2, x1 - 2) if vertical else (y0 + 2, y1 - 2)
+        if hi <= lo:
+            return
+        cut = rng.randint(lo, hi)
+        line = [c for c in cells if (c[0] == cut if vertical else c[1] == cut)]
+        if len(line) < 2:
+            return
+        for (x, y) in line:                       # raise the internal wall
+            tiles[y][x] = WALL
+            walls.add((x, y))
+        door = rng.choice(line)                   # ...pierced by one doorway
+        tiles[door[1]][door[0]] = FLOOR
+        walls.discard(door)
+        side_a = {c for c in cells if (c[0] < cut if vertical else c[1] < cut)}
+        side_b = {c for c in cells if (c[0] > cut if vertical else c[1] > cut)}
+        split(side_a, depth - 1)
+        split(side_b, depth - 1)
+
+    # a large complex reserves a COURTYARD: an interior sub-block kept open (never
+    # subdivided) and ringed by wall except for a gate, so the building wraps a yard.
+    court: set = set()
+    if len(inner) > 90:
+        x0, y0, x1, y1 = _bbox(inner)
+        cw, ch = max(3, (x1 - x0) // 4), max(3, (y1 - y0) // 4)
+        cx = rng.randint(x0 + 2, max(x0 + 2, x1 - cw - 1))
+        cy = rng.randint(y0 + 2, max(y0 + 2, y1 - ch - 1))
+        yard = {(xx, yy) for yy in range(cy, cy + ch) for xx in range(cx, cx + cw)
+                if (xx, yy) in inner}
+        # wall the yard's ring (inside the complex), leave one gate onto it
+        ring = {t for t in yard
+                if any((t[0] + dx, t[1] + dy) not in yard for dx, dy in _ORTH2)}
+        for (x, y) in sorted(ring):
+            tiles[y][x] = WALL
+            walls.add((x, y))
+        if ring:
+            gate = rng.choice(sorted(ring))
+            tiles[gate[1]][gate[0]] = FLOOR
+            walls.discard(gate)
+        court = yard - ring
+
+    depth = 3 if len(inner) > 120 else 2
+    split(set(inner) - court, depth)   # split everything BUT the reserved yard
+
+    # GUARANTEE interior connectivity regardless of footprint shape: organic (non-
+    # convex) footprints can leave a pocket a single doorway doesn't reach. Flood
+    # from any interior floor cell; for each unreached floor pocket, punch a door
+    # through one internal wall that touches it. Loops until nothing is stranded.
+    floor_cells = {t for t in inner if tiles[t[1]][t[0]] != WALL}
+    for _ in range(len(walls) + 4):
+        if not floor_cells:
+            break
+        start = min(floor_cells)
+        seen = {start}
+        stack = [start]
+        while stack:
+            x, y = stack.pop()
+            for dx, dy in _ORTH2:
+                n = (x + dx, y + dy)
+                if n in floor_cells and n not in seen:
+                    seen.add(n)
+                    stack.append(n)
+        stranded = floor_cells - seen
+        if not stranded:
+            break
+        # find an internal wall between the reached side and a stranded cell; open it
+        opened = False
+        for (sx, sy) in sorted(stranded):
+            for dx, dy in _ORTH2:
+                wcell = (sx + dx, sy + dy)
+                beyond = (sx + 2 * dx, sy + 2 * dy)
+                if wcell in walls and beyond in seen:
+                    tiles[wcell[1]][wcell[0]] = FLOOR
+                    walls.discard(wcell)
+                    floor_cells.add(wcell)
+                    opened = True
+                    break
+            if opened:
+                break
+        if not opened:
+            break   # stranded pocket has no shared internal wall (perimeter-only); leave it
+    return walls
+
+
 def settle(plan, seed="settle") -> Level:
     placed = plan.placed()
     if not placed:
@@ -93,6 +206,12 @@ def settle(plan, seed="settle") -> Level:
                 interiors.add((x, y))
             elif 0 <= x < w and 0 <= y < h:
                 tiles[y][x] = WALL
+        # a roomy footprint becomes a COMPLEX: wings, halls, a courtyard, instead of
+        # one open box. Deterministic per building. Internal walls always leave a door,
+        # and _ensure_connected runs at the end as a backstop.
+        if len(inner) >= 22:
+            crng = random.Random(f"{seed}:complex:{c.id}")
+            _partition_complex(tiles, inner, w, h, crng)
 
     # doors: the graph decides them — each seam opens the wall facing its partner
     centers = {c.id: c for c in placed}
