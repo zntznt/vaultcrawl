@@ -5,8 +5,8 @@ Covers DEEPEN_SPEC.md Agent B:
   - parley resolution, first-applicable: Quest -> Offering -> Gossip;
   - the OFFERING reputation mechanic is a gift of salvaged *matter* (NOT water): one
     unit is spent, faction standing rises, a region is revealed;
-  - bumping the NPC via the real ``try_move`` emits ``interact`` and parleys (the
-    neutral NPC is never attacked / damaged / killed);
+  - bumping the NPC via the real ``try_move`` swaps places (a friendly body never
+    blocks a way; parley is the explicit interact event) and never harms it;
   - NPC tiles are points-of-interest; spawning is deterministic.
 
 The quest partner (``runtime/quests.py``, Agent A) may not exist yet, so a tiny local
@@ -106,7 +106,7 @@ def test_dialogue():
     assert len(g.messages) > m2, "gossip produced a lore line"
     assert len(kn.known) >= before_known2, "gossip never un-reveals knowledge"
 
-    # --- 5) the REAL bump path emits interact and never harms the neutral NPC
+    # --- 5) the REAL bump path swaps places and never harms the neutral NPC
     g2, dia2, _, _, _, _ = _new_game()
     npc2 = _the_npc(g2)[0]
     spawn2 = (npc2.x, npc2.y)
@@ -118,8 +118,9 @@ def test_dialogue():
     hp0, msgs0 = npc2.hp, len(g2.messages)
     g2.try_move(1, 0)                        # bump east into the Keeper
     assert npc2.hp == hp0, "a neutral NPC takes no damage from a bump"
-    assert npc2 in g2.actors, "parleying never kills the NPC"
-    assert len(g2.messages) > msgs0, "the bump triggered a parley log line"
+    assert npc2 in g2.actors, "the swap never kills the NPC"
+    assert len(g2.messages) > msgs0, "the bump logged the place-swap"
+    assert (npc2.x, npc2.y) == (bx, by), "the Keeper now stands where you stood"
 
     # --- 6) determinism: same seed -> same Keeper spawn tile -----------------
     g3, _, _, _, _, _ = _new_game()

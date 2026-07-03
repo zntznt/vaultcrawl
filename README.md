@@ -64,6 +64,8 @@ ingest  -> analyze -> mapping -> generate -> validate -> bake
 | `vaultcrawl/llm.py` | The LLM seam: offline deterministic stub + real-model drop-in (sketched). |
 | `vaultcrawl/generate.py` | Runs pass 1 (bible) then pass 2 (per-slot content); assembles the manifest. |
 | `vaultcrawl/validate.py` | Game-invariant checks + sparse-vault fallback. |
+| `vaultcrawl/corpus.py` | Per-community word chains from the notes' own bodies (the Qud move). |
+| `runtime/marginalia.py` | Weaves those chains into `"` marks read in each note's own room. |
 | `vaultcrawl/bake.py` | CLI entrypoint wiring it all together. |
 | `schema/world.schema.json` | Formal JSON Schema for the world manifest. |
 | `sample_vault/` | 10 interlinked notes (2 clusters + a bridge + an orphan) to run out of the box. |
@@ -185,9 +187,94 @@ each floor (rooms + an MST of corridors), then draws *which* enemies/items/boss 
 and at what depth, from the manifest.
 
 ```bash
-python -m runtime.play examples/world.json --auto --floors 5   # headless demo
+python -m runtime.play examples/world.json --auto --floors 5   # headless demo (classic descent)
 python -m runtime.play examples/world.json                     # interactive (needs a TTY)
+python -m runtime.play examples/world.json --descent           # interactive classic floors
+python -m runtime.play examples/world.json --debug             # + backtick debug menu
 ```
+
+**The interactive UI** is colored and composed: the map sits in a framed viewport whose
+title names the exact place you stand in ("The Hall of 'Rust' · The Fevered
+Engine-Yard"), colored by the region's element. Text-heavy interactions open **Qud-style
+popup windows** instead of the narrow message strip: `x` (examine) opens a bordered,
+word-wrapped, scrollable "You look around" window; parley opens a running conversation
+modal where the creature's lines and your moves accumulate in one scrollable transcript;
+and `m` opens the full **message log** scrollback, so nothing is ever lost off the bottom.
+
+**Atmospheres — environments as blended design blocks** (`runtime/arch/blocks.py`): a
+place's vibe is not a fixed theme but an ORDERED BLEND of small design blocks (element +
+biome + note-role), and the order sets dominance — `foundry-charged` reads as dead
+machinery, `archive-charged` as a shelf-lined hall, from the same `charged` block. Each
+block carries four agreeing channels: its own feature-objects (17 kinds now, up from 3 —
+pipes, shelves, fallen tomes, reeds, standing stones, spark-nodes, niches…), a spatial
+tendency (dense/open/broken/linear/scattered), a palette-lean (rust, holy, cold, verdant,
+pale, harsh), and an ambient voice. So crossing into a different region shifts the
+objects, the layout density, the screen's hue, AND what the place murmurs. 20 blocks
+permute into thousands of distinct environments; `x` reads the vibe, and a place speaks
+its atmosphere on its own as you move (roughly 1 line per 11 steps — silence is kept).
+
+**Effects — Yume Nikki, ported to a vault** (`runtime/effects.py`): not weapons but WAYS
+OF BEING. Out in the wild you find solitary landmarks (your unlinked notes); commune with
+one (`t`) and take its *effect* into yourself — **lantern** (see far in the dark),
+**drift** (cross hazard unharmed), **hush** (wild things lose their fear), **eyeless**
+(dream the whole place, no fog), **small** (unseen, nothing menaces you), **echo** (notes
+murmur themselves as you pass). Wear one at a time (`e`), switch freely, lose nothing.
+Effects change how you *explore and perceive*, never how hard you hit — exploration as the
+verb, a lucid dream of your own notes. Glyphs are colored by meaning (hazards
+by element, hostiles red, the boss magenta, lore and marginalia gold, growth green,
+machinery blue), and **each place wears its own region's palette**: a district's floors
+and interior structure are washed in its element's color (corrosive green, charged
+yellow, wet blue, frozen cyan, sacred magenta, flammable red) while the ways between
+places stay neutral gray — the map literally reads as a field of colored centers.
+Tiles beyond your sight radius render dimmed — remembered, not seen.
+And the architecture is FELT, not just generated (four of Alexander's properties made
+perceptual): **Gradients** — floor light rises toward each district's heart, so walking
+inward is visible; **Strong Centers** — hearts (`◆`) and town doors (`>`) render
+through the fog as landmarks you navigate by; **Boundaries** — walls parting two
+regions are colored by their houses' stance (war burns red, accord glows green);
+**ways vs places** — on the open ways between districts you stride two paces a turn,
+dropping to careful single steps inside a place, so the journey/arrival rhythm lives
+in your fingers. Roughness accents (`·`) keep no floor dead-flat. A sidebar carries the world's name, an HP bar, and one line per live system in
+place of the old single mega-line; the message log is colored by what happened (combat
+red, victories green, places bold, texts gold). Degrades cleanly to monochrome on
+colorless terminals; the viewport sizes itself to yours.
+
+**The world is a SEMILATTICE of realms** (ARCHITECTURE_SPEC §13): the grown overworld
+plus one depths-realm per region, joined by gates. Each district's heart is a **town**
+— settled ground where nothing hostile may enter, its Keeper lives, waiting is rest —
+holding the door (`>`) down into the region's **depths**, where its warden dwells (no
+boss stands in the open anymore). Below, **passages** (`>`) join the depths of
+bordering regions (bridge notes made spatial) and stairs (`<`) climb home, so the
+map-graph has loops no tree contains: down one door, across beneath the border, up
+another. **Realms persist**: what you kill stays dead, what you search stays searched.
+
+**The interactive game is a sandbox.** Instead of floors, the whole vault is grown into ONE
+structure by the pattern-architecture compiler (`runtime/arch/`, per `ARCHITECTURE_SPEC.md`):
+organic districts, semilattice ways (loops and shared courts, never an MST), each center
+literally being one of your notes. The surface is rasterized **figure-ground**
+(`runtime/arch/settle.py`), not cave-carved: buildings stand in OPEN LAND — each note's
+footprint a walled enclosure whose doors face its linked neighbours (the graph decides
+the doors) — and the seams are visible roads (`░`) crossing the fields, where you
+stride two paces a turn. Region color-fields spread over the ground so districts read
+as lands. The depths keep the classic dark cave carve on purpose: settled landscape
+above, dungeon below — the intimacy gradient as a paradigm contrast you feel. The world **sprawls**: after growth, districts are
+pushed radially apart by the `--sprawl` factor (default 2.0; 1.0 = compact, 3.0 = a
+~900x900 continent for a 120-note vault) — places stay coherent inside while the land
+between them stretches, so crossing between communities is a journey and bridges are
+real roads. The site cache keys on sprawl, so changing it regrows once. Creatures are **territorial**: each dwells at its
+note's center and stirs only if you stand on its ground, press in close, or provoke it;
+drawn too far from home it gives up and drifts back. Each place is an encounter you
+choose. Power is gentle at the periphery and rises quadratically toward the heart.
+Inside each center, room-scale interior patterns
+(`runtime/arch/interiors.py`) theme the place from the note's own dynamics — never at
+random: a hub raises a colonnade, an orphan hides a sanctum behind one threshold, a
+bridge grows quiet alcoves, a shared note sets meeting stones, a recently-tended thought
+is carpeted in growth (`,`), a long-untouched one crumbles to rubble and dust (`'`).
+Entering a place names its motif, so the theming is felt, not just drawn. You start at the periphery; your most-linked thought holds
+the greatest center. Depth = centrality becomes *spatial*: there is no down, you walk inward,
+power rising toward the heart, and resolve the run there (communion or blade). A scrolling
+viewport follows you. The classic depth-descent survives as `--descent` and as the `--auto`
+demo's mode.
 
 Glyphs: `@` you · `>` stairs down · `M` boss · lowercase = enemies (by archetype) ·
 `) [ = * !` = loot. The per-floor loop:
@@ -196,8 +283,66 @@ Glyphs: `@` you · `>` stairs down · `M` boss · lowercase = enemies (by archet
 2. Generate a layout seeded by `(vault seed, N)` — always solvable (MST connectivity).
 3. Spawn that region's enemies (count scales with `activity`; **power is capped by depth**
    so early floors stay gentle), drop loot, and place any boss whose `depth == N`.
-4. Bump-to-attack combat, permadeath; you win by felling the deepest boss — your single
-   most-linked note. The `--auto` agent loots, fights, and descends on its own.
+4. Bump-to-attack combat, permadeath. The run resolves at your single most-linked
+   note, the deepest thought in the vault — and violence is the fallback, not the
+   point. Standing before it, `t` attempts **communion**: speak enough of the vault's
+   read truths (marginalia + lore), or lay down an offering of salvaged matter, and
+   you integrate it and surface changed. Or draw your blade; the old way still works.
+   Lesser hostiles can be approached without violence too: `t` opens a **negotiation**
+   (SMT-style, but note-embodied): the creature converses in lines woven from its OWN
+   note's corpus, and its temperament follows its graph role — a hub is proud, a bridge
+   curious, a leaf timid, an orphan lonely. Respond with praise / ask / truth / gift;
+   reactions are fickle (a seeded "strange humor" can invert one). Sway it and it stands
+   down into the wild AND teaches you its note (conversation as intel, no faction alarm);
+   enrage it and it never talks again. `game.becalm` remains the direct engine path
+   (understanding disarms free; else matter). `z` **tosses** a scrap of matter whose clatter draws
+   hearing creatures away (the senses layer, played actively). And quiet movement plus
+   broken line-of-sight has always been sneaking.
+   **Relations are factional, not special-cased** (Qud-style): every creature belongs
+   to a house (its region's faction), kin never fight, rival houses war on sight (the
+   evolve layer can ignite rivalries between snapshots), wildlife is hostile to every
+   house and neutral to you, and **reputation is real**: raise a house's standing to
+   +4 (offerings, becalmed kin, quests) and its creatures stop fighting you entirely.
+   And because the controlled actor is not a special kind of thing, you can play AS
+   any entity: `--embody <name-or-note>` hands you its body, stats, house, and
+   relations — wake as a shade of House Philosophy and its kin part around you while
+   its rivals and the wild hunt you.
+   **The CDDA layer — places are distinct opportunities**: a note-room may hold a
+   **cache** (`□`) of that place's OWN matter, named from the note's tags ('rust'
+   ground yields lang-matter, Stoicism's chamber mind-matter). Old thoughts yield
+   seasoned quality-2 matter (ruins are worth the trip); caches in charged, flammable,
+   or corrosive ground may be **warded** — telegraphed as [humming] on examine, and a
+   sprung ward bites and RINGS, calling the place's dwellers. Place matter carries
+   **crafting geography**: each material steers a perk by its note's role (hub matter
+   steers keen, orphan matter echo_twin...), so wanting a specific perk gives you a
+   destination. Contents, uses, perils — legible before you commit.
+   **The Cogmind circle**: creatures embody parts, and their fall makes those parts
+   yours — a capable creature (any elite with special actions) drops a **part node**
+   (`$`) carrying its own verb when it dies, by any hand: slot a fallen shade's Blink
+   and blink; it is lossy like every sigil. And capacity **evolves**: each region you
+   truly map widens your grasp by one sigil slot (3 base, cap 6) — understanding is
+   carrying capacity.
+   **The Qud layer** deepens all of it: your **body is your build** — the controlled
+   body's special actions (blink, spit, enrage, shield, rally, summon, split) are
+   castable from the `c` menu alongside sigils, so an embodied elite plays like one;
+   a swayed creature may **walk with you** as a companion (it mirrors your enemies,
+   its kin stay its kin, your summons and splits side with you); a **Legendary** spawn
+   is a person — named in words woven from its own note, easier to sway, immune to
+   grudges, and its fall leaves a named relic of legendary matter; and friendly
+   creatures **trade secrets** — `t` spends a read truth and they open their source
+   note to you (+1 standing with their house, once each).
+   **No path is ever truly blocked**: the carver guarantees static connectivity
+   (flood-fill repair after every pattern operator), and bumping any friendly —
+   Keeper, wildlife, a becalmed creature — swaps places with it, so a body in a
+   one-wide way is never a wall. All interaction is by explicit command (`t`).
+   The `--auto` agent loots, fights, and descends on its own.
+
+**Rooms are places.** Each room on a floor carries the identity of a note from the
+region's community (the anchor note always claims the deepest room), named by its graph
+role: a hub is a Hall, a bridge a Gallery, an orphan a Sealed Alcove. Contents are
+contextual to place, CDDA-style: an enemy, sigil, machine, or Keeper spawns inside the
+room of its own source note when that room exists on the floor. Entering a room
+announces it; `x` (examine) names where you stand and what is nearby.
 
 ## Evolve it: your world grows as your notes do
 
@@ -632,9 +777,16 @@ opposed to the flat "no creep" baseline everywhere else.
 
 - **Transformation, not transcription.** The prompts instruct the model to metaphorize —
   your tax note becomes ledger-golems, never a room labeled "Taxes." Tune `CONTENT_SYSTEM`.
-- **PII.** Real vaults hold real names and private journals. The system prompt forbids
-  surfacing them; for real use, prefer a *local* model and consider a `#nogame` opt-out
-  tag honored in `ingest.py`.
+- **PII.** Real vaults hold real names and private journals. The `#nogame` / `#private`
+  opt-out tag (inline or frontmatter, nesting like `#private/journal` counts) is
+  ENFORCED in `ingest.py`: a marked note contributes nothing — no graph node, no corpus
+  words, no seed — and even its title is scrubbed from every kept note's body, so
+  nothing of it reaches world.json or an LLM prompt. For real use with a real model,
+  still prefer a *local* one.
+- **The corpus layer is transcription by design.** `manifest["corpus"]` carries word
+  chains built from your notes' actual bodies, so world.json contains fragments of your
+  own wording (that is the point of marginalia). Treat a baked world as private as the
+  vault it came from.
 - Community detection is single-level Louvain (good for small/medium vaults). For very
   large vaults, add aggregation levels.
 - The offline stub is a *contract demonstrator*, not a writer — its prose is templated.

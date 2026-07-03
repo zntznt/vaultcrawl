@@ -2,7 +2,7 @@
   "version": "0.1.0",
   "seed": "ccee0b8af9afe4f7",
   "generatedFrom": {
-    "vaultPath": "/Users/zntznt/Documents/exploring-ai-generated-roguelike-world-2026-06-28/output/vaultcrawl/sample_vault",
+    "vaultPath": "/Users/zntznt/Repositories/vaultcrawl/sample_vault",
     "noteCount": 10,
     "linkCount": 19,
     "communityCount": 2,
@@ -79,7 +79,7 @@
         ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.0,
+        "activity": 0.053,
         "tags": [
           "architecture",
           "gamedev",
@@ -99,7 +99,7 @@
         "members": [],
         "bridge": false,
         "role": "orphan",
-        "activity": 0.167,
+        "activity": 0.111,
         "tags": [],
         "neighbors": []
       },
@@ -114,7 +114,7 @@
         ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.333,
+        "activity": 0.198,
         "tags": [
           "philosophy",
           "writing"
@@ -136,7 +136,7 @@
         ],
         "bridge": false,
         "role": "leaf",
-        "activity": 0.5,
+        "activity": 0.368,
         "tags": [
           "mortality",
           "philosophy"
@@ -156,7 +156,7 @@
         ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.5,
+        "activity": 0.534,
         "tags": [
           "gamedev",
           "project"
@@ -178,7 +178,7 @@
         ],
         "bridge": true,
         "role": "bridge",
-        "activity": 0.667,
+        "activity": 0.643,
         "tags": [
           "gamedev",
           "project"
@@ -201,7 +201,7 @@
         ],
         "bridge": false,
         "role": "hub",
-        "activity": 0.833,
+        "activity": 0.86,
         "tags": [
           "lang",
           "project"
@@ -224,7 +224,7 @@
         ],
         "bridge": true,
         "role": "bridge",
-        "activity": 0.833,
+        "activity": 0.938,
         "tags": [
           "pkm",
           "system"
@@ -270,13 +270,13 @@
       },
       {
         "a": "ecs",
-        "b": "rust",
-        "interlock": 3
+        "b": "roguelike project",
+        "interlock": 4
       },
       {
         "a": "ecs",
-        "b": "roguelike project",
-        "interlock": 4
+        "b": "rust",
+        "interlock": 3
       },
       {
         "a": "journaling",
@@ -295,23 +295,23 @@
       },
       {
         "a": "procedural generation",
-        "b": "rust",
-        "interlock": 2
-      },
-      {
-        "a": "procedural generation",
         "b": "roguelike project",
         "interlock": 4
       },
       {
-        "a": "roguelike project",
-        "b": "second brain",
-        "interlock": 1
+        "a": "procedural generation",
+        "b": "rust",
+        "interlock": 2
       },
       {
         "a": "roguelike project",
         "b": "rust",
         "interlock": 3
+      },
+      {
+        "a": "roguelike project",
+        "b": "second brain",
+        "interlock": 1
       }
     ]
   },
@@ -335,7 +335,7 @@
         "system",
         "writing"
       ],
-      "activity": 0.533,
+      "activity": 0.501,
       "name": "The Patient Meridian",
       "flavor": "Grown from your note 'Stoicism'. Damp clings to every surface here."
     },
@@ -355,7 +355,7 @@
         "lang",
         "project"
       ],
-      "activity": 0.5,
+      "activity": 0.523,
       "name": "The Fevered Engine-Yard",
       "flavor": "Grown from your note 'Roguelike Project'. Old ink clings to every surface here."
     }
@@ -540,5 +540,1232 @@
       "sourceNoteId": "roguelike project",
       "objective": "Purge the Gilded Lantern — an unfinished charge left in your own hand."
     }
-  ]
+  ],
+  "corpus": {
+    "0": {
+      "chain": {
+        "Discipline Freedom": [
+          "is"
+        ],
+        "Freedom is": [
+          "downstream"
+        ],
+        "is downstream": [
+          "of"
+        ],
+        "downstream of": [
+          "discipline."
+        ],
+        "of discipline.": [
+          "The"
+        ],
+        "discipline. The": [
+          "structure"
+        ],
+        "The structure": [
+          "I"
+        ],
+        "structure I": [
+          "resent"
+        ],
+        "I resent": [
+          "on"
+        ],
+        "resent on": [
+          "Monday"
+        ],
+        "on Monday": [
+          "is"
+        ],
+        "Monday is": [
+          "the"
+        ],
+        "is the": [
+          "structure",
+          "load-bearing"
+        ],
+        "the structure": [
+          "that"
+        ],
+        "structure that": [
+          "protects"
+        ],
+        "that protects": [
+          "me"
+        ],
+        "protects me": [
+          "by"
+        ],
+        "me by": [
+          "Friday."
+        ],
+        "by Friday.": [
+          "Small"
+        ],
+        "Friday. Small": [
+          "repeated"
+        ],
+        "Small repeated": [
+          "acts"
+        ],
+        "repeated acts": [
+          "compound"
+        ],
+        "acts compound": [
+          "into"
+        ],
+        "compound into": [
+          "a"
+        ],
+        "into a": [
+          "self."
+        ],
+        "a self.": [
+          "Define"
+        ],
+        "self. Define": [
+          "one"
+        ],
+        "Define one": [
+          "keystone"
+        ],
+        "one keystone": [
+          "habit"
+        ],
+        "keystone habit": [
+          "for"
+        ],
+        "habit for": [
+          "next"
+        ],
+        "for next": [
+          "month"
+        ],
+        "next month": [
+          "Related:"
+        ],
+        "month Related:": [
+          "Stoicism,"
+        ],
+        "Related: Stoicism,": [
+          "Journaling."
+        ],
+        "Journaling Writing": [
+          "is"
+        ],
+        "Writing is": [
+          "how"
+        ],
+        "is how": [
+          "I"
+        ],
+        "how I": [
+          "find"
+        ],
+        "I find": [
+          "out"
+        ],
+        "find out": [
+          "what"
+        ],
+        "out what": [
+          "I"
+        ],
+        "what I": [
+          "think."
+        ],
+        "I think.": [
+          "The"
+        ],
+        "think. The": [
+          "page"
+        ],
+        "The page": [
+          "is"
+        ],
+        "page is": [
+          "a"
+        ],
+        "is a": [
+          "mirror",
+          "second"
+        ],
+        "a mirror": [
+          "that"
+        ],
+        "mirror that": [
+          "talks"
+        ],
+        "that talks": [
+          "back."
+        ],
+        "talks back.": [
+          "A"
+        ],
+        "back. A": [
+          "daily"
+        ],
+        "A daily": [
+          "entry"
+        ],
+        "daily entry": [
+          "is"
+        ],
+        "entry is": [
+          "less"
+        ],
+        "is less": [
+          "about"
+        ],
+        "less about": [
+          "the"
+        ],
+        "about the": [
+          "record",
+          "act"
+        ],
+        "the record": [
+          "and"
+        ],
+        "record and": [
+          "more"
+        ],
+        "and more": [
+          "about"
+        ],
+        "more about": [
+          "the"
+        ],
+        "the act": [
+          "of"
+        ],
+        "act of": [
+          "noticing."
+        ],
+        "of noticing.": [
+          "This"
+        ],
+        "noticing. This": [
+          "is"
+        ],
+        "This is": [
+          "also"
+        ],
+        "is also": [
+          "where"
+        ],
+        "also where": [
+          "my"
+        ],
+        "where my": [
+          "inner"
+        ],
+        "my inner": [
+          "life",
+          "practice"
+        ],
+        "inner life": [
+          "meets"
+        ],
+        "life meets": [
+          "my"
+        ],
+        "meets my": [
+          "systems"
+        ],
+        "my systems": [
+          "—"
+        ],
+        "systems —": [
+          "see"
+        ],
+        "— see": [
+          "Second"
+        ],
+        "see Second": [
+          "Brain."
+        ],
+        "Second Brain.": [
+          "Anchored"
+        ],
+        "Brain. Anchored": [
+          "by"
+        ],
+        "Anchored by": [
+          "Stoicism."
+        ],
+        "Memento Mori": [
+          "Remember"
+        ],
+        "Mori Remember": [
+          "that"
+        ],
+        "Remember that": [
+          "you"
+        ],
+        "that you": [
+          "will"
+        ],
+        "you will": [
+          "die."
+        ],
+        "will die.": [
+          "Not"
+        ],
+        "die. Not": [
+          "as"
+        ],
+        "Not as": [
+          "morbidity"
+        ],
+        "as morbidity": [
+          "but"
+        ],
+        "morbidity but": [
+          "as"
+        ],
+        "but as": [
+          "a"
+        ],
+        "as a": [
+          "lens"
+        ],
+        "a lens": [
+          "that"
+        ],
+        "lens that": [
+          "sharpens"
+        ],
+        "that sharpens": [
+          "attention."
+        ],
+        "sharpens attention.": [
+          "The"
+        ],
+        "attention. The": [
+          "hours"
+        ],
+        "The hours": [
+          "are"
+        ],
+        "hours are": [
+          "not"
+        ],
+        "are not": [
+          "infinite,"
+        ],
+        "not infinite,": [
+          "so"
+        ],
+        "infinite, so": [
+          "the"
+        ],
+        "so the": [
+          "trivial"
+        ],
+        "the trivial": [
+          "loses"
+        ],
+        "trivial loses": [
+          "its"
+        ],
+        "loses its": [
+          "grip."
+        ],
+        "its grip.": [
+          "See"
+        ],
+        "grip. See": [
+          "also"
+        ],
+        "See also": [
+          "Stoicism."
+        ],
+        "Second Brain": [
+          "The"
+        ],
+        "Brain The": [
+          "vault"
+        ],
+        "The vault": [
+          "is"
+        ],
+        "vault is": [
+          "a"
+        ],
+        "a second": [
+          "brain:"
+        ],
+        "second brain:": [
+          "notes"
+        ],
+        "brain: notes": [
+          "as"
+        ],
+        "notes as": [
+          "nodes,"
+        ],
+        "as nodes,": [
+          "links"
+        ],
+        "nodes, links": [
+          "as"
+        ],
+        "links as": [
+          "thought."
+        ],
+        "as thought.": [
+          "The"
+        ],
+        "thought. The": [
+          "interesting"
+        ],
+        "The interesting": [
+          "claim"
+        ],
+        "interesting claim": [
+          "is"
+        ],
+        "claim is": [
+          "that"
+        ],
+        "is that": [
+          "structure"
+        ],
+        "that structure": [
+          "emerges"
+        ],
+        "structure emerges": [
+          "—"
+        ],
+        "emerges —": [
+          "clusters"
+        ],
+        "— clusters": [
+          "form"
+        ],
+        "clusters form": [
+          "around"
+        ],
+        "form around": [
+          "obsessions"
+        ],
+        "around obsessions": [
+          "without"
+        ],
+        "obsessions without": [
+          "me"
+        ],
+        "without me": [
+          "planning"
+        ],
+        "me planning": [
+          "them."
+        ],
+        "planning them.": [
+          "This"
+        ],
+        "them. This": [
+          "idea"
+        ],
+        "This idea": [
+          "bridges"
+        ],
+        "idea bridges": [
+          "my"
+        ],
+        "bridges my": [
+          "inner"
+        ],
+        "inner practice": [
+          "and"
+        ],
+        "practice and": [
+          "my"
+        ],
+        "and my": [
+          "making."
+        ],
+        "my making.": [
+          "It"
+        ],
+        "making. It": [
+          "connects"
+        ],
+        "It connects": [
+          "Journaling"
+        ],
+        "connects Journaling": [
+          "to"
+        ],
+        "Journaling to": [
+          "the"
+        ],
+        "to the": [
+          "Roguelike"
+        ],
+        "the Roguelike": [
+          "Project,"
+        ],
+        "Roguelike Project,": [
+          "because"
+        ],
+        "Project, because": [
+          "both"
+        ],
+        "because both": [
+          "are"
+        ],
+        "both are": [
+          "about"
+        ],
+        "are about": [
+          "turning"
+        ],
+        "about turning": [
+          "a"
+        ],
+        "turning a": [
+          "private"
+        ],
+        "a private": [
+          "graph"
+        ],
+        "private graph": [
+          "into"
+        ],
+        "graph into": [
+          "something"
+        ],
+        "into something": [
+          "walkable."
+        ],
+        "Stoicism The": [
+          "practice"
+        ],
+        "The practice": [
+          "of"
+        ],
+        "practice of": [
+          "separating"
+        ],
+        "of separating": [
+          "what"
+        ],
+        "separating what": [
+          "is"
+        ],
+        "what is": [
+          "in",
+          "not."
+        ],
+        "is in": [
+          "my"
+        ],
+        "in my": [
+          "control"
+        ],
+        "my control": [
+          "from"
+        ],
+        "control from": [
+          "what"
+        ],
+        "from what": [
+          "is"
+        ],
+        "is not.": [
+          "Everything"
+        ],
+        "not. Everything": [
+          "else"
+        ],
+        "Everything else": [
+          "follows"
+        ],
+        "else follows": [
+          "from"
+        ],
+        "follows from": [
+          "that"
+        ],
+        "from that": [
+          "one"
+        ],
+        "that one": [
+          "cut."
+        ],
+        "one cut.": [
+          "The"
+        ],
+        "cut. The": [
+          "dichotomy"
+        ],
+        "The dichotomy": [
+          "of"
+        ],
+        "dichotomy of": [
+          "control"
+        ],
+        "of control": [
+          "is"
+        ],
+        "control is": [
+          "the"
+        ],
+        "the load-bearing": [
+          "idea"
+        ],
+        "load-bearing idea": [
+          "I"
+        ],
+        "idea I": [
+          "keep"
+        ],
+        "I keep": [
+          "returning"
+        ],
+        "keep returning": [
+          "to."
+        ],
+        "returning to.": [
+          "Connected"
+        ],
+        "to. Connected": [
+          "ideas:"
+        ],
+        "Connected ideas:": [
+          "Memento"
+        ],
+        "ideas: Memento": [
+          "Mori,"
+        ],
+        "Memento Mori,": [
+          "Discipline,"
+        ],
+        "Mori, Discipline,": [
+          "Journaling."
+        ]
+      },
+      "starters": {
+        "discipline": [
+          "Freedom is",
+          "The structure",
+          "that protects",
+          "Small repeated",
+          "Define one",
+          "Related: Stoicism,"
+        ],
+        "journaling": [
+          "Writing is",
+          "The page",
+          "entry is",
+          "This is",
+          "Anchored by"
+        ],
+        "memento mori": [
+          "Remember that",
+          "Not as",
+          "The hours",
+          "See also"
+        ],
+        "second brain": [
+          "The vault",
+          "The interesting",
+          "that structure",
+          "This idea",
+          "It connects",
+          "Roguelike Project,"
+        ],
+        "stoicism": [
+          "The practice",
+          "follows from",
+          "The dichotomy",
+          "Connected ideas:"
+        ]
+      }
+    },
+    "1": {
+      "chain": {
+        "ECS Entity-Component-System:": [
+          "data"
+        ],
+        "Entity-Component-System: data": [
+          "in"
+        ],
+        "data in": [
+          "components,"
+        ],
+        "in components,": [
+          "behavior"
+        ],
+        "components, behavior": [
+          "in"
+        ],
+        "behavior in": [
+          "systems,"
+        ],
+        "in systems,": [
+          "identity"
+        ],
+        "systems, identity": [
+          "in"
+        ],
+        "identity in": [
+          "entities."
+        ],
+        "in entities.": [
+          "A"
+        ],
+        "entities. A": [
+          "clean"
+        ],
+        "A clean": [
+          "fit"
+        ],
+        "clean fit": [
+          "for"
+        ],
+        "fit for": [
+          "a"
+        ],
+        "for a": [
+          "roguelike",
+          "seed-driven"
+        ],
+        "a roguelike": [
+          "where"
+        ],
+        "roguelike where": [
+          "everything"
+        ],
+        "where everything": [
+          "is"
+        ],
+        "everything is": [
+          "\"a"
+        ],
+        "is \"a": [
+          "thing"
+        ],
+        "\"a thing": [
+          "with"
+        ],
+        "thing with": [
+          "stats"
+        ],
+        "with stats": [
+          "and"
+        ],
+        "stats and": [
+          "tags.\""
+        ],
+        "and tags.\"": [
+          "Part"
+        ],
+        "tags.\" Part": [
+          "of"
+        ],
+        "Part of": [
+          "the"
+        ],
+        "of the": [
+          "Roguelike"
+        ],
+        "the Roguelike": [
+          "Project,",
+          "Project",
+          "Project"
+        ],
+        "Roguelike Project,": [
+          "implemented"
+        ],
+        "Project, implemented": [
+          "in"
+        ],
+        "implemented in": [
+          "Rust."
+        ],
+        "Procedural Generation": [
+          "The"
+        ],
+        "Generation The": [
+          "art"
+        ],
+        "The art": [
+          "of"
+        ],
+        "art of": [
+          "generating"
+        ],
+        "of generating": [
+          "fair,"
+        ],
+        "generating fair,": [
+          "surprising"
+        ],
+        "fair, surprising": [
+          "content"
+        ],
+        "surprising content": [
+          "from"
+        ],
+        "content from": [
+          "a"
+        ],
+        "from a": [
+          "seed.",
+          "markdown"
+        ],
+        "a seed.": [
+          "Connectivity"
+        ],
+        "seed. Connectivity": [
+          "first"
+        ],
+        "Connectivity first": [
+          "(Delaunay"
+        ],
+        "first (Delaunay": [
+          "+"
+        ],
+        "(Delaunay +": [
+          "minimum"
+        ],
+        "+ minimum": [
+          "spanning"
+        ],
+        "minimum spanning": [
+          "tree"
+        ],
+        "spanning tree": [
+          "guarantees"
+        ],
+        "tree guarantees": [
+          "a"
+        ],
+        "guarantees a": [
+          "path),"
+        ],
+        "a path),": [
+          "then"
+        ],
+        "path), then": [
+          "decorate."
+        ],
+        "then decorate.": [
+          "Never"
+        ],
+        "decorate. Never": [
+          "let"
+        ],
+        "Never let": [
+          "the"
+        ],
+        "let the": [
+          "decorator"
+        ],
+        "the decorator": [
+          "touch"
+        ],
+        "decorator touch": [
+          "the"
+        ],
+        "touch the": [
+          "guarantees."
+        ],
+        "the guarantees.": [
+          "Feeds"
+        ],
+        "guarantees. Feeds": [
+          "the"
+        ],
+        "Feeds the": [
+          "Roguelike"
+        ],
+        "Roguelike Project": [
+          "and",
+          "A",
+          "and"
+        ],
+        "Project and": [
+          "leans",
+          "pairs"
+        ],
+        "and leans": [
+          "on"
+        ],
+        "leans on": [
+          "Rust."
+        ],
+        "Project A": [
+          "traditional"
+        ],
+        "A traditional": [
+          "roguelike"
+        ],
+        "traditional roguelike": [
+          "whose"
+        ],
+        "roguelike whose": [
+          "world"
+        ],
+        "whose world": [
+          "is"
+        ],
+        "world is": [
+          "generated"
+        ],
+        "is generated": [
+          "from"
+        ],
+        "generated from": [
+          "a"
+        ],
+        "a markdown": [
+          "vault."
+        ],
+        "markdown vault.": [
+          "The"
+        ],
+        "vault. The": [
+          "pitch:"
+        ],
+        "The pitch:": [
+          "definite"
+        ],
+        "pitch: definite": [
+          "mechanical"
+        ],
+        "definite mechanical": [
+          "structures,"
+        ],
+        "mechanical structures,": [
+          "a"
+        ],
+        "structures, a": [
+          "generative"
+        ],
+        "a generative": [
+          "semantic"
+        ],
+        "generative semantic": [
+          "layer"
+        ],
+        "semantic layer": [
+          "on"
+        ],
+        "layer on": [
+          "top."
+        ],
+        "on top.": [
+          "Decide"
+        ],
+        "top. Decide": [
+          "on"
+        ],
+        "Decide on": [
+          "the"
+        ],
+        "on the": [
+          "world-manifest"
+        ],
+        "the world-manifest": [
+          "schema"
+        ],
+        "world-manifest schema": [
+          "Prototype"
+        ],
+        "schema Prototype": [
+          "the"
+        ],
+        "Prototype the": [
+          "graph"
+        ],
+        "the graph": [
+          "->"
+        ],
+        "graph ->": [
+          "dungeon"
+        ],
+        "-> dungeon": [
+          "mapping"
+        ],
+        "dungeon mapping": [
+          "Wire"
+        ],
+        "mapping Wire": [
+          "up"
+        ],
+        "Wire up": [
+          "a"
+        ],
+        "up a": [
+          "real"
+        ],
+        "a real": [
+          "model"
+        ],
+        "real model": [
+          "for"
+        ],
+        "model for": [
+          "flavor"
+        ],
+        "for flavor": [
+          "Built"
+        ],
+        "flavor Built": [
+          "on"
+        ],
+        "Built on": [
+          "Procedural"
+        ],
+        "on Procedural": [
+          "Generation,"
+        ],
+        "Procedural Generation,": [
+          "Rust,"
+        ],
+        "Generation, Rust,": [
+          "and"
+        ],
+        "Rust, and": [
+          "an"
+        ],
+        "and an": [
+          "ECS."
+        ],
+        "Rust Memory": [
+          "safety"
+        ],
+        "Memory safety": [
+          "without"
+        ],
+        "safety without": [
+          "a"
+        ],
+        "without a": [
+          "garbage"
+        ],
+        "a garbage": [
+          "collector."
+        ],
+        "garbage collector.": [
+          "The"
+        ],
+        "collector. The": [
+          "borrow"
+        ],
+        "The borrow": [
+          "checker"
+        ],
+        "borrow checker": [
+          "is"
+        ],
+        "checker is": [
+          "a"
+        ],
+        "is a": [
+          "strict"
+        ],
+        "a strict": [
+          "teacher"
+        ],
+        "strict teacher": [
+          "but"
+        ],
+        "teacher but": [
+          "the"
+        ],
+        "but the": [
+          "determinism"
+        ],
+        "the determinism": [
+          "and"
+        ],
+        "determinism and": [
+          "speed"
+        ],
+        "and speed": [
+          "are"
+        ],
+        "speed are": [
+          "worth"
+        ],
+        "are worth": [
+          "it"
+        ],
+        "worth it": [
+          "for"
+        ],
+        "it for": [
+          "a"
+        ],
+        "a seed-driven": [
+          "game."
+        ],
+        "seed-driven game.": [
+          "Used"
+        ],
+        "game. Used": [
+          "across"
+        ],
+        "Used across": [
+          "the"
+        ],
+        "across the": [
+          "Roguelike"
+        ],
+        "and pairs": [
+          "naturally"
+        ],
+        "pairs naturally": [
+          "with"
+        ],
+        "naturally with": [
+          "an"
+        ],
+        "with an": [
+          "ECS."
+        ]
+      },
+      "starters": {
+        "ecs": [
+          "Entity-Component-System: data",
+          "A clean",
+          "Part of"
+        ],
+        "procedural generation": [
+          "The art",
+          "(Delaunay +",
+          "Never let",
+          "decorator touch",
+          "Feeds the"
+        ],
+        "roguelike project": [
+          "A traditional",
+          "definite mechanical",
+          "Decide on",
+          "Prototype the",
+          "Wire up",
+          "Built on"
+        ],
+        "rust": [
+          "Memory safety",
+          "The borrow",
+          "the determinism",
+          "Used across"
+        ]
+      }
+    },
+    "-1": {
+      "chain": {
+        "Grocery List": [
+          "Oat"
+        ],
+        "List Oat": [
+          "milk,"
+        ],
+        "Oat milk,": [
+          "lentils,"
+        ],
+        "milk, lentils,": [
+          "coffee,"
+        ],
+        "lentils, coffee,": [
+          "olive"
+        ],
+        "coffee, olive": [
+          "oil,"
+        ],
+        "olive oil,": [
+          "sourdough."
+        ],
+        "oil, sourdough.": [
+          "A"
+        ],
+        "sourdough. A": [
+          "note"
+        ],
+        "A note": [
+          "with"
+        ],
+        "note with": [
+          "no"
+        ],
+        "with no": [
+          "links"
+        ],
+        "no links": [
+          "and"
+        ],
+        "links and": [
+          "no"
+        ],
+        "and no": [
+          "tags"
+        ],
+        "no tags": [
+          "—"
+        ],
+        "tags —": [
+          "an"
+        ],
+        "— an": [
+          "orphan"
+        ],
+        "an orphan": [
+          "in"
+        ],
+        "orphan in": [
+          "the"
+        ],
+        "in the": [
+          "graph,"
+        ],
+        "the graph,": [
+          "destined"
+        ],
+        "graph, destined": [
+          "to"
+        ],
+        "destined to": [
+          "become"
+        ],
+        "to become": [
+          "a"
+        ],
+        "become a": [
+          "hidden"
+        ],
+        "a hidden": [
+          "room."
+        ],
+        "hidden room.": [
+          "Actually"
+        ],
+        "room. Actually": [
+          "go"
+        ],
+        "Actually go": [
+          "to"
+        ],
+        "go to": [
+          "the"
+        ],
+        "to the": [
+          "store"
+        ]
+      },
+      "starters": {
+        "grocery list": [
+          "Oat milk,",
+          "A note",
+          "an orphan",
+          "Actually go"
+        ]
+      }
+    }
+  }
 }

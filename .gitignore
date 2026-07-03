@@ -30,3 +30,7 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# baked personal worlds never belong in the repo
+notebook*
+*.site.json
