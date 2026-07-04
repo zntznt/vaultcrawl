@@ -1272,6 +1272,46 @@ class Game:
         from .notehistory import one_fact
         return one_fact(node, node.get("title", nid), salt=salt)
 
+    def creature_stats(self, target) -> list:
+        """A few READABLE metrics about a creature, surfaced in the talk window (which
+        otherwise wastes the space under the name). All plain fact, no combat spoilers
+        beyond 'wounded': its stance toward you, its grade, its house, its standing in
+        the graph. Returns short strings the frame lays out as one status line."""
+        out = []
+        # stance toward you (the thing you most want to read before you act)
+        al = getattr(target, "allegiance", "monster")
+        stance = {"companion": "at your side", "wild": "indifferent",
+                  "npc": "watchful", "monster": "hostile"}.get(al, al)
+        if al == "monster" and getattr(target, "_enraged", False):
+            stance = "enraged"
+        out.append(stance)
+        # grade + tier (its weight in the world), only when notable
+        from .quality import name as _qname
+        if getattr(target, "quality", 0) > 0:
+            out.append(_qname(target.quality).lower())
+        if getattr(target, "tier", 1) >= 3:
+            out.append(f"tier {target.tier}")
+        # condition — surfaced only when it actually matters
+        hp, mhp = getattr(target, "hp", 0), getattr(target, "max_hp", 1)
+        if hp < mhp:
+            out.append("wounded" if hp > mhp // 3 else "near death")
+        # its house, and how that house regards you
+        fs = self.system("factions")
+        fac = getattr(target, "faction", "")
+        if fs is not None and fac:
+            fname = getattr(fs, "faction_name", None)
+            label = fname(fac) if callable(fname) else fac
+            st = fs.standing_of(fac) if hasattr(fs, "standing_of") else 0
+            regard = "allied" if st >= 2 else "wary" if st <= -2 else "neutral"
+            out.append(f"{label} ({regard})")
+        # its standing in the vault graph (how central the note is)
+        node = self.m.get("graph", {}).get("nodes", {}).get(
+            getattr(target, "source", ""), {})
+        deg = node.get("degree", 0)
+        if deg:
+            out.append(f"{deg} link{'s' if deg != 1 else ''}")
+        return out
+
     def creature_look(self, target) -> tuple:
         """(archetype, damage_type) for a creature's PORTRAIT — read from the baked
         enemy/boss spec by its source note, falling back to the map glyph's archetype

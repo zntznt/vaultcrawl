@@ -438,13 +438,15 @@ def interactive(game: Game) -> int:
         ret = fn(*a, **kw)
         return ret, list(game.messages[before:])
 
-    def dialog_frame(scr, name, transcript, verbs, topics, face=None):
+    def dialog_frame(scr, name, transcript, verbs, topics, face=None, stats=None):
         """The ONE unified conversation frame — every talk uses it, so it can be styled
         once, here, later. Two kinds of choice, deliberately in different places:
 
-          * NAME in the TOP border.
+          * NAME in the TOP border, with a STATS line (stance/grade/house/links) just
+            beneath it — the metrics the window used to waste its space not showing.
           * a procedural PORTRAIT of the interlocutor at the top of the body.
-          * the running exchange fills the BODY (auto-scrolled to the latest line).
+          * the running exchange fills the BODY (auto-scrolled to the latest line);
+            the creature's words are quoted BARE (no name prefix — it's on the border).
           * the STANDARD mechanical VERBS (same for every creature) render along the
             BOTTOM BORDER — the fixed, universal frame.
           * this creature's EXCLUSIVE dialogue TOPICS list inside the BODY (they are
@@ -457,6 +459,7 @@ def interactive(game: Game) -> int:
         left = max(0, (cols - w) // 2)
         acc = palette.get("@", curses.A_BOLD)
         nv = len(verbs)
+        stat_line = "  ·  ".join(stats) if stats else ""
         # the verb bar can wrap across a couple of border rows if there are many
         labels = [f"{n + 1}·{v}" for n, v in enumerate(verbs)] + ["0·leave"]
         bar_rows, cur = [], ""
@@ -467,12 +470,16 @@ def interactive(game: Game) -> int:
             cur += lab + "  "
         if cur.strip():
             bar_rows.append(cur.rstrip())
-        # the portrait, centered, sits at the very top of the body
+        # the STATS line + portrait form the fixed header (both pinned above the scroll)
         art = []
+        if stat_line:
+            art.append(stat_line[:w - 4])
         if face:
             fw = max((len(r) for r in face), default=0)
             pad = max((w - 4 - fw) // 2, 0)
-            art = [" " * pad + r for r in face] + [""]
+            art += [" " * pad + r for r in face]
+        if art:
+            art.append("")
         # topics live in the body, appended under the exchange
         topic_lines = ([""] + [f"  {nv + n + 1}. {lbl}" for n, (lbl, _) in
                                enumerate(topics)]) if topics else []
@@ -520,27 +527,37 @@ def interactive(game: Game) -> int:
 
     def _talk_do(target, verb, nid):
         """Resolve one talk verb against any target; returns the response lines. Every
-        verb works on everything — the effect just depends on what the target is."""
+        verb works on everything — the effect just depends on what the target is. The
+        creature's own words are quoted BARE (no name prefix — the name is on the
+        border already); narration of what happens is plain prose."""
         if verb == "Speak with it":
             line = game._weave_note(nid, salt=f"speak:{game.turn}") if nid else ""
-            return [f'{target.name}: "{line}"'] if line else \
-                   [f"{target.name} says nothing you can hold."]
+            return [f'"{line}"'] if line else ["It says nothing you can hold."]
         if verb == "Ask its history":
             h = game._note_history(nid, salt="talk") if nid else ""
-            return [h] if h else [f"{target.name} has no past you can read."]
+            return [h] if h else ["It has no past you can read."]
         if verb == "Offer matter":
             _r, lines = _capture(game.becalm, target)  # an offering placates a hostile;
-            return lines or [f"{target.name} has no need of your matter."]  # else no-op
+            return [_strip_name(ln, target) for ln in lines] or \
+                   ["It has no need of your matter."]   # else no-op
         if verb == "Confide a truth":
             _r, lines = _capture(game.confide, target)
-            return lines or [f"{target.name} has no secret to trade."]
+            return [_strip_name(ln, target) for ln in lines] or \
+                   ["It has no secret to trade."]
         if verb == "Seek a truce":
             if target.allegiance == "monster" and not target.is_boss \
                     and not getattr(target, "_enraged", False):
                 return None   # sentinel: hand off to the full SMT parley
-            return [f"{target.name} is not at war with you." if target.allegiance != "monster"
-                    else f"{target.name} will not hear you."]
+            return ["It is not at war with you." if target.allegiance != "monster"
+                    else "It will not hear you."]
         return [""]
+
+    def _strip_name(line, target):
+        """Verbs that log 'Name does X' get the leading name trimmed, since the window
+        already shows it. 'Foo stills.' -> 'It stills.'"""
+        if line.startswith(target.name + " "):
+            return "It " + line[len(target.name) + 1:]
+        return line
 
     def talk_window(scr, target):
         """The one conversation surface for EVERY interlocutor. Name at the top border,
@@ -554,15 +571,16 @@ def interactive(game: Game) -> int:
         nid = getattr(target, "source", "")
         topics = game.dialogue_topics(nid) if nid else []
         opening = game._weave_note(nid, salt="talk") if nid else ""
-        transcript = [f'{target.name}: "{opening}"' if opening
-                      else f"{target.name} regards you."]
+        transcript = [f'"{opening}"' if opening else "It regards you."]
         # a Spore-style procedural PORTRAIT, built from the creature's own traits
         from .portrait import portrait
         arch, dmg = game.creature_look(target)
         face = portrait(arch, nid, getattr(target, "tier", 1),
                         getattr(target, "quality", 0), dmg)
+        stats = game.creature_stats(target)   # readable metrics under the name
         while True:
-            i = dialog_frame(scr, target.name, transcript, TALK_VERBS, topics, face)
+            i = dialog_frame(scr, target.name, transcript, TALK_VERBS, topics,
+                             face, stats)
             if i is None:
                 break
             if i < len(TALK_VERBS):

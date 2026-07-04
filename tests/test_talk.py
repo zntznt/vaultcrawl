@@ -64,8 +64,26 @@ def test_mechanical_verbs_apply_to_any_target():
     assert isinstance(g.becalm(foe), bool)
 
 
+def test_creature_stats_are_readable_and_adaptive():
+    from runtime.entities import Actor
+    g = _game()
+    # a plain wild critter -> just its stance, no clutter
+    w = Actor(x=1, y=1, glyph="n", name="grazer", hp=6, max_hp=6, atk=1,
+              allegiance="wild")
+    assert g.creature_stats(w) == ["indifferent"]
+    # a wounded legendary hostile -> the full readout, condition included
+    b = Actor(x=1, y=1, glyph="q", name="S", hp=5, max_hp=40, atk=9,
+              tier=4, quality=4, allegiance="monster")
+    s = g.creature_stats(b)
+    assert "hostile" in s and "legendary" in s and "tier 4" in s
+    assert any("death" in x or "wounded" in x for x in s), "condition surfaced when hurt"
+    # a healthy creature does NOT surface a condition word
+    assert not any("death" in x or "wounded" in x for x in g.creature_stats(w))
+
+
 if __name__ == "__main__":
     for fn in (test_dialogue_topics_are_note_specific, test_topics_reference_the_real_note,
-               test_topics_empty_for_sourceless, test_mechanical_verbs_apply_to_any_target):
+               test_topics_empty_for_sourceless, test_mechanical_verbs_apply_to_any_target,
+               test_creature_stats_are_readable_and_adaptive):
         fn()
         print(f"ok {fn.__name__}")
