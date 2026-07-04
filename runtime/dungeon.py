@@ -87,7 +87,38 @@ def _connect_mst(tiles, rooms, rng):
         connected.add(j)
 
 
-def generate_level(width: int, height: int, seed: str, floor: int, max_rooms: int = 8) -> Level:
+def _architecture_level(graph: dict, seed: str, floor: int) -> Level:
+    """Grow + carve a living level from the vault graph (ARCHITECTURE_SPEC, Phase 6).
+    Seeded by (seed, floor) so each floor is a distinct living layout from the same
+    corpus. Imports lazily: runtime.arch.carve imports dungeon.Level, so a top-level
+    import here would be circular."""
+    from runtime.arch import grow as _grow
+    from runtime.arch.carve import carve as _carve
+    plan = _grow.grow(graph, seed=f"{seed}:floor:{floor}")
+    return _carve(plan, seed=f"{seed}:floor:{floor}")
+
+
+def build_world(graph: dict, seed: str):
+    """Sandbox: grow + carve the WHOLE vault as ONE persistent world (no floors).
+    Returns (level, region_map, plan) where region_map is {(x,y) -> note id} so the
+    game can resolve which district the player stands in. Lazy import (circular)."""
+    from runtime.arch import grow as _grow
+    from runtime.arch.carve import carve as _carve, region_map as _region_map
+    plan = _grow.grow(graph, seed=f"{seed}:world")
+    level = _carve(plan, seed=f"{seed}:world")
+    return level, _region_map(plan), plan
+
+
+def generate_level(width: int, height: int, seed: str, floor: int,
+                   max_rooms: int = 8, graph: dict | None = None) -> Level:
+    # Architecture path: if the manifest carries a vault graph, grow+carve a living
+    # level. Falls back to rooms+MST on any failure (and when no graph is present), so
+    # the bare game always produces a playable, connected level.
+    if graph and graph.get("nodes"):
+        try:
+            return _architecture_level(graph, seed, floor)
+        except Exception:
+            pass  # fall through to the proven rooms+MST generator
     rng = random.Random(f"{seed}:floor:{floor}")
     tiles = [[WALL] * width for _ in range(height)]
     rooms: list = []

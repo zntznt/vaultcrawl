@@ -260,6 +260,21 @@ def carve(plan, seed="carve") -> Level:
                  player_start=player_start, stairs=stairs)
 
 
+def region_map(plan):
+    """{(x, y) -> center.id (== note id)} for every footprint tile of the grown plan.
+
+    The carved Level loses which district owns which tile; the sandbox needs it back so
+    `region_at(x, y)` can resolve the note (and thus the region/faction/enemy pool) the
+    player is standing in. A tile claimed by two centers (the semilattice overlap, e.g. a
+    shared court) goes to the stronger center -- but it still *belongs* to both, which is
+    why region_at can be extended to return a set later. Deterministic (strongest first)."""
+    rmap = {}
+    for c in sorted(plan.placed(), key=lambda c: c.intensity):   # weak first; strong overwrites
+        for t in c.footprint:
+            rmap[t] = c.id
+    return rmap
+
+
 # --------------------------------------------------------------------------- #
 # grid-level wholeness -- the carve's own regression metric (§4, §11)
 # --------------------------------------------------------------------------- #

@@ -1,0 +1,1257 @@
+{
+  "version": "0.1.0",
+  "seed": "ab7d37f32558eaf4",
+  "generatedFrom": {
+    "vaultPath": "/Users/zntznt/Documents/exploring-ai-generated-roguelike-world-2026-06-28/output/vaultcrawl/sample_vault_mega",
+    "noteCount": 18,
+    "linkCount": 53,
+    "communityCount": 7,
+    "padded": false
+  },
+  "bible": {
+    "worldName": "The Reliquary of Systems",
+    "tone": "a hushed, archival melancholy",
+    "namingConventions": "Places take the form 'The <adjective> <structure>'; powers borrow the vocabulary of running water and brass.",
+    "aesthetic": [
+      "vellum",
+      "running water",
+      "brass",
+      "dust"
+    ],
+    "factions": [
+      {
+        "id": "faction_0",
+        "name": "The Order of Systems",
+        "ethos": "They believe nothing is finished, only filed.",
+        "clusterId": 0,
+        "relations": [
+          {
+            "factionId": "faction_1",
+            "stance": "ally"
+          },
+          {
+            "factionId": "faction_2",
+            "stance": "vassal"
+          },
+          {
+            "factionId": "faction_3",
+            "stance": "rival"
+          },
+          {
+            "factionId": "faction_4",
+            "stance": "vassal"
+          },
+          {
+            "factionId": "faction_5",
+            "stance": "ally"
+          },
+          {
+            "factionId": "faction_6",
+            "stance": "rival"
+          }
+        ]
+      },
+      {
+        "id": "faction_1",
+        "name": "Keepers of Storage",
+        "ethos": "They worship the deepest, most-linked truth and fear its silence.",
+        "clusterId": 1,
+        "relations": [
+          {
+            "factionId": "faction_0",
+            "stance": "ally"
+          },
+          {
+            "factionId": "faction_4",
+            "stance": "vassal"
+          },
+          {
+            "factionId": "faction_5",
+            "stance": "vassal"
+          }
+        ]
+      },
+      {
+        "id": "faction_2",
+        "name": "House Streaming",
+        "ethos": "They tend what the vellum preserves.",
+        "clusterId": 2,
+        "relations": [
+          {
+            "factionId": "faction_0",
+            "stance": "vassal"
+          },
+          {
+            "factionId": "faction_3",
+            "stance": "rival"
+          },
+          {
+            "factionId": "faction_6",
+            "stance": "vassal"
+          }
+        ]
+      },
+      {
+        "id": "faction_3",
+        "name": "House Streaming",
+        "ethos": "They worship the deepest, most-linked truth and fear its silence.",
+        "clusterId": 3,
+        "relations": [
+          {
+            "factionId": "faction_0",
+            "stance": "rival"
+          },
+          {
+            "factionId": "faction_2",
+            "stance": "rival"
+          },
+          {
+            "factionId": "faction_5",
+            "stance": "rival"
+          },
+          {
+            "factionId": "faction_6",
+            "stance": "vassal"
+          }
+        ]
+      },
+      {
+        "id": "faction_4",
+        "name": "Keepers of Storage",
+        "ethos": "They guard the borders where one idea bleeds into another.",
+        "clusterId": 4,
+        "relations": [
+          {
+            "factionId": "faction_0",
+            "stance": "vassal"
+          },
+          {
+            "factionId": "faction_1",
+            "stance": "vassal"
+          },
+          {
+            "factionId": "faction_5",
+            "stance": "vassal"
+          }
+        ]
+      },
+      {
+        "id": "faction_5",
+        "name": "House Storage",
+        "ethos": "They believe nothing is finished, only filed.",
+        "clusterId": 5,
+        "relations": [
+          {
+            "factionId": "faction_0",
+            "stance": "ally"
+          },
+          {
+            "factionId": "faction_1",
+            "stance": "vassal"
+          },
+          {
+            "factionId": "faction_3",
+            "stance": "rival"
+          },
+          {
+            "factionId": "faction_4",
+            "stance": "vassal"
+          }
+        ]
+      },
+      {
+        "id": "faction_6",
+        "name": "Keepers of Streaming",
+        "ethos": "They worship the deepest, most-linked truth and fear its silence.",
+        "clusterId": 6,
+        "relations": [
+          {
+            "factionId": "faction_0",
+            "stance": "rival"
+          },
+          {
+            "factionId": "faction_2",
+            "stance": "vassal"
+          },
+          {
+            "factionId": "faction_3",
+            "stance": "vassal"
+          }
+        ]
+      }
+    ]
+  },
+  "graph": {
+    "nodes": {
+      "backpressure": {
+        "title": "Backpressure",
+        "pagerank": 0.0189,
+        "betweenness": 0.00368,
+        "degree": 3,
+        "community": 2,
+        "members": [
+          0,
+          2,
+          6
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.757,
+        "tags": [
+          "streaming"
+        ],
+        "neighbors": [
+          "channel",
+          "engine",
+          "window"
+        ]
+      },
+      "buffer": {
+        "title": "Buffer",
+        "pagerank": 0.01749,
+        "betweenness": 0.00368,
+        "degree": 3,
+        "community": 3,
+        "members": [
+          0,
+          2,
+          3
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.658,
+        "tags": [
+          "streaming"
+        ],
+        "neighbors": [
+          "channel",
+          "engine",
+          "stream"
+        ]
+      },
+      "bus": {
+        "title": "Bus",
+        "pagerank": 0.08492,
+        "betweenness": 0.00368,
+        "degree": 3,
+        "community": 0,
+        "members": [
+          0
+        ],
+        "bridge": false,
+        "role": "cluster",
+        "activity": 0.44,
+        "tags": [
+          "systems"
+        ],
+        "neighbors": [
+          "engine",
+          "registry",
+          "scheduler"
+        ]
+      },
+      "channel": {
+        "title": "Channel",
+        "pagerank": 0.01864,
+        "betweenness": 0.00368,
+        "degree": 3,
+        "community": 2,
+        "members": [
+          0,
+          2,
+          3
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.728,
+        "tags": [
+          "streaming"
+        ],
+        "neighbors": [
+          "backpressure",
+          "buffer",
+          "engine"
+        ]
+      },
+      "compaction": {
+        "title": "Compaction",
+        "pagerank": 0.01864,
+        "betweenness": 0.00368,
+        "degree": 3,
+        "community": 1,
+        "members": [
+          0,
+          1
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.969,
+        "tags": [
+          "storage"
+        ],
+        "neighbors": [
+          "engine",
+          "replica",
+          "snapshot"
+        ]
+      },
+      "engine": {
+        "title": "Engine",
+        "pagerank": 0.25755,
+        "betweenness": 0.78676,
+        "degree": 17,
+        "community": 0,
+        "members": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.0,
+        "tags": [
+          "systems"
+        ],
+        "neighbors": [
+          "backpressure",
+          "buffer",
+          "bus",
+          "channel",
+          "compaction",
+          "index",
+          "kernel",
+          "ledger",
+          "registry",
+          "replica",
+          "scheduler",
+          "schema",
+          "shard",
+          "snapshot",
+          "stream",
+          "watermark",
+          "window"
+        ]
+      },
+      "index": {
+        "title": "Index",
+        "pagerank": 0.01749,
+        "betweenness": 0.00368,
+        "degree": 3,
+        "community": 4,
+        "members": [
+          0,
+          4,
+          5
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.896,
+        "tags": [
+          "storage"
+        ],
+        "neighbors": [
+          "engine",
+          "ledger",
+          "shard"
+        ]
+      },
+      "kernel": {
+        "title": "Kernel",
+        "pagerank": 0.08866,
+        "betweenness": 0.00368,
+        "degree": 3,
+        "community": 0,
+        "members": [
+          0,
+          5
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.197,
+        "tags": [
+          "systems"
+        ],
+        "neighbors": [
+          "engine",
+          "registry",
+          "schema"
+        ]
+      },
+      "ledger": {
+        "title": "Ledger",
+        "pagerank": 0.01825,
+        "betweenness": 0.01103,
+        "degree": 4,
+        "community": 5,
+        "members": [
+          0,
+          1,
+          4,
+          5
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.839,
+        "tags": [
+          "storage"
+        ],
+        "neighbors": [
+          "engine",
+          "index",
+          "schema",
+          "snapshot"
+        ]
+      },
+      "registry": {
+        "title": "Registry",
+        "pagerank": 0.05751,
+        "betweenness": 0.00368,
+        "degree": 3,
+        "community": 0,
+        "members": [
+          0
+        ],
+        "bridge": false,
+        "role": "cluster",
+        "activity": 0.357,
+        "tags": [
+          "systems"
+        ],
+        "neighbors": [
+          "bus",
+          "engine",
+          "kernel"
+        ]
+      },
+      "replica": {
+        "title": "Replica",
+        "pagerank": 0.0189,
+        "betweenness": 0.00368,
+        "degree": 3,
+        "community": 1,
+        "members": [
+          0,
+          1,
+          4
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.947,
+        "tags": [
+          "storage"
+        ],
+        "neighbors": [
+          "compaction",
+          "engine",
+          "shard"
+        ]
+      },
+      "scheduler": {
+        "title": "Scheduler",
+        "pagerank": 0.14185,
+        "betweenness": 0.0,
+        "degree": 2,
+        "community": 0,
+        "members": [
+          0
+        ],
+        "bridge": false,
+        "role": "hub",
+        "activity": 0.561,
+        "tags": [
+          "systems"
+        ],
+        "neighbors": [
+          "bus",
+          "engine"
+        ]
+      },
+      "schema": {
+        "title": "Schema",
+        "pagerank": 0.15067,
+        "betweenness": 0.01103,
+        "degree": 4,
+        "community": 5,
+        "members": [
+          0,
+          3,
+          5
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.151,
+        "tags": [
+          "systems"
+        ],
+        "neighbors": [
+          "engine",
+          "kernel",
+          "ledger",
+          "stream"
+        ]
+      },
+      "shard": {
+        "title": "Shard",
+        "pagerank": 0.01864,
+        "betweenness": 0.00368,
+        "degree": 3,
+        "community": 4,
+        "members": [
+          0,
+          1,
+          4
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.924,
+        "tags": [
+          "storage"
+        ],
+        "neighbors": [
+          "engine",
+          "index",
+          "replica"
+        ]
+      },
+      "snapshot": {
+        "title": "Snapshot",
+        "pagerank": 0.01749,
+        "betweenness": 0.00368,
+        "degree": 3,
+        "community": 1,
+        "members": [
+          0,
+          1,
+          5
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 1.0,
+        "tags": [
+          "storage"
+        ],
+        "neighbors": [
+          "compaction",
+          "engine",
+          "ledger"
+        ]
+      },
+      "stream": {
+        "title": "Stream",
+        "pagerank": 0.01825,
+        "betweenness": 0.01103,
+        "degree": 4,
+        "community": 3,
+        "members": [
+          0,
+          3,
+          5,
+          6
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.615,
+        "tags": [
+          "streaming"
+        ],
+        "neighbors": [
+          "buffer",
+          "engine",
+          "schema",
+          "watermark"
+        ]
+      },
+      "watermark": {
+        "title": "Watermark",
+        "pagerank": 0.01749,
+        "betweenness": 0.00368,
+        "degree": 3,
+        "community": 6,
+        "members": [
+          0,
+          3,
+          6
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.813,
+        "tags": [
+          "streaming"
+        ],
+        "neighbors": [
+          "engine",
+          "stream",
+          "window"
+        ]
+      },
+      "window": {
+        "title": "Window",
+        "pagerank": 0.01864,
+        "betweenness": 0.00368,
+        "degree": 3,
+        "community": 6,
+        "members": [
+          0,
+          2,
+          6
+        ],
+        "bridge": true,
+        "role": "bridge",
+        "activity": 0.785,
+        "tags": [
+          "streaming"
+        ],
+        "neighbors": [
+          "backpressure",
+          "engine",
+          "watermark"
+        ]
+      }
+    },
+    "edges": [
+      {
+        "a": "backpressure",
+        "b": "window",
+        "interlock": 3
+      },
+      {
+        "a": "backpressure",
+        "b": "channel",
+        "interlock": 3
+      },
+      {
+        "a": "backpressure",
+        "b": "engine",
+        "interlock": 1
+      },
+      {
+        "a": "buffer",
+        "b": "stream",
+        "interlock": 3
+      },
+      {
+        "a": "buffer",
+        "b": "channel",
+        "interlock": 3
+      },
+      {
+        "a": "buffer",
+        "b": "engine",
+        "interlock": 1
+      },
+      {
+        "a": "bus",
+        "b": "scheduler",
+        "interlock": 3
+      },
+      {
+        "a": "bus",
+        "b": "engine",
+        "interlock": 2
+      },
+      {
+        "a": "bus",
+        "b": "registry",
+        "interlock": 3
+      },
+      {
+        "a": "channel",
+        "b": "engine",
+        "interlock": 1
+      },
+      {
+        "a": "compaction",
+        "b": "replica",
+        "interlock": 3
+      },
+      {
+        "a": "compaction",
+        "b": "engine",
+        "interlock": 1
+      },
+      {
+        "a": "compaction",
+        "b": "snapshot",
+        "interlock": 3
+      },
+      {
+        "a": "engine",
+        "b": "schema",
+        "interlock": 3
+      },
+      {
+        "a": "engine",
+        "b": "stream",
+        "interlock": 1
+      },
+      {
+        "a": "engine",
+        "b": "kernel",
+        "interlock": 2
+      },
+      {
+        "a": "engine",
+        "b": "registry",
+        "interlock": 2
+      },
+      {
+        "a": "engine",
+        "b": "index",
+        "interlock": 1
+      },
+      {
+        "a": "engine",
+        "b": "window",
+        "interlock": 1
+      },
+      {
+        "a": "engine",
+        "b": "watermark",
+        "interlock": 1
+      },
+      {
+        "a": "engine",
+        "b": "ledger",
+        "interlock": 1
+      },
+      {
+        "a": "engine",
+        "b": "replica",
+        "interlock": 1
+      },
+      {
+        "a": "engine",
+        "b": "scheduler",
+        "interlock": 3
+      },
+      {
+        "a": "engine",
+        "b": "snapshot",
+        "interlock": 1
+      },
+      {
+        "a": "engine",
+        "b": "shard",
+        "interlock": 1
+      },
+      {
+        "a": "index",
+        "b": "shard",
+        "interlock": 3
+      },
+      {
+        "a": "index",
+        "b": "ledger",
+        "interlock": 3
+      },
+      {
+        "a": "kernel",
+        "b": "schema",
+        "interlock": 3
+      },
+      {
+        "a": "kernel",
+        "b": "registry",
+        "interlock": 3
+      },
+      {
+        "a": "ledger",
+        "b": "schema",
+        "interlock": 1
+      },
+      {
+        "a": "ledger",
+        "b": "snapshot",
+        "interlock": 3
+      },
+      {
+        "a": "replica",
+        "b": "shard",
+        "interlock": 3
+      },
+      {
+        "a": "schema",
+        "b": "stream",
+        "interlock": 1
+      },
+      {
+        "a": "stream",
+        "b": "watermark",
+        "interlock": 3
+      },
+      {
+        "a": "watermark",
+        "b": "window",
+        "interlock": 3
+      }
+    ]
+  },
+  "regions": [
+    {
+      "id": "region_0",
+      "biome": "observatory",
+      "element": "sacred",
+      "depthBand": [
+        19,
+        26
+      ],
+      "factionId": "faction_0",
+      "sourceNoteId": "engine",
+      "themeTags": [
+        "systems"
+      ],
+      "activity": 0.311,
+      "name": "The Iron Star-Loom",
+      "flavor": "Grown from your note 'Engine'. Lamplight clings to every surface here."
+    },
+    {
+      "id": "region_1",
+      "biome": "observatory",
+      "element": "charged",
+      "depthBand": [
+        4,
+        17
+      ],
+      "factionId": "faction_1",
+      "sourceNoteId": "replica",
+      "themeTags": [
+        "storage"
+      ],
+      "activity": 0.972,
+      "name": "The Recursive Star-Loom",
+      "flavor": "Grown from your note 'Replica'. Damp clings to every surface here."
+    },
+    {
+      "id": "region_2",
+      "biome": "catacomb",
+      "element": "flammable",
+      "depthBand": [
+        10,
+        16
+      ],
+      "factionId": "faction_2",
+      "sourceNoteId": "backpressure",
+      "themeTags": [
+        "streaming"
+      ],
+      "activity": 0.743,
+      "name": "The Veiled Crypt-Walk",
+      "flavor": "Grown from your note 'Backpressure'. Damp clings to every surface here."
+    },
+    {
+      "id": "region_3",
+      "biome": "catacomb",
+      "element": "corrosive",
+      "depthBand": [
+        1,
+        8
+      ],
+      "factionId": "faction_3",
+      "sourceNoteId": "stream",
+      "themeTags": [
+        "streaming"
+      ],
+      "activity": 0.637,
+      "name": "The Ashen Undercroft",
+      "flavor": "Grown from your note 'Stream'. Lamplight clings to every surface here."
+    },
+    {
+      "id": "region_4",
+      "biome": "garden",
+      "element": "sacred",
+      "depthBand": [
+        2,
+        13
+      ],
+      "factionId": "faction_4",
+      "sourceNoteId": "shard",
+      "themeTags": [
+        "storage"
+      ],
+      "activity": 0.91,
+      "name": "The Veiled Greenhouse",
+      "flavor": "Grown from your note 'Shard'. Damp clings to every surface here."
+    },
+    {
+      "id": "region_5",
+      "biome": "marsh",
+      "element": "sacred",
+      "depthBand": [
+        7,
+        25
+      ],
+      "factionId": "faction_5",
+      "sourceNoteId": "schema",
+      "themeTags": [
+        "storage",
+        "systems"
+      ],
+      "activity": 0.495,
+      "name": "The Recursive Quag",
+      "flavor": "Grown from your note 'Schema'. Damp clings to every surface here."
+    },
+    {
+      "id": "region_6",
+      "biome": "foundry",
+      "element": "corrosive",
+      "depthBand": [
+        5,
+        14
+      ],
+      "factionId": "faction_6",
+      "sourceNoteId": "window",
+      "themeTags": [
+        "streaming"
+      ],
+      "activity": 0.799,
+      "name": "The Brimming Assembly",
+      "flavor": "Grown from your note 'Window'. Static clings to every surface here."
+    }
+  ],
+  "enemies": [
+    {
+      "id": "enemy_0",
+      "archetype": "shade",
+      "tier": 4,
+      "damageType": "frost",
+      "regionId": "region_0",
+      "sourceNoteId": "bus",
+      "name": "Veiled Shade",
+      "flavor": "A shade that drifted out of 'Bus', dealing frost to the unwary."
+    },
+    {
+      "id": "enemy_1",
+      "archetype": "echo",
+      "tier": 5,
+      "damageType": "decay",
+      "regionId": "region_0",
+      "sourceNoteId": "kernel",
+      "name": "Marginal Echo of the Choir",
+      "flavor": "A echo that drifted out of 'Kernel', dealing decay to the unwary."
+    },
+    {
+      "id": "enemy_2",
+      "archetype": "construct",
+      "tier": 4,
+      "damageType": "decay",
+      "regionId": "region_0",
+      "sourceNoteId": "registry",
+      "name": "Hollow Construct of the Choir",
+      "flavor": "A construct that drifted out of 'Registry', dealing decay to the unwary."
+    },
+    {
+      "id": "enemy_3",
+      "archetype": "echo",
+      "tier": 5,
+      "damageType": "flame",
+      "regionId": "region_0",
+      "sourceNoteId": "scheduler",
+      "name": "Bound Echo of the Causeway",
+      "flavor": "A echo that drifted out of 'Scheduler', dealing flame to the unwary."
+    },
+    {
+      "id": "enemy_4",
+      "archetype": "golem",
+      "tier": 3,
+      "damageType": "flame",
+      "regionId": "region_1",
+      "sourceNoteId": "compaction",
+      "name": "Severed Golem",
+      "flavor": "A golem that drifted out of 'Compaction', dealing flame to the unwary."
+    },
+    {
+      "id": "enemy_5",
+      "archetype": "warden",
+      "tier": 2,
+      "damageType": "flame",
+      "regionId": "region_1",
+      "sourceNoteId": "snapshot",
+      "name": "Recursive Warden of the Causeway",
+      "flavor": "A warden that drifted out of 'Snapshot', dealing flame to the unwary."
+    },
+    {
+      "id": "enemy_6",
+      "archetype": "beast",
+      "tier": 3,
+      "damageType": "frost",
+      "regionId": "region_2",
+      "sourceNoteId": "channel",
+      "name": "Recursive Beast of the Lantern",
+      "flavor": "A beast that drifted out of 'Channel', dealing frost to the unwary."
+    },
+    {
+      "id": "enemy_7",
+      "archetype": "golem",
+      "tier": 2,
+      "damageType": "psychic",
+      "regionId": "region_3",
+      "sourceNoteId": "buffer",
+      "name": "Marginal Golem",
+      "flavor": "A golem that drifted out of 'Buffer', dealing psychic to the unwary."
+    },
+    {
+      "id": "enemy_8",
+      "archetype": "construct",
+      "tier": 2,
+      "damageType": "venom",
+      "regionId": "region_4",
+      "sourceNoteId": "index",
+      "name": "Patient Construct",
+      "flavor": "A construct that drifted out of 'Index', dealing venom to the unwary."
+    },
+    {
+      "id": "enemy_9",
+      "archetype": "construct",
+      "tier": 2,
+      "damageType": "flame",
+      "regionId": "region_5",
+      "sourceNoteId": "ledger",
+      "name": "Brimming Construct of the Atrium",
+      "flavor": "A construct that drifted out of 'Ledger', dealing flame to the unwary."
+    },
+    {
+      "id": "enemy_10",
+      "archetype": "golem",
+      "tier": 2,
+      "damageType": "psychic",
+      "regionId": "region_6",
+      "sourceNoteId": "watermark",
+      "name": "Sunken Golem of the Engine",
+      "flavor": "A golem that drifted out of 'Watermark', dealing psychic to the unwary."
+    }
+  ],
+  "bosses": [
+    {
+      "id": "boss_0",
+      "tier": 5,
+      "depth": 26,
+      "regionId": "region_0",
+      "sourceNoteId": "engine",
+      "name": "Engine, the Unfiled",
+      "title": "Warden of the Meridian",
+      "flavor": "The most-linked thought in the vault, made flesh; 17 roads lead to it and none lead away."
+    },
+    {
+      "id": "boss_1",
+      "tier": 4,
+      "depth": 17,
+      "regionId": "region_1",
+      "sourceNoteId": "replica",
+      "name": "Replica, the Recurring",
+      "title": "Warden of the Orrery",
+      "flavor": "The most-linked thought in the vault, made flesh; 3 roads lead to it and none lead away."
+    },
+    {
+      "id": "boss_2",
+      "tier": 4,
+      "depth": 16,
+      "regionId": "region_2",
+      "sourceNoteId": "backpressure",
+      "name": "Backpressure, the Indexed",
+      "title": "Warden of the Ossuary",
+      "flavor": "The most-linked thought in the vault, made flesh; 3 roads lead to it and none lead away."
+    },
+    {
+      "id": "boss_3",
+      "tier": 2,
+      "depth": 8,
+      "regionId": "region_3",
+      "sourceNoteId": "stream",
+      "name": "Stream, the Overlinked",
+      "title": "Warden of the Undercroft",
+      "flavor": "The most-linked thought in the vault, made flesh; 4 roads lead to it and none lead away."
+    },
+    {
+      "id": "boss_4",
+      "tier": 3,
+      "depth": 13,
+      "regionId": "region_4",
+      "sourceNoteId": "shard",
+      "name": "Shard, the Unmoved",
+      "title": "Warden of the Arbor",
+      "flavor": "The most-linked thought in the vault, made flesh; 3 roads lead to it and none lead away."
+    },
+    {
+      "id": "boss_5",
+      "tier": 5,
+      "depth": 25,
+      "regionId": "region_5",
+      "sourceNoteId": "schema",
+      "name": "Schema, the Severed",
+      "title": "Warden of the Fen",
+      "flavor": "The most-linked thought in the vault, made flesh; 4 roads lead to it and none lead away."
+    },
+    {
+      "id": "boss_6",
+      "tier": 3,
+      "depth": 14,
+      "regionId": "region_6",
+      "sourceNoteId": "window",
+      "name": "Window, the Overgrown",
+      "title": "Warden of the Assembly",
+      "flavor": "The most-linked thought in the vault, made flesh; 3 roads lead to it and none lead away."
+    }
+  ],
+  "items": [
+    {
+      "id": "item_0",
+      "slot": "trinket",
+      "rarity": "legendary",
+      "powerBudget": 32,
+      "sourceNoteId": "engine",
+      "name": "Choir of the Overgrown",
+      "flavor": "A legendary trinket salvaged from 'Engine'."
+    },
+    {
+      "id": "item_1",
+      "slot": "armor",
+      "rarity": "uncommon",
+      "powerBudget": 8,
+      "sourceNoteId": "ledger",
+      "name": "The Forgotten Atrium",
+      "flavor": "A uncommon armor salvaged from 'Ledger'."
+    },
+    {
+      "id": "item_2",
+      "slot": "consumable",
+      "rarity": "legendary",
+      "powerBudget": 32,
+      "sourceNoteId": "schema",
+      "name": "Wake of the Half-Remembered",
+      "flavor": "A legendary consumable salvaged from 'Schema'."
+    },
+    {
+      "id": "item_3",
+      "slot": "consumable",
+      "rarity": "uncommon",
+      "powerBudget": 8,
+      "sourceNoteId": "stream",
+      "name": "Choir of the Unfiled",
+      "flavor": "A uncommon consumable salvaged from 'Stream'."
+    },
+    {
+      "id": "item_4",
+      "slot": "consumable",
+      "rarity": "epic",
+      "powerBudget": 22,
+      "sourceNoteId": "backpressure",
+      "name": "The Marginal Annex",
+      "flavor": "A epic consumable salvaged from 'Backpressure'."
+    }
+  ],
+  "secrets": [],
+  "quests": [
+    {
+      "id": "quest_0",
+      "kind": "slay",
+      "sourceNoteId": "buffer",
+      "objective": "Unmake the Recursive Hollow — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_1",
+      "kind": "fetch",
+      "sourceNoteId": "index",
+      "objective": "Recover the Brimming Loom — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_2",
+      "kind": "slay",
+      "sourceNoteId": "snapshot",
+      "objective": "Unmake the Severed Causeway — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_3",
+      "kind": "recover",
+      "sourceNoteId": "watermark",
+      "objective": "Reclaim the Recursive Causeway — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_4",
+      "kind": "fetch",
+      "sourceNoteId": "ledger",
+      "objective": "Recover the Forgotten Choir — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_5",
+      "kind": "slay",
+      "sourceNoteId": "stream",
+      "objective": "Unmake the Cold Wake — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_6",
+      "kind": "escort",
+      "sourceNoteId": "channel",
+      "objective": "Shepherd the Annotated Lantern — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_7",
+      "kind": "recover",
+      "sourceNoteId": "compaction",
+      "objective": "Reclaim the Quiet Lantern — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_8",
+      "kind": "recover",
+      "sourceNoteId": "shard",
+      "objective": "Reclaim the Severed Atrium — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_9",
+      "kind": "recover",
+      "sourceNoteId": "window",
+      "objective": "Reclaim the Ashen Loom — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_10",
+      "kind": "cleanse",
+      "sourceNoteId": "backpressure",
+      "objective": "Purge the Fevered Atrium — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_11",
+      "kind": "fetch",
+      "sourceNoteId": "replica",
+      "objective": "Recover the Forgotten Engine — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_12",
+      "kind": "fetch",
+      "sourceNoteId": "registry",
+      "objective": "Recover the Bound Choir — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_13",
+      "kind": "fetch",
+      "sourceNoteId": "bus",
+      "objective": "Recover the Annotated Loom — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_14",
+      "kind": "fetch",
+      "sourceNoteId": "kernel",
+      "objective": "Recover the Quiet Ledger — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_15",
+      "kind": "slay",
+      "sourceNoteId": "scheduler",
+      "objective": "Unmake the Fevered Loom — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_16",
+      "kind": "fetch",
+      "sourceNoteId": "schema",
+      "objective": "Recover the Severed Ledger — an unfinished charge left in your own hand."
+    },
+    {
+      "id": "quest_17",
+      "kind": "cleanse",
+      "sourceNoteId": "engine",
+      "objective": "Purge the Marginal Causeway — an unfinished charge left in your own hand."
+    }
+  ]
+}

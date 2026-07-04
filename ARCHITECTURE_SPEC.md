@@ -395,8 +395,19 @@ the greedy argmax (stable tie-breaks, seeded rng).
    *Still open within §3:* the full pattern *catalogue* as registered operators (Megastructure,
    Wing, Activity Node, Growth Ring, Echo-motif) — the carver implements the load-bearing
    operators, not yet all 15 as pluggable Pattern objects.
-5. **Prototype/visualizer** — render maps + wholeness report across sample vaults (the "seen"
-   gate) and tune the weights against maps a human judges alive.
+5. **[DONE]** **Prototype/visualizer** — `runtime/arch/visualize.py` renders maps + the full
+   15-property wholeness report across vaults of escalating scale (hamlet 3 notes → town 10/11
+   → dense mega 18), the §11 *Seen* + *Measured* gates side by side
+   (`python -m runtime.arch.visualize --gallery`). Looking at the maps drove two real fixes:
+   (a) `alternating_repetition` was pinned at 0 — it measured rhythm along the size-sorted
+   growth order (which can't alternate); now it measures spatial rhythm along a BFS of the
+   seam graph. (b) Shared courts over-fired on dense vaults (every seam touching a
+   multi-member node → "a court everywhere is a court nowhere"); now a court requires a
+   genuine member-set boundary, so a single-cluster hamlet gets 0 and the dense mega gets
+   many but legibly. Both lifted plan-wholeness across every scale.
+   (`tests/test_visualize.py` locks the Measured gate as a regression.)
+   *Still open:* full weight-tuning against human-judged "alive" maps (the deepest, most
+   felt part of this gate) and image export — the ASCII gallery is the v1 *Seen* surface.
 6. **Integrate** — wire into `dungeon.py`/`mapping.py` behind the fallback; full-stack
    integration + wholeness regression; README.
 
