@@ -27,25 +27,20 @@ def test_you_wake_on_open_ground_not_boxed_in():
     assert walk >= 4, "the spawn is open enough to walk out of"
 
 
-def test_stride_crosses_open_wild_but_not_rooms():
+def test_one_move_is_one_tile_everywhere():
+    # a single try_move advances EXACTLY one tile — on open ground, on a road, in a
+    # room, anywhere. Speed governs how often you act, never how far a step carries.
     g = _g()
     g.actors = []
-    # find open wild floor with a clear run east, outside any room
-    spot = None
     for y in range(g.level.h):
         for x in range(g.level.w - 3):
-            if (g.room_at(x, y) is None
-                    and all(g.level.walkable(x + i, y) and g.level.tiles[y][x + i] != "#"
-                            and g.room_at(x + i, y) is None for i in range(3))
-                    and not g._interest_near(x + 1, y)):
-                spot = (x, y)
-                break
-        if spot:
-            break
-    if spot:
-        g.player.x, g.player.y = spot
-        g.try_move(1, 0)
-        assert g.player.x - spot[0] == 2, "open-ground stride covers two tiles"
+            if all(g.level.walkable(x + i, y) and g.level.tiles[y][x + i] != "#"
+                   for i in range(3)):
+                g.player.x, g.player.y = x, y
+                g.try_move(1, 0)
+                assert (g.player.x, g.player.y) == (x + 1, y), \
+                    "a move must cover exactly one tile — no stride, no teleport"
+                return
 
 
 def test_wild_landmarks_are_beacons():
@@ -59,12 +54,12 @@ def test_interest_near_flags_discoveries():
     g = _g()
     if g._wild_structs:
         (lx, ly), _ = sorted(g._wild_structs.items())[0]
-        assert g._interest_near(lx, ly), "a landmark is 'interest' the stride slows for"
+        assert g._interest_near(lx, ly), "a landmark is 'interest' travel slows for"
 
 
 if __name__ == "__main__":
     for fn in (test_log_dedup_collapses_repeats, test_you_wake_on_open_ground_not_boxed_in,
-               test_stride_crosses_open_wild_but_not_rooms, test_wild_landmarks_are_beacons,
+               test_one_move_is_one_tile_everywhere, test_wild_landmarks_are_beacons,
                test_interest_near_flags_discoveries):
         fn()
         print(f"ok {fn.__name__}")

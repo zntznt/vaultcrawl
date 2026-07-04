@@ -34,6 +34,8 @@ class Actor:
     faction: str = ""             # the house it belongs to; relations decide hostility
     quality: int = 0              # Factorio-style grade 0..4 (set by the QualitySystem)
     flavor: str = ""              # baked note-derived prose, surfaced on examine/first blood
+    speed: float = 1.0            # actions per world tick; 1.0 = one action every turn,
+    energy: float = 0.0           # 0.5 = every other turn, 2.0 = twice per turn (energy sys)
 
     @property
     def alive(self) -> bool:
