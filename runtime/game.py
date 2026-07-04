@@ -204,7 +204,7 @@ class Game:
             with open(self.site_cache, "r", encoding="utf-8") as fh:
                 d = json.load(fh)
             if (d.get("seed") != self.seed or d.get("sprawl", 1.0) != self.sprawl
-                    or d.get("fmt") != 8):
+                    or d.get("fmt") != 9):
                 return None
             from .dungeon import Level
             level = Level(w=d["w"], h=d["h"],
@@ -232,7 +232,7 @@ class Game:
             return
         try:
             with open(self.site_cache, "w", encoding="utf-8") as fh:
-                json.dump({"seed": self.seed, "sprawl": self.sprawl, "fmt": 8,
+                json.dump({"seed": self.seed, "sprawl": self.sprawl, "fmt": 9,
                            "w": level.w, "h": level.h,
                            "tiles": ["".join(r) for r in level.tiles],
                            "player_start": list(level.player_start),
@@ -1016,19 +1016,10 @@ class Game:
                     self.announced.add("fl:" + r["id"])
             # ambient murmur: occasionally a place speaks its vibe as you move through
             self._ambient_tick()
-            # on OPEN GROUND you STRIDE: two paces a turn across the wilderness (road
-            # OR open wild floor), one careful step inside a settled room. This is why
-            # crossing the country between districts feels like a journey, not nudging.
-            in_room = self.room_at(nx, ny) is not None
-            if self._on_surface() and target is None and not in_room:
-                fx, fy = nx + dx, ny + dy
-                if (self.level.walkable(fx, fy)
-                        and self.level.tiles[fy][fx] != "#"
-                        and self.actor_at(fx, fy) is None
-                        and self.room_at(fx, fy) is None            # don't stride INTO a place
-                        and not self._interest_near(fx, fy)):       # slow near discoveries
-                    self.player.x, self.player.y = fx, fy
-                    nx, ny = fx, fy
+            # one move is one tile — always. Speed governs how OFTEN you act relative
+            # to other actors, never how far a single step carries you. (Crossing the
+            # country fast is the `g` travel verb repeating a normal step, not a tile
+            # of teleport baked into try_move.)
             self._pickup()
             self.emit("noise", pos=(nx, ny), volume=3)   # footsteps carry
         self.enemies_act()
@@ -1281,6 +1272,41 @@ class Game:
         from .notehistory import one_fact
         return one_fact(node, node.get("title", nid), salt=salt)
 
+    def dialogue_topics(self, nid: str) -> list:
+        """DIALOGUE options exclusive to this creature's note — distinct from the
+        mechanical verbs (offer/confide/truce) that every creature shares. These are
+        conversation branches born from what THIS note is: what it links to, its
+        concerns, its place in the vault. Returns [(label, response_line)]."""
+        node = self.m.get("graph", {}).get("nodes", {}).get(nid)
+        if not node:
+            return []
+        title = node.get("title", nid)
+        nodes = self.m.get("graph", {}).get("nodes", {})
+        out = []
+        nbrs = node.get("neighbors") or []
+        if nbrs:
+            named = ", ".join(nodes.get(n, {}).get("title", n) for n in nbrs[:3])
+            out.append((f"Ask what '{title}' connects to",
+                        f'It speaks of ways that run to {named}.'))
+        tags = node.get("tags") or []
+        if tags:
+            concerns = ", ".join(t.replace("-", " ") for t in tags[:3])
+            out.append(("Ask what it cares about",
+                        f'"My concerns," it says, "are {concerns}."'))
+        if node.get("bridge"):
+            out.append(("Ask why it stands between",
+                        "It stands athwart a border; two worlds meet in it, "
+                        "and it has learned to keep both their secrets."))
+        elif node.get("role") == "hub":
+            out.append(("Ask why so many seek it",
+                        "Much turns around it. It is a center others orbit, "
+                        "and it wears the weight lightly."))
+        elif node.get("role") == "orphan":
+            out.append(("Ask how it came to be alone",
+                        "Nothing points to it and it points to nothing. "
+                        "It drifted here, and stayed."))
+        return out
+
     def examine(self, radius: int = 6):
         """Look around (free action): the region's nature, then whatever is nearby.
         This is where the baked note-derived flavor reaches the player on demand."""
@@ -1473,78 +1499,91 @@ class Game:
     def enemies_act(self):
         """Every non-player actor acts through its brain (lazily assigned by capability
         tier). A brain returns a step direction; `_npc_step` resolves it to a bump-attack
-        or a move."""
+        or a move.
+
+        SPEED: the world ticks at rate 1 (one player action = one tick). Each actor
+        gains `speed` energy per tick and acts once per whole unit of energy it holds,
+        so speed 1 acts every tick (the default, unchanged), 0.5 every other tick, 2.0
+        twice a tick. Nobody moves two TILES in one action; a faster thing simply gets
+        more actions. Energy carries over, so fractional speeds average out exactly."""
         if not self.alive:
             return
         for a in list(self.actors):
             if a not in self.actors:
                 continue
-            # territorial (sandbox): a creature belongs to its note's ground. It
-            # stirs only if you stand on that ground, press in close, or provoked
-            # it -- and drawn too far from home, it gives up and drifts back.
-            home = getattr(a, "_home", None)
-            if self.sandbox and a.allegiance == "npc":
-                # townsfolk stroll their square (anchored where they were placed):
-                # a settlement with still people reads as a diorama, not a town
-                if home is None:
-                    home = a._home = (a.x, a.y)
-                r = random.Random(f"{self.seed}:mill:{a.name}:{self.turn}")
-                if r.random() < 0.3:
-                    mdx, mdy = r.choice(((1, 0), (-1, 0), (0, 1), (0, -1)))
+            a.energy = getattr(a, "energy", 0.0) + getattr(a, "speed", 1.0)
+            while a.energy >= 1.0 and a in self.actors and self.alive:
+                a.energy -= 1.0
+                self._act_once(a)
+
+    def _act_once(self, a):
+        """One action for one actor (one tile of movement, one attack, or a mill).
+        Returning early just means 'this action is spent'; the energy loop in
+        enemies_act decides whether the actor gets another this tick."""
+        # territorial (sandbox): a creature belongs to its note's ground. It
+        # stirs only if you stand on that ground, press in close, or provoked
+        # it -- and drawn too far from home, it gives up and drifts back.
+        home = getattr(a, "_home", None)
+        if self.sandbox and a.allegiance == "npc":
+            # townsfolk stroll their square (anchored where they were placed):
+            # a settlement with still people reads as a diorama, not a town
+            if home is None:
+                home = a._home = (a.x, a.y)
+            r = random.Random(f"{self.seed}:mill:{a.name}:{self.turn}")
+            if r.random() < 0.3:
+                mdx, mdy = r.choice(((1, 0), (-1, 0), (0, 1), (0, -1)))
+                tx, ty = a.x + mdx, a.y + mdy
+                if (max(abs(tx - home[0]), abs(ty - home[1])) <= 3
+                        and self.level.walkable(tx, ty)
+                        and self.actor_at(tx, ty) is None
+                        and (tx, ty) != (self.player.x, self.player.y)):
+                    a.x, a.y = tx, ty
+            return
+        if self.sandbox and home is not None and a.allegiance == "monster":
+            pd = max(abs(self.player.x - a.x), abs(self.player.y - a.y))
+            on_its_ground = max(abs(self.player.x - home[0]),
+                                abs(self.player.y - home[1])) <= LEASH
+            if not on_its_ground and pd > 2 and not getattr(a, "_provoked", False):
+                # it keeps to its own ground, but it is not a statue: it MILLS
+                # about its home, so a watched town square visibly lives. Never
+                # a bump (target tile must be empty): milling is ambience, the
+                # real dynamics still come from brains when you are close.
+                r = random.Random(f"{self.seed}:mill:{a.source}:{self.turn}")
+                if r.random() < 0.4:
+                    mdx, mdy = r.choice(((1, 0), (-1, 0), (0, 1), (0, -1),
+                                         (1, 1), (-1, 1), (1, -1), (-1, -1)))
                     tx, ty = a.x + mdx, a.y + mdy
-                    if (max(abs(tx - home[0]), abs(ty - home[1])) <= 3
+                    if (max(abs(tx - home[0]), abs(ty - home[1])) <= LEASH
                             and self.level.walkable(tx, ty)
                             and self.actor_at(tx, ty) is None
                             and (tx, ty) != (self.player.x, self.player.y)):
+                        a._acted_turn = self.turn
                         a.x, a.y = tx, ty
-                continue
-            if self.sandbox and home is not None and a.allegiance == "monster":
-                pd = max(abs(self.player.x - a.x), abs(self.player.y - a.y))
-                on_its_ground = max(abs(self.player.x - home[0]),
-                                    abs(self.player.y - home[1])) <= LEASH
-                if not on_its_ground and pd > 2 and not getattr(a, "_provoked", False):
-                    # it keeps to its own ground, but it is not a statue: it MILLS
-                    # about its home, so a watched town square visibly lives. Never
-                    # a bump (target tile must be empty): milling is ambience, the
-                    # real dynamics still come from brains when you are close.
-                    r = random.Random(f"{self.seed}:mill:{a.source}:{self.turn}")
-                    if r.random() < 0.4:
-                        mdx, mdy = r.choice(((1, 0), (-1, 0), (0, 1), (0, -1),
-                                             (1, 1), (-1, 1), (1, -1), (-1, -1)))
-                        tx, ty = a.x + mdx, a.y + mdy
-                        if (max(abs(tx - home[0]), abs(ty - home[1])) <= LEASH
-                                and self.level.walkable(tx, ty)
-                                and self.actor_at(tx, ty) is None
-                                and (tx, ty) != (self.player.x, self.player.y)):
-                            a._acted_turn = self.turn
-                            a.x, a.y = tx, ty
-                    continue
-                if max(abs(a.x - home[0]), abs(a.y - home[1])) > LEASH and pd > 1:
-                    hx = (home[0] > a.x) - (home[0] < a.x)
-                    hy = (home[1] > a.y) - (home[1] < a.y)
-                    if abs(home[0] - a.x) >= abs(home[1] - a.y):
-                        step = (hx, 0) if hx else (0, hy)
-                    else:
-                        step = (0, hy) if hy else (hx, 0)
-                    a._acted_turn = self.turn
-                    self._npc_step(a, *step)
-                    continue
-            if (self.sandbox and not getattr(a, "_provoked", False)
-                    and max(abs(self.player.x - a.x),
-                            abs(self.player.y - a.y)) > 40):
-                continue   # beyond earshot: brains sleep; mill/idle keeps it drifting
-            if getattr(a, "brain", None) is None:
-                a.brain = make_brain(self, a)
-            dx, dy = a.brain.decide(self, a)
-            if dx == 0 and dy == 0 and a.allegiance == "monster" and self.system("senses") is not None:
-                # only hunters investigate sounds/scents; wildlife follows its own drives
-                from .senses import investigate_step
-                dx, dy = investigate_step(self, a)
-            if dx or dy:
-                a._acted_turn = self.turn   # claim the turn so fauna won't move it again
-                self._npc_step(a, dx, dy)
-                if not self.alive:
-                    return
+                return
+            if max(abs(a.x - home[0]), abs(a.y - home[1])) > LEASH and pd > 1:
+                hx = (home[0] > a.x) - (home[0] < a.x)
+                hy = (home[1] > a.y) - (home[1] < a.y)
+                if abs(home[0] - a.x) >= abs(home[1] - a.y):
+                    step = (hx, 0) if hx else (0, hy)
+                else:
+                    step = (0, hy) if hy else (hx, 0)
+                a._acted_turn = self.turn
+                self._npc_step(a, *step)
+                return
+        if (self.sandbox and not getattr(a, "_provoked", False)
+                and max(abs(self.player.x - a.x),
+                        abs(self.player.y - a.y)) > 40):
+            return   # beyond earshot: brains sleep; mill/idle keeps it drifting
+        if getattr(a, "brain", None) is None:
+            a.brain = make_brain(self, a)
+        dx, dy = a.brain.decide(self, a)
+        if dx == 0 and dy == 0 and a.allegiance == "monster" and self.system("senses") is not None:
+            # only hunters investigate sounds/scents; wildlife follows its own drives
+            from .senses import investigate_step
+            dx, dy = investigate_step(self, a)
+        if dx or dy:
+            a._acted_turn = self.turn   # claim the turn so fauna won't move it again
+            self._npc_step(a, dx, dy)
 
     def _npc_step(self, a, dx, dy):
         tx, ty = a.x + dx, a.y + dy

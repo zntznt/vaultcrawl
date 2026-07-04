@@ -431,6 +431,138 @@ def interactive(game: Game) -> int:
             if ln and not ln.startswith(("(", "Your move", "  ")):
                 game.log(ln)
 
+    def _capture(fn, *a, **kw):
+        """Run a verb that logs its result and RETURN the lines it appended, so a
+        talk window can show the response in its own transcript. Returns (ret, lines)."""
+        before = len(game.messages)
+        ret = fn(*a, **kw)
+        return ret, list(game.messages[before:])
+
+    def dialog_frame(scr, name, transcript, verbs, topics):
+        """The ONE unified conversation frame — every talk uses it, so it can be styled
+        once, here, later. Two kinds of choice, deliberately in different places:
+
+          * NAME in the TOP border.
+          * the running exchange fills the BODY (auto-scrolled to the latest line).
+          * the STANDARD mechanical VERBS (same for every creature) render along the
+            BOTTOM BORDER — the fixed, universal frame.
+          * this creature's EXCLUSIVE dialogue TOPICS list inside the BODY (they are
+            not standard; they depend on the creature, so they live in the content).
+
+        Choices are numbered continuously: verbs 1..V, then topics V+1..V+T. Returns the
+        chosen 0-based index (into verbs+topics), or None to leave."""
+        rows, cols = scr.getmaxyx()
+        w = min(max(48, cols - 6), cols - 2, 84)
+        left = max(0, (cols - w) // 2)
+        acc = palette.get("@", curses.A_BOLD)
+        nv = len(verbs)
+        # the verb bar can wrap across a couple of border rows if there are many
+        labels = [f"{n + 1}·{v}" for n, v in enumerate(verbs)] + ["0·leave"]
+        bar_rows, cur = [], ""
+        for lab in labels:
+            if len(cur) + len(lab) + 2 > w - 4:
+                bar_rows.append(cur.rstrip())
+                cur = ""
+            cur += lab + "  "
+        if cur.strip():
+            bar_rows.append(cur.rstrip())
+        # topics live in the body, appended under the exchange
+        topic_lines = ([""] + [f"  {nv + n + 1}. {lbl}" for n, (lbl, _) in
+                               enumerate(topics)]) if topics else []
+        while True:
+            body = _wrap(transcript, w - 4) + topic_lines
+            vh = max(3, min(len(body), rows - 6 - len(bar_rows)))
+            top = max(0, (rows - vh - 4 - len(bar_rows)) // 2)
+            # keep the newest exchange AND the topic list in view
+            off = max(0, len(body) - vh)
+            bar = "─" * (w - 2)
+            try:
+                for r in range(vh + 3 + len(bar_rows)):
+                    scr.addstr(top + r, left, " " * w)
+                scr.addstr(top, left, "┌" + bar + "┐", acc)
+                nm = f" {name} "
+                scr.addstr(top, left + 2, nm[:w - 4], acc)
+                for i in range(vh):
+                    scr.addstr(top + 1 + i, left, "│", acc)
+                    if off + i < len(body):
+                        scr.addstr(top + 1 + i, left + 2, body[off + i][:w - 4])
+                    scr.addstr(top + 1 + i, left + w - 1, "│", acc)
+                scr.addstr(top + 1 + vh, left, "├" + bar + "┤", acc)
+                for j, brow in enumerate(bar_rows):
+                    scr.addstr(top + 2 + vh + j, left,
+                               "│ " + brow.ljust(w - 4) + " │", acc)
+                scr.addstr(top + 2 + vh + len(bar_rows), left, "└" + bar + "┘", acc)
+            except curses.error:
+                pass
+            scr.refresh()
+            k = scr.getch()
+            if k in (ord("0"), ord("q"), 27):
+                return None
+            i = (k - ord("1")) if ord("1") <= k <= ord("9") else -1
+            if 0 <= i < nv + len(topics):
+                return i
+
+    # every interlocutor offers the SAME verbs — roguelike doctrine: all options are
+    # always available. The target's NATURE decides the OUTCOME (a hostile rebuffs your
+    # offering, a Keeper has no truce to strike), never which options you may attempt.
+    TALK_VERBS = ("Speak with it", "Ask its history", "Offer matter",
+                  "Confide a truth", "Seek a truce")
+
+    def _talk_do(target, verb, nid):
+        """Resolve one talk verb against any target; returns the response lines. Every
+        verb works on everything — the effect just depends on what the target is."""
+        if verb == "Speak with it":
+            line = game._weave_note(nid, salt=f"speak:{game.turn}") if nid else ""
+            return [f'{target.name}: "{line}"'] if line else \
+                   [f"{target.name} says nothing you can hold."]
+        if verb == "Ask its history":
+            h = game._note_history(nid, salt="talk") if nid else ""
+            return [h] if h else [f"{target.name} has no past you can read."]
+        if verb == "Offer matter":
+            _r, lines = _capture(game.becalm, target)  # an offering placates a hostile;
+            return lines or [f"{target.name} has no need of your matter."]  # else no-op
+        if verb == "Confide a truth":
+            _r, lines = _capture(game.confide, target)
+            return lines or [f"{target.name} has no secret to trade."]
+        if verb == "Seek a truce":
+            if target.allegiance == "monster" and not target.is_boss \
+                    and not getattr(target, "_enraged", False):
+                return None   # sentinel: hand off to the full SMT parley
+            return [f"{target.name} is not at war with you." if target.allegiance != "monster"
+                    else f"{target.name} will not hear you."]
+        return [""]
+
+    def talk_window(scr, target):
+        """The one conversation surface for EVERY interlocutor. Name at the top border,
+        the exchange in the body, the choices as a numbered list with the hint in the
+        bottom border — the same modal as examine, consistent across the board.
+
+        Two layers of choices: the fixed MECHANICAL verbs (offer/confide/truce/...),
+        the SAME for every creature (roguelike all-options doctrine), then this note's
+        EXCLUSIVE dialogue topics (what it links to, its concerns) — those may differ
+        per creature, since dialogue is born from what the note actually is."""
+        nid = getattr(target, "source", "")
+        topics = game.dialogue_topics(nid) if nid else []
+        opening = game._weave_note(nid, salt="talk") if nid else ""
+        transcript = [f'{target.name}: "{opening}"' if opening
+                      else f"{target.name} regards you."]
+        while True:
+            i = dialog_frame(scr, target.name, transcript, TALK_VERBS, topics)
+            if i is None:
+                break
+            if i < len(TALK_VERBS):
+                label = TALK_VERBS[i]
+                lines = _talk_do(target, label, nid)
+                if lines is None:             # truce with a hostile -> full parley
+                    negotiate_window(scr, target)
+                    return True
+            else:
+                label, resp = topics[i - len(TALK_VERBS)]
+                lines = [f'{target.name}: "{resp}"']
+            transcript.append(f"> {label.lower()}")
+            transcript += [ln for ln in lines if ln]
+        return True
+
     def pick(scr, prompt, count):
         """Prompt for a 1-based choice; returns a 0-based index or None."""
         draw(scr, f"{prompt} [1-{count}, other key cancels]")
@@ -550,8 +682,10 @@ def interactive(game: Game) -> int:
                         eff.wear(got[i] if i < len(got) else None)
                         game.log(f"You wear the {eff.worn or 'nothing'}.")
             elif k == ord("t"):
-                # speak: take an effect from a wild landmark, commune with the
-                # deepest thought, parley with a Keeper, or becalm a hostile
+                # ONE talk verb for everything: a wild landmark, the deepest thought,
+                # or any adjacent creature — all open the same windowed conversation
+                # (name at top, verbs at the bottom border). The boss/landmark keep
+                # their special resolution; every actor uses the unified talk window.
                 if game.commune_landmark() is not None:
                     pass
                 elif game.commune() is None:
@@ -559,23 +693,9 @@ def interactive(game: Game) -> int:
                            for a in [game.actor_at(game.player.x + dx,
                                                    game.player.y + dy)]
                            if a is not None]
-                    npc = next((a for a in adj if a.allegiance == "npc"), None)
-                    foe = next((a for a in adj if a.allegiance == "monster"
-                                and not a.is_boss), None)
-                    friend = next((a for a in adj
-                                   if a.allegiance in ("wild", "companion")
-                                   and getattr(a, "source", "")), None)
-                    if npc is not None:
-                        game.emit("interact", target=npc, pos=(npc.x, npc.y))
-                    elif foe is not None:
-                        if getattr(foe, "_enraged", False):
-                            game.log(f"{foe.name} will not hear you.")
-                        else:
-                            negotiate_window(scr, foe)
-                            game.wait()   # the exchange costs the turn
-                    elif friend is not None:
-                        if game.confide(friend):
-                            game.wait()   # secrets take a moment to trade
+                    if adj:
+                        talk_window(scr, adj[0])
+                        game.wait()   # the exchange costs the turn
             elif k == ord("z"):
                 d = pick_dir(scr)
                 if d is not None and game.toss(*d):
