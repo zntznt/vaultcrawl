@@ -131,3 +131,25 @@ register_brain("survivor", SurvivorBrain)
 register_brain("opportunist", OpportunistBrain)
 register_brain("forager", ForagerBrain)
 register_brain("scavenger", ScavengerBrain)
+
+
+# --------------------------------------------------------------------------- #
+# Companion — walks with whoever you control, fights what you fight
+# --------------------------------------------------------------------------- #
+
+class CompanionBrain(SurvivorBrain):
+    """A recruited creature: engages your enemies like a survivor (routes around
+    hazards, flees when hurt), and when nothing threatens, keeps to your side."""
+    name = "companion"
+
+    def decide(self, game, actor):
+        step = super().decide(game, actor)
+        if step != (0, 0):
+            return step
+        p = game.player
+        if max(abs(actor.x - p.x), abs(actor.y - p.y)) > 2:
+            return step_toward(game, actor, p.x, p.y, safe=True)
+        return (0, 0)
+
+
+register_brain("companion", CompanionBrain)

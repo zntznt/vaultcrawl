@@ -33,7 +33,7 @@ _IDENTIFYING = {SIGHT, TOUCH, LIFE, MIND, MAGIC}   # convey *what* it is
 _LOCATING = {SOUND, SMELL}                          # convey only *where*
 
 _MACHINE = {"g", "c"}      # golem, construct — not alive, no scent of life
-_SPECTRAL = {"h", "e"}     # shade, echo — unliving, but magical
+_SPECTRAL = {"h", "e", "j", "u", "k"}   # shade, echo, revenant, wisp, gloom — unliving/magical
 
 
 # --------------------------------------------------------------------------- #
@@ -112,6 +112,15 @@ def profile_name_for(actor) -> str:
         "e": "echolocator",   # echo — blind, hears all
         "b": "scent_hound",   # beast — follows its nose
         "s": "mind_seer",     # scribe — feels thought
+        # expanded bestiary: each new kind perceives the world its own way
+        "j": "life_wraith",   # revenant — a risen thing, feels the living
+        "u": "life_wraith",   # wisp — spectral, senses life
+        "k": "echolocator",   # gloom — blind, hears in the dark
+        "f": "scent_hound",   # hound — a nose, unbound
+        "d": "scent_hound",   # drifter — feral wanderer
+        "q": "mind_seer",     # seraph — feels thought from on high
+        "m": "echolocator",   # chorus — a swarm-voice, hears all
+        "v": "echolocator",   # myriad — the many, hears all
     }.get(g, "sighted")
 
 
@@ -158,9 +167,9 @@ class Perception:
     hazards: list = field(default_factory=list)      # (x, y) seen fire/acid
 
     def hostiles(self, game, observer):
-        return [t for t in self.identified
-                if game._hostile(observer.allegiance,
-                                 "player" if getattr(t, "is_player", False) else t.allegiance)]
+        hostile = getattr(game, "hostile", None) or (
+            lambda a, b: game._hostile(a.allegiance, b.allegiance))
+        return [t for t in self.identified if hostile(observer, t)]
 
     def nearest_hostile(self, game, observer):
         best, bd = None, 10 ** 9

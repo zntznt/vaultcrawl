@@ -61,12 +61,18 @@ def main():
     assert grid[fy][fx] == " ", f"far unknown cell {far} should be blanked, got {grid[fy][fx]!r}"
     assert grid[py][px] != " ", "the player's own cell must remain visible"
 
-    # --- MAPPED region (via intel): full floor, no blanks ---
+    # --- intel about the CURRENT region extends the frontier but does not map it ---
     s.reveal(region["id"])
-    assert s.region_mapped(g), "revealing the region id should map it"
+    assert not s.region_mapped(g), "intel naming the current region must not map it"
+    assert s.is_known(anchor), "it still joins the navigable frontier"
+
+    # --- MAPPED region (intel gained earlier, e.g. before descending into it): the
+    # terrain renders in full ---
+    s._reveal(g, anchor, direct=True)
+    assert s.region_mapped(g), "directly learned anchor maps the region"
     grid = [row[:] for row in g.level.tiles]
     s.render_overlay(g, grid)
-    assert grid == g.level.tiles, "a mapped region must be left fully visible"
+    assert grid == g.level.tiles, "a mapped region's terrain must be fully visible"
 
     # --- status line ---
     line = s.status_line(g)

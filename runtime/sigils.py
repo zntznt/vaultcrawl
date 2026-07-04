@@ -79,10 +79,40 @@ class SigilSystem(System):
         if not game.alive:
             self._echo(game)
             return
+        cap = self.max_slots(game)
+        if cap > getattr(self, "_last_cap", MAX_SLOTS):
+            self._last_cap = cap
+            game.log(f"Your grasp widens with understanding: "
+                     f"you can bear {cap} sigils now.")
         self._pickup(game)
         self._ward(game)
         self._phase(game)
         self._corrode(game)
+
+    def on_event(self, game, etype, data):
+        # Cogmind's circle: a capable creature's fall leaves its PART. The node
+        # is a slottable, lossy sigil carrying that body's own verb.
+        if etype != "actor_died":
+            return
+        actor = (data or {}).get("actor")
+        acts = getattr(actor, "_special_actions", None) if actor is not None else None
+        if not acts:
+            return
+        pos = (data or {}).get("pos", (actor.x, actor.y))
+        ability = sorted(acts)[0].title()
+        self.ground[pos] = {"note": getattr(actor, "source", ""), "role": "part",
+                            "ability": ability, "base": ability, "durability": 2,
+                            "part": True}
+        game.log(f"Something of {actor.name} survives: a {ability} node ($).")
+
+    # ---- capacity: understanding widens what you can bear (Cogmind evolve) ---
+    def max_slots(self, game) -> int:
+        know = game.system("knowledge")
+        extra = 0
+        if know is not None:
+            anchors = {r.get("sourceNoteId") for r in game.m.get("regions", [])}
+            extra = len(anchors & getattr(know, "learned", set()))
+        return min(6, MAX_SLOTS + extra)
 
     # ---- placement ----------------------------------------------------------
     def _region_community(self, game):
@@ -132,7 +162,14 @@ class SigilSystem(System):
         # behaving exactly as before. A picked-up sigil is the same dict moved into a
         # slot, so it is qualified here at birth and never re-qualified at slot time.
         q = game.system("quality")
-        for (nid, node), pos in zip(chosen, tiles):
+        room_of = getattr(game, "room_of_note", None)   # showcase Games may lack rooms
+        for (nid, node) in chosen:
+            if not tiles:
+                break
+            room = room_of(nid) if room_of else None
+            pos = next((t for t in tiles if room is not None and room.contains(*t)),
+                       tiles[0])
+            tiles.remove(pos)
             sigil = self._make_sigil(nid, node)
             if q is not None:
                 q.qualify_sigil(game, sigil)   # tier + per-tier perks; stat perks now
@@ -149,7 +186,7 @@ class SigilSystem(System):
         if sigil is None:
             return
         title = self._title(game, sigil)
-        if len(self.slots) < MAX_SLOTS:
+        if len(self.slots) < self.max_slots(game):
             self.slots.append(sigil)
             game.log(f"You slot the {sigil['ability']} sigil of {title}.")
         else:
@@ -192,35 +229,45 @@ class SigilSystem(System):
         return next((s for s in self.slots if self._ab(s) == ability), None)
 
     # ---- effects ------------------------------------------------------------
+    # Each verb is split in two: the trigger (_recall/_rally/_ward/_phase decide WHEN
+    # the passive fires) and the effect (_fire_* does the deed). cast() reuses the
+    # effects with the player deciding the WHEN instead.
     def _recall(self, game):
         # hub, passive: heal a little each floor; the sigil wears with every floor.
         for s in [x for x in self.slots if self._ab(x) == "Recall"]:
-            p = game.player
-            amount = 6 + 2 * (s.get("mag", 1) - 1)        # 'keen' (mag) scales the mend
-            healed = min(p.max_hp, p.hp + amount) - p.hp
-            p.hp += healed
-            game.log(f"The Recall sigil mends you (+{healed} HP).")
-            if "recall_cleanse" in s.get("perks", []):
-                # also wash away the player's learned dreads (memory may be absent)
-                try:
-                    from runtime.memory import mem
-                    mem(p).feared.clear()
-                    game.log("Recall washes away your remembered fears.")
-                except Exception:
-                    pass
-            self._consume(game, s)
+            self._fire_recall(game, s)
+
+    def _fire_recall(self, game, s):
+        p = game.player
+        amount = 6 + 2 * (s.get("mag", 1) - 1)        # 'keen' (mag) scales the mend
+        healed = min(p.max_hp, p.hp + amount) - p.hp
+        p.hp += healed
+        game.log(f"The Recall sigil mends you (+{healed} HP).")
+        if "recall_cleanse" in s.get("perks", []):
+            # also wash away the player's learned dreads (memory may be absent)
+            try:
+                from runtime.memory import mem
+                mem(p).feared.clear()
+                game.log("Recall washes away your remembered fears.")
+            except Exception:
+                pass
+        self._consume(game, s)
 
     def _rally(self, game):
         # cluster: pacify the single lowest-hp enemy on the floor.
         for s in [x for x in self.slots if self._ab(x) == "Rally"]:
-            foes = [a for a in game.actors
-                    if a.allegiance == "monster" and a.hp > 0 and not a.is_boss]
-            if not foes:
-                continue
-            victim = min(foes, key=lambda a: a.hp)   # a real enemy, not a critter or boss
-            game.actors.remove(victim)
-            game.log(f"{victim.name} answers your call and stands aside.")
-            self._consume(game, s)
+            self._fire_rally(game, s)
+
+    def _fire_rally(self, game, s) -> bool:
+        foes = [a for a in game.actors
+                if a.allegiance == "monster" and a.hp > 0 and not a.is_boss]
+        if not foes:
+            return False
+        victim = min(foes, key=lambda a: a.hp)   # a real enemy, not a critter or boss
+        game.actors.remove(victim)
+        game.log(f"{victim.name} answers your call and stands aside.")
+        self._consume(game, s)
+        return True
 
     def _can_shove_to(self, game, p, bx, by) -> bool:
         # a legal destination for a shoved enemy: open floor, unoccupied, not the player
@@ -253,20 +300,28 @@ class SigilSystem(System):
                 return el
         return "hazard"
 
+    def _adjacent(self, game):
+        p = game.player
+        out = []
+        for dx, dy in _ORTHO:
+            a = game.actor_at(p.x + dx, p.y + dy)
+            if a is not None:
+                out.append((a, dx, dy))
+        return out
+
     def _ward(self, game):
         # leaf: under pressure (>=2 adjacent), shove the press back -- and, if a hazard
         # lies in a shove direction, shove the enemy ONTO it so reactions does the killing.
         ward = self._first("Ward")
         if ward is None:
             return
-        p = game.player
-        adj = []
-        for dx, dy in _ORTHO:
-            a = game.actor_at(p.x + dx, p.y + dy)
-            if a is not None:
-                adj.append((a, dx, dy))
+        adj = self._adjacent(game)
         if len(adj) < 2:
             return
+        self._fire_ward(game, ward, adj)
+
+    def _fire_ward(self, game, ward, adj) -> bool:
+        p = game.player
         # reactions partner may be unregistered; None-guard every call to it
         r = game.system("reactions")
         # 'ward_reach' (a quality passive) doubles the shove distance.
@@ -297,6 +352,7 @@ class SigilSystem(System):
         if shoved:
             game.log("Your ward repels the press.")
             self._consume(game, ward)
+        return shoved
 
     def _phase(self, game):
         # bridge: if boxed in (no walkable, enemy-free neighbor), blink away.
@@ -308,11 +364,15 @@ class SigilSystem(System):
             nx, ny = p.x + dx, p.y + dy
             if game.level.walkable(nx, ny) and game.actor_at(nx, ny) is None:
                 return  # has an escape; not boxed in
+        self._fire_phase(game, phase)
+
+    def _fire_phase(self, game, phase) -> bool:
+        p = game.player
         exclude = {(p.x, p.y), game.level.stairs}
         exclude |= {(a.x, a.y) for a in game.actors}
         tiles = free_floor_tiles(game.level, exclude)
         if not tiles:
-            return
+            return False
         old = (p.x, p.y)
         p.x, p.y = self.rng.choice(tiles)
         game.log("You phase through the wall.")
@@ -321,6 +381,56 @@ class SigilSystem(System):
             game.log("A phantom of you lingers as a decoy.")
             game.emit("noise", pos=old, volume=6)   # harmless if no system listens
         self._consume(game, phase)
+        return True
+
+    # ---- player command: cast a slotted sigil NOW ----------------------------
+    def cast(self, game, index: int) -> bool:
+        """Fire slot `index`'s verb at the player's chosen moment, consuming
+        durability as usual. Manual timing beats the passive triggers: Ward shoves
+        even a single foe, Phase blinks without being boxed in, Recall mends
+        mid-fight. Returns True if it fired; False (free, with a log line) when
+        the verb has no valid use this instant. Echo stays a death-trigger."""
+        if not (0 <= index < len(self.slots)):
+            game.log("No sigil in that slot.")
+            return False
+        s = self.slots[index]
+        verb = self._ab(s)
+        if verb == "Recall":
+            if game.player.hp >= game.player.max_hp:
+                game.log("You are unhurt; the Recall sigil stays quiet.")
+                return False
+            self._fire_recall(game, s)
+            return True
+        if verb == "Rally":
+            fired = self._fire_rally(game, s)
+            if not fired:
+                game.log("No foe here will answer a Rally.")
+            return fired
+        if verb == "Ward":
+            adj = self._adjacent(game)
+            if not adj:
+                game.log("Nothing stands close enough to ward away.")
+                return False
+            if not self._fire_ward(game, s, adj):
+                game.log("The press has nowhere to be shoved.")
+                return False
+            return True
+        if verb == "Phase":
+            if not self._fire_phase(game, s):
+                game.log("There is nowhere to phase to.")
+                return False
+            return True
+        # part nodes: a fallen creature's own verb, salvaged and slotted
+        from .abilities import player_cast   # importing registers the actions
+        from .quality import SPECIAL_ACTIONS
+        if verb.lower() in SPECIAL_ACTIONS:
+            if player_cast(game, verb.lower()):
+                self._consume(game, s)
+                return True
+            game.log(f"Your {verb} node finds no purchase here.")
+            return False
+        game.log("The Echo sigil waits for the killing blow; it cannot be forced.")
+        return False
 
     def _echo(self, game):
         # orphan: one-shot save — soak the killing blow once.
@@ -369,7 +479,8 @@ class SigilSystem(System):
                 grid[y][x] = SIGIL_GLYPH
 
     def status_line(self, game):
+        cap = self.max_slots(game)
         if not self.slots:
-            return "Sigils: [0/3]"
+            return f"Sigils: [0/{cap}]"
         parts = " ".join(f"{s['ability']}({s['durability']})" for s in self.slots)
-        return f"Sigils: {parts} [{len(self.slots)}/{MAX_SLOTS}]"
+        return f"Sigils: {parts} [{len(self.slots)}/{cap}]"

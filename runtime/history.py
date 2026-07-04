@@ -115,6 +115,19 @@ class HistorySystem(System):
             lore.append(
                 f"{self._title(game, throne)} ascends the throne of the deep.")
 
+        # 5) Individual chronicles: the most storied notes each get a biography line,
+        #    so lore fragments tell the histories of SPECIFIC notes, not only the ages.
+        try:
+            from .notehistory import one_fact
+            storied = sorted(nodes.items(),
+                             key=lambda kv: -kv[1].get("degree", 0))[:8]
+            for nid, nd in storied:
+                fact = one_fact(nd, nd.get("title", nid), salt=nid)
+                if fact:
+                    lore.append(f"Of {self._title(game, nid)}: {fact}")
+        except Exception:
+            pass
+
         return lore
 
     def _lore_target(self, game, item: dict):

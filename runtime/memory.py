@@ -122,8 +122,17 @@ class MemorySystem:
     def on_player_act(self, game):
         turn = getattr(game, "turn", 0)
         reactions = game.system("reactions")
+        px, py = game.player.x, game.player.y
         for a in list(game.actors):
             if not getattr(a, "alive", False):
+                continue
+            # perceive() is the costliest call in the stack: only minds whose brains
+            # are awake (near the player, mirroring enemies_act) keep beliefs fresh.
+            # A far creature's memory just ages: it forgets, it doesn't observe.
+            if (getattr(game, "sandbox", False)
+                    and max(abs(a.x - px), abs(a.y - py)) > 40
+                    and not getattr(a, "_provoked", False)):
+                self._hp[id(a)] = a.hp
                 continue
             # 1) belief update: anything this creature currently identifies is "seen here"
             try:

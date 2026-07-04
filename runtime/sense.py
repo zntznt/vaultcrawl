@@ -34,11 +34,13 @@ class Brain:
 # --------------------------------------------------------------------------- #
 
 def hostiles(game, actor):
+    hostile = getattr(game, "hostile", None) or (
+        lambda a, b: game._hostile(a.allegiance, b.allegiance))
     out = []
-    if game.alive and game._hostile(actor.allegiance, "player"):
+    if game.alive and hostile(actor, game.player):
         out.append(game.player)
     for o in game.actors:
-        if o is not actor and o.hp > 0 and game._hostile(actor.allegiance, o.allegiance):
+        if o is not actor and o.hp > 0 and hostile(actor, o):
             out.append(o)
     return out
 

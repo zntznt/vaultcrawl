@@ -200,6 +200,7 @@ class FactionSystem(System):
                 }, x, y)
                 hunter.glyph = "H"
                 hunter.name = f"Hunter of {fname}"
+                hunter.faction = fac   # it hunts FOR its house; kin and rivals apply
                 hunter.is_hunter = True  # detected on death → sensor scavenge (intel)
                 game.actors.append(hunter)
                 spawned += 1
@@ -223,7 +224,18 @@ class FactionSystem(System):
 
     # ---- HUD -------------------------------------------------------------------
     def status_line(self, game):
+        """Every house you have history with (plus the local one), friendship
+        marked -- reputation is a real economy, so it must be visible."""
+        from runtime.game import FRIEND_STANDING
         region = game.region_for(game.floor)
-        cur = region.get("factionId")
-        fav = self.standing.get(cur, 0)
-        return f"{self.faction_name(cur)}: {fav} favor"
+        cur = region.get("factionId", "")
+        shown = sorted({f for f, v in self.standing.items() if v} | ({cur} - {""}))
+        if not shown:
+            shown = [cur] if cur else []
+        parts = []
+        for f in shown:
+            v = self.standing.get(f, 0)
+            nm = self.faction_name(f).replace("House ", "")[:10]
+            mark = "♥" if v >= FRIEND_STANDING else ""
+            parts.append(f"{nm} {v:+d}{mark}")
+        return ("Houses: " + " · ".join(parts)) if parts else None

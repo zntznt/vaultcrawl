@@ -84,10 +84,14 @@ class FaunaSystem(System):
         rng.shuffle(free)
 
         shallow = game.floor <= 2
+        # herds scale with the land: a grown overworld is ~90k open tiles, and a
+        # flat 4-7 critters left it a still-life. One herd unit per ~1500 open
+        # tiles keeps classic small floors unchanged while filling the wide between.
+        self._scale = max(1, len(free) // 1500)
         counts = {
-            "grazer": rng.randint(1, 2) if shallow else rng.randint(2, 3),
-            "scavenger": 1 if shallow else rng.randint(1, 2),
-            "predator": 1 if shallow else rng.randint(1, 2),
+            "grazer": (rng.randint(1, 2) if shallow else rng.randint(2, 3)) * self._scale,
+            "scavenger": (1 if shallow else rng.randint(1, 2)) * self._scale,
+            "predator": (1 if shallow else rng.randint(1, 2)) * self._scale,
         }
         for kind, n in counts.items():
             for _ in range(n):
@@ -105,45 +109,69 @@ class FaunaSystem(System):
         return a
 
     # ---- per-turn drives ------------------------------------------------
+    # only critters this close to the player run their (scan-heavy) drives; the far
+    # herd drifts cheaply instead. What you can't see needs ambience, not fidelity.
+    _ACTIVE_RADIUS = 40
+
     def on_player_act(self, game):
         flora = game.system("flora")
         decay = game.system("decay")
+        px, py = game.player.x, game.player.y
         for a in list(game.actors):
             # skip dead / removed (e.g. eaten by a predator mid-iteration)
             if a not in game.actors or not a.alive or not self._mine(a):
                 continue
             if getattr(a, "_acted_turn", None) == game.turn:
                 continue   # its brain already moved it (fled / fought) this turn
+            if max(abs(a.x - px), abs(a.y - py)) > self._ACTIVE_RADIUS:
+                self._idle(game, a)     # far herd: drift, don't scan
+                continue
             kind = self._kind(a)
             if kind == "grazer":
-                self._drive_grazer(game, a, flora)
+                acted = self._drive_grazer(game, a, flora)
             elif kind == "scavenger":
-                self._drive_scavenger(game, a, decay)
-            elif kind == "predator":
-                self._drive_predator(game, a)
+                acted = self._drive_scavenger(game, a, decay)
+            else:
+                acted = self._drive_predator(game, a)
+            if not acted:
+                # nothing to eat, hunt, or scavenge in range: a living thing still
+                # moves. Idle wandering is what makes a watched field breathe.
+                self._idle(game, a)
 
-    def _drive_grazer(self, game, a, flora):
+    def _idle(self, game, a):
+        if self.rng.random() >= 0.45:
+            return
+        dx, dy = self.rng.choice(((1, 0), (-1, 0), (0, 1), (0, -1),
+                                  (1, 1), (-1, 1), (1, -1), (-1, -1)))
+        tx, ty = a.x + dx, a.y + dy
+        if (game.level.walkable(tx, ty) and game.actor_at(tx, ty) is None
+                and (tx, ty) != (game.player.x, game.player.y)):
+            a.x, a.y = tx, ty
+
+    def _drive_grazer(self, game, a, flora) -> bool:
         best, dist = self._nearest_tile(
             game, a, lambda x, y: bool(_call(flora, "flora_at", x, y)))
         if best is None:
-            return
+            return False
         if dist <= 1:                                   # adjacent or standing on it
             if _call(flora, "consume", best[0], best[1]):
                 self._maybe_breed(game, a)
         else:
             self._step_toward(game, a, best[0], best[1])
+        return True
 
-    def _drive_scavenger(self, game, a, decay):
+    def _drive_scavenger(self, game, a, decay) -> bool:
         best, dist = self._nearest_tile(
             game, a, lambda x, y: bool(_call(decay, "corpse_at", x, y)))
         if best is None:
-            return
+            return False
         if dist <= 1:
             _call(decay, "consume", best[0], best[1])
         else:
             self._step_toward(game, a, best[0], best[1])
+        return True
 
-    def _drive_predator(self, game, a):
+    def _drive_predator(self, game, a) -> bool:
         prey, dist = None, 999
         for o in game.actors:
             if o is a or not o.alive or not self._mine(o):
@@ -153,16 +181,17 @@ class FaunaSystem(System):
             d = max(abs(a.x - o.x), abs(a.y - o.y))
             if d < dist:
                 prey, dist = o, d
-        if prey is None:
-            return
+        if prey is None or dist > _SENSE_RADIUS:
+            return False
         if dist <= 1:
             game.attack(a, prey)        # intra-wild predation -> game.kill -> corpse
         else:
             self._step_toward(game, a, prey.x, prey.y)
+        return True
 
     # ---- helpers --------------------------------------------------------
     def _maybe_breed(self, game, parent):
-        if self._count(game, "grazer") >= _GRAZER_CAP:
+        if self._count(game, "grazer") >= _GRAZER_CAP * getattr(self, "_scale", 1):
             return
         if self.rng.random() >= _BREED_CHANCE:
             return

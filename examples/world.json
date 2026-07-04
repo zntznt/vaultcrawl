@@ -2,7 +2,7 @@
   "version": "0.1.0",
   "seed": "ccee0b8af9afe4f7",
   "generatedFrom": {
-    "vaultPath": "/Users/zntznt/Documents/exploring-ai-generated-roguelike-world-2026-06-28/output/vaultcrawl/sample_vault",
+    "vaultPath": "/Users/zntznt/Repositories/vaultcrawl/sample_vault",
     "noteCount": 10,
     "linkCount": 19,
     "communityCount": 2,
@@ -79,7 +79,7 @@
         ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.0,
+        "activity": 0.053,
         "tags": [
           "architecture",
           "gamedev",
@@ -99,7 +99,7 @@
         "members": [],
         "bridge": false,
         "role": "orphan",
-        "activity": 0.167,
+        "activity": 0.111,
         "tags": [],
         "neighbors": []
       },
@@ -114,7 +114,7 @@
         ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.333,
+        "activity": 0.198,
         "tags": [
           "philosophy",
           "writing"
@@ -136,7 +136,7 @@
         ],
         "bridge": false,
         "role": "leaf",
-        "activity": 0.5,
+        "activity": 0.368,
         "tags": [
           "mortality",
           "philosophy"
@@ -156,7 +156,7 @@
         ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.5,
+        "activity": 0.534,
         "tags": [
           "gamedev",
           "project"
@@ -178,7 +178,7 @@
         ],
         "bridge": true,
         "role": "bridge",
-        "activity": 0.667,
+        "activity": 0.643,
         "tags": [
           "gamedev",
           "project"
@@ -201,7 +201,7 @@
         ],
         "bridge": false,
         "role": "hub",
-        "activity": 0.833,
+        "activity": 0.86,
         "tags": [
           "lang",
           "project"
@@ -224,7 +224,7 @@
         ],
         "bridge": true,
         "role": "bridge",
-        "activity": 0.833,
+        "activity": 0.938,
         "tags": [
           "pkm",
           "system"
@@ -270,13 +270,13 @@
       },
       {
         "a": "ecs",
-        "b": "rust",
-        "interlock": 3
+        "b": "roguelike project",
+        "interlock": 4
       },
       {
         "a": "ecs",
-        "b": "roguelike project",
-        "interlock": 4
+        "b": "rust",
+        "interlock": 3
       },
       {
         "a": "journaling",
@@ -295,23 +295,23 @@
       },
       {
         "a": "procedural generation",
-        "b": "rust",
-        "interlock": 2
-      },
-      {
-        "a": "procedural generation",
         "b": "roguelike project",
         "interlock": 4
       },
       {
-        "a": "roguelike project",
-        "b": "second brain",
-        "interlock": 1
+        "a": "procedural generation",
+        "b": "rust",
+        "interlock": 2
       },
       {
         "a": "roguelike project",
         "b": "rust",
         "interlock": 3
+      },
+      {
+        "a": "roguelike project",
+        "b": "second brain",
+        "interlock": 1
       }
     ]
   },
@@ -335,7 +335,7 @@
         "system",
         "writing"
       ],
-      "activity": 0.533,
+      "activity": 0.501,
       "name": "The Patient Meridian",
       "flavor": "Grown from your note 'Stoicism'. Damp clings to every surface here."
     },
@@ -355,7 +355,7 @@
         "lang",
         "project"
       ],
-      "activity": 0.5,
+      "activity": 0.523,
       "name": "The Fevered Engine-Yard",
       "flavor": "Grown from your note 'Roguelike Project'. Old ink clings to every surface here."
     }
@@ -363,73 +363,73 @@
   "enemies": [
     {
       "id": "enemy_0",
-      "archetype": "shade",
+      "archetype": "chorus",
       "tier": 2,
       "damageType": "blade",
       "regionId": "region_0",
       "sourceNoteId": "discipline",
-      "name": "Gilded Shade of the Choir",
-      "flavor": "A shade that drifted out of 'Discipline', dealing blade to the unwary."
+      "name": "the Chorus of 'Discipline'",
+      "flavor": "A chorus that drifted out of 'Discipline', dealing blade to the unwary."
     },
     {
       "id": "enemy_1",
-      "archetype": "warden",
+      "archetype": "chorus",
       "tier": 4,
       "damageType": "frost",
       "regionId": "region_0",
       "sourceNoteId": "journaling",
-      "name": "Annotated Warden",
-      "flavor": "A warden that drifted out of 'Journaling', dealing frost to the unwary."
+      "name": "the Chorus of 'Journaling'",
+      "flavor": "A chorus that drifted out of 'Journaling', dealing frost to the unwary."
     },
     {
       "id": "enemy_2",
-      "archetype": "echo",
+      "archetype": "scribe",
       "tier": 2,
       "damageType": "arc",
       "regionId": "region_0",
       "sourceNoteId": "memento mori",
-      "name": "Quiet Echo",
-      "flavor": "A echo that drifted out of 'Memento Mori', dealing arc to the unwary."
+      "name": "the Scribe of 'Memento Mori'",
+      "flavor": "A scribe that drifted out of 'Memento Mori', dealing arc to the unwary."
     },
     {
       "id": "enemy_3",
-      "archetype": "echo",
+      "archetype": "revenant",
       "tier": 3,
       "damageType": "flame",
       "regionId": "region_0",
       "sourceNoteId": "second brain",
-      "name": "Hollow Echo of the Engine",
-      "flavor": "A echo that drifted out of 'Second Brain', dealing flame to the unwary."
+      "name": "the Revenant of 'Second Brain'",
+      "flavor": "A revenant that drifted out of 'Second Brain', dealing flame to the unwary."
     },
     {
       "id": "enemy_4",
-      "archetype": "construct",
+      "archetype": "myriad",
       "tier": 5,
       "damageType": "frost",
       "regionId": "region_1",
       "sourceNoteId": "ecs",
-      "name": "Hollow Construct",
-      "flavor": "A construct that drifted out of 'Ecs', dealing frost to the unwary."
+      "name": "the Myriad of 'ECS'",
+      "flavor": "A myriad that drifted out of 'ECS', dealing frost to the unwary."
     },
     {
       "id": "enemy_5",
-      "archetype": "scribe",
+      "archetype": "swarm",
       "tier": 3,
       "damageType": "decay",
       "regionId": "region_1",
       "sourceNoteId": "procedural generation",
-      "name": "Patient Scribe",
-      "flavor": "A scribe that drifted out of 'Procedural Generation', dealing decay to the unwary."
+      "name": "the Swarm of 'Procedural Generation'",
+      "flavor": "A swarm that drifted out of 'Procedural Generation', dealing decay to the unwary."
     },
     {
       "id": "enemy_6",
-      "archetype": "echo",
+      "archetype": "seraph",
       "tier": 5,
       "damageType": "decay",
       "regionId": "region_1",
       "sourceNoteId": "rust",
-      "name": "Brimming Echo",
-      "flavor": "A echo that drifted out of 'Rust', dealing decay to the unwary."
+      "name": "the Seraph of 'Rust'",
+      "flavor": "A seraph that drifted out of 'Rust', dealing decay to the unwary."
     }
   ],
   "bosses": [
@@ -540,5 +540,811 @@
       "sourceNoteId": "roguelike project",
       "objective": "Purge the Gilded Lantern — an unfinished charge left in your own hand."
     }
-  ]
+  ],
+  "corpus": {
+    "0": {
+      "chain": {
+        "Freedom is": [
+          "downstream"
+        ],
+        "is downstream": [
+          "of"
+        ],
+        "downstream of": [
+          "discipline."
+        ],
+        "of discipline.": [
+          "that"
+        ],
+        "discipline. that": [
+          "protects"
+        ],
+        "that protects": [
+          "me"
+        ],
+        "protects me": [
+          "by"
+        ],
+        "me by": [
+          "Friday."
+        ],
+        "by Friday.": [
+          "Small"
+        ],
+        "Friday. Small": [
+          "repeated"
+        ],
+        "Small repeated": [
+          "acts"
+        ],
+        "repeated acts": [
+          "compound"
+        ],
+        "acts compound": [
+          "into"
+        ],
+        "compound into": [
+          "a"
+        ],
+        "into a": [
+          "self."
+        ],
+        "Writing is": [
+          "how"
+        ],
+        "is how": [
+          "I"
+        ],
+        "how I": [
+          "find"
+        ],
+        "I find": [
+          "out"
+        ],
+        "find out": [
+          "what"
+        ],
+        "out what": [
+          "I"
+        ],
+        "what I": [
+          "think."
+        ],
+        "I think.": [
+          "The"
+        ],
+        "think. The": [
+          "page"
+        ],
+        "The page": [
+          "is"
+        ],
+        "page is": [
+          "a"
+        ],
+        "is a": [
+          "mirror",
+          "second"
+        ],
+        "a mirror": [
+          "that"
+        ],
+        "mirror that": [
+          "talks"
+        ],
+        "that talks": [
+          "back."
+        ],
+        "talks back.": [
+          "entry"
+        ],
+        "back. entry": [
+          "is"
+        ],
+        "entry is": [
+          "less"
+        ],
+        "is less": [
+          "about"
+        ],
+        "less about": [
+          "the"
+        ],
+        "about the": [
+          "record",
+          "act"
+        ],
+        "the record": [
+          "and"
+        ],
+        "record and": [
+          "more"
+        ],
+        "and more": [
+          "about"
+        ],
+        "more about": [
+          "the"
+        ],
+        "the act": [
+          "of"
+        ],
+        "act of": [
+          "noticing."
+        ],
+        "of noticing.": [
+          "This"
+        ],
+        "noticing. This": [
+          "is"
+        ],
+        "This is": [
+          "also"
+        ],
+        "is also": [
+          "where"
+        ],
+        "also where": [
+          "my"
+        ],
+        "where my": [
+          "inner"
+        ],
+        "my inner": [
+          "life",
+          "practice"
+        ],
+        "inner life": [
+          "meets"
+        ],
+        "life meets": [
+          "my"
+        ],
+        "meets my": [
+          "systems"
+        ],
+        "my systems": [
+          "—"
+        ],
+        "systems —": [
+          "see"
+        ],
+        "— see": [
+          "Second"
+        ],
+        "see Second": [
+          "Brain."
+        ],
+        "Remember that": [
+          "you"
+        ],
+        "that you": [
+          "will"
+        ],
+        "you will": [
+          "die."
+        ],
+        "will die.": [
+          "Not"
+        ],
+        "die. Not": [
+          "as"
+        ],
+        "Not as": [
+          "morbidity"
+        ],
+        "as morbidity": [
+          "but"
+        ],
+        "morbidity but": [
+          "as"
+        ],
+        "but as": [
+          "a"
+        ],
+        "as a": [
+          "lens"
+        ],
+        "a lens": [
+          "that"
+        ],
+        "lens that": [
+          "sharpens"
+        ],
+        "that sharpens": [
+          "attention."
+        ],
+        "sharpens attention.": [
+          "The"
+        ],
+        "attention. The": [
+          "hours"
+        ],
+        "The hours": [
+          "are"
+        ],
+        "hours are": [
+          "not"
+        ],
+        "are not": [
+          "infinite,"
+        ],
+        "not infinite,": [
+          "so"
+        ],
+        "infinite, so": [
+          "the"
+        ],
+        "so the": [
+          "trivial"
+        ],
+        "the trivial": [
+          "loses"
+        ],
+        "trivial loses": [
+          "its"
+        ],
+        "loses its": [
+          "grip."
+        ],
+        "The vault": [
+          "is"
+        ],
+        "vault is": [
+          "a"
+        ],
+        "a second": [
+          "brain:"
+        ],
+        "second brain:": [
+          "notes"
+        ],
+        "brain: notes": [
+          "as"
+        ],
+        "notes as": [
+          "nodes,"
+        ],
+        "as nodes,": [
+          "links"
+        ],
+        "nodes, links": [
+          "as"
+        ],
+        "links as": [
+          "thought."
+        ],
+        "as thought.": [
+          "that"
+        ],
+        "thought. that": [
+          "structure"
+        ],
+        "that structure": [
+          "emerges"
+        ],
+        "structure emerges": [
+          "—"
+        ],
+        "emerges —": [
+          "clusters"
+        ],
+        "— clusters": [
+          "form"
+        ],
+        "clusters form": [
+          "around"
+        ],
+        "form around": [
+          "obsessions"
+        ],
+        "around obsessions": [
+          "without"
+        ],
+        "obsessions without": [
+          "me"
+        ],
+        "without me": [
+          "planning"
+        ],
+        "me planning": [
+          "them."
+        ],
+        "planning them.": [
+          "This"
+        ],
+        "them. This": [
+          "idea"
+        ],
+        "This idea": [
+          "bridges"
+        ],
+        "idea bridges": [
+          "my"
+        ],
+        "bridges my": [
+          "inner"
+        ],
+        "inner practice": [
+          "and"
+        ],
+        "practice and": [
+          "my"
+        ],
+        "and my": [
+          "making."
+        ],
+        "The practice": [
+          "of"
+        ],
+        "practice of": [
+          "separating"
+        ],
+        "of separating": [
+          "what"
+        ],
+        "separating what": [
+          "is"
+        ],
+        "what is": [
+          "in",
+          "not."
+        ],
+        "is in": [
+          "my"
+        ],
+        "in my": [
+          "control"
+        ],
+        "my control": [
+          "from"
+        ],
+        "control from": [
+          "what"
+        ],
+        "from what": [
+          "is"
+        ],
+        "is not.": [
+          "follows"
+        ],
+        "not. follows": [
+          "from"
+        ],
+        "follows from": [
+          "that"
+        ],
+        "from that": [
+          "one"
+        ],
+        "that one": [
+          "cut."
+        ]
+      },
+      "starters": {
+        "discipline": [
+          "Freedom is",
+          "that protects",
+          "Small repeated"
+        ],
+        "journaling": [
+          "Writing is",
+          "The page",
+          "entry is",
+          "This is"
+        ],
+        "memento mori": [
+          "Remember that",
+          "Not as",
+          "The hours"
+        ],
+        "second brain": [
+          "The vault",
+          "that structure",
+          "This idea"
+        ],
+        "stoicism": [
+          "The practice",
+          "follows from"
+        ]
+      },
+      "lines": {
+        "discipline": [
+          "Freedom is downstream of discipline.",
+          "that protects me by Friday.",
+          "Small repeated acts compound into a self."
+        ],
+        "journaling": [
+          "Writing is how I find out what I think.",
+          "The page is a mirror that talks back.",
+          "entry is less about the record and more about the act of noticing.",
+          "This is also where my inner life meets my systems — see Second Brain."
+        ],
+        "memento mori": [
+          "Remember that you will die.",
+          "Not as morbidity but as a lens that sharpens attention.",
+          "The hours are not infinite, so the trivial loses its grip."
+        ],
+        "second brain": [
+          "The vault is a second brain: notes as nodes, links as thought.",
+          "that structure emerges — clusters form around obsessions without me planning them.",
+          "This idea bridges my inner practice and my making."
+        ],
+        "stoicism": [
+          "The practice of separating what is in my control from what is not.",
+          "follows from that one cut."
+        ]
+      }
+    },
+    "1": {
+      "chain": {
+        "Entity-Component-System: data": [
+          "in"
+        ],
+        "data in": [
+          "components,"
+        ],
+        "in components,": [
+          "behavior"
+        ],
+        "components, behavior": [
+          "in"
+        ],
+        "behavior in": [
+          "systems,"
+        ],
+        "in systems,": [
+          "identity"
+        ],
+        "systems, identity": [
+          "in"
+        ],
+        "identity in": [
+          "entities."
+        ],
+        "in entities.": [
+          "Part"
+        ],
+        "entities. Part": [
+          "of"
+        ],
+        "Part of": [
+          "the"
+        ],
+        "of the": [
+          "Roguelike"
+        ],
+        "the Roguelike": [
+          "Project,",
+          "Project",
+          "Project"
+        ],
+        "Roguelike Project,": [
+          "implemented"
+        ],
+        "Project, implemented": [
+          "in"
+        ],
+        "implemented in": [
+          "Rust."
+        ],
+        "The art": [
+          "of"
+        ],
+        "art of": [
+          "generating"
+        ],
+        "of generating": [
+          "fair,"
+        ],
+        "generating fair,": [
+          "surprising"
+        ],
+        "fair, surprising": [
+          "content"
+        ],
+        "surprising content": [
+          "from"
+        ],
+        "content from": [
+          "a"
+        ],
+        "from a": [
+          "seed.",
+          "markdown"
+        ],
+        "a seed.": [
+          "(Delaunay"
+        ],
+        "seed. (Delaunay": [
+          "+"
+        ],
+        "(Delaunay +": [
+          "minimum"
+        ],
+        "+ minimum": [
+          "spanning"
+        ],
+        "minimum spanning": [
+          "tree"
+        ],
+        "spanning tree": [
+          "guarantees"
+        ],
+        "tree guarantees": [
+          "a"
+        ],
+        "guarantees a": [
+          "path),"
+        ],
+        "a path),": [
+          "then"
+        ],
+        "path), then": [
+          "decorate."
+        ],
+        "then decorate.": [
+          "decorator"
+        ],
+        "decorate. decorator": [
+          "touch"
+        ],
+        "decorator touch": [
+          "the"
+        ],
+        "touch the": [
+          "guarantees."
+        ],
+        "the guarantees.": [
+          "Feeds"
+        ],
+        "guarantees. Feeds": [
+          "the"
+        ],
+        "Feeds the": [
+          "Roguelike"
+        ],
+        "Roguelike Project": [
+          "and",
+          "and"
+        ],
+        "Project and": [
+          "leans",
+          "pairs"
+        ],
+        "and leans": [
+          "on"
+        ],
+        "leans on": [
+          "Rust."
+        ],
+        "A traditional": [
+          "roguelike"
+        ],
+        "traditional roguelike": [
+          "whose"
+        ],
+        "roguelike whose": [
+          "world"
+        ],
+        "whose world": [
+          "is"
+        ],
+        "world is": [
+          "generated"
+        ],
+        "is generated": [
+          "from"
+        ],
+        "generated from": [
+          "a"
+        ],
+        "a markdown": [
+          "vault."
+        ],
+        "markdown vault.": [
+          "definite"
+        ],
+        "vault. definite": [
+          "mechanical"
+        ],
+        "definite mechanical": [
+          "structures,"
+        ],
+        "mechanical structures,": [
+          "a"
+        ],
+        "structures, a": [
+          "generative"
+        ],
+        "a generative": [
+          "semantic"
+        ],
+        "generative semantic": [
+          "layer"
+        ],
+        "semantic layer": [
+          "on"
+        ],
+        "layer on": [
+          "top."
+        ],
+        "Memory safety": [
+          "without"
+        ],
+        "safety without": [
+          "a"
+        ],
+        "without a": [
+          "garbage"
+        ],
+        "a garbage": [
+          "collector."
+        ],
+        "garbage collector.": [
+          "the"
+        ],
+        "collector. the": [
+          "determinism"
+        ],
+        "the determinism": [
+          "and"
+        ],
+        "determinism and": [
+          "speed"
+        ],
+        "and speed": [
+          "are"
+        ],
+        "speed are": [
+          "worth"
+        ],
+        "are worth": [
+          "it"
+        ],
+        "worth it": [
+          "for"
+        ],
+        "it for": [
+          "a"
+        ],
+        "for a": [
+          "seed-driven"
+        ],
+        "a seed-driven": [
+          "game."
+        ],
+        "seed-driven game.": [
+          "Used"
+        ],
+        "game. Used": [
+          "across"
+        ],
+        "Used across": [
+          "the"
+        ],
+        "across the": [
+          "Roguelike"
+        ],
+        "and pairs": [
+          "naturally"
+        ],
+        "pairs naturally": [
+          "with"
+        ],
+        "naturally with": [
+          "an"
+        ],
+        "with an": [
+          "ECS."
+        ]
+      },
+      "starters": {
+        "ecs": [
+          "Entity-Component-System: data",
+          "Part of"
+        ],
+        "procedural generation": [
+          "The art",
+          "(Delaunay +",
+          "decorator touch",
+          "Feeds the"
+        ],
+        "roguelike project": [
+          "A traditional",
+          "definite mechanical"
+        ],
+        "rust": [
+          "Memory safety",
+          "the determinism",
+          "Used across"
+        ]
+      },
+      "lines": {
+        "ecs": [
+          "Entity-Component-System: data in components, behavior in systems, identity in entities.",
+          "Part of the Roguelike Project, implemented in Rust."
+        ],
+        "procedural generation": [
+          "The art of generating fair, surprising content from a seed.",
+          "(Delaunay + minimum spanning tree guarantees a path), then decorate.",
+          "decorator touch the guarantees.",
+          "Feeds the Roguelike Project and leans on Rust."
+        ],
+        "roguelike project": [
+          "A traditional roguelike whose world is generated from a markdown vault.",
+          "definite mechanical structures, a generative semantic layer on top."
+        ],
+        "rust": [
+          "Memory safety without a garbage collector.",
+          "the determinism and speed are worth it for a seed-driven game.",
+          "Used across the Roguelike Project and pairs naturally with an ECS."
+        ]
+      }
+    },
+    "-1": {
+      "chain": {
+        "Oat milk,": [
+          "lentils,"
+        ],
+        "milk, lentils,": [
+          "coffee,"
+        ],
+        "lentils, coffee,": [
+          "olive"
+        ],
+        "coffee, olive": [
+          "oil,"
+        ],
+        "olive oil,": [
+          "sourdough."
+        ],
+        "oil, sourdough.": [
+          "an"
+        ],
+        "sourdough. an": [
+          "orphan"
+        ],
+        "an orphan": [
+          "in"
+        ],
+        "orphan in": [
+          "the"
+        ],
+        "in the": [
+          "graph,"
+        ],
+        "the graph,": [
+          "destined"
+        ],
+        "graph, destined": [
+          "to"
+        ],
+        "destined to": [
+          "become"
+        ],
+        "to become": [
+          "a"
+        ],
+        "become a": [
+          "hidden"
+        ],
+        "a hidden": [
+          "room."
+        ]
+      },
+      "starters": {
+        "grocery list": [
+          "Oat milk,",
+          "an orphan"
+        ]
+      },
+      "lines": {
+        "grocery list": [
+          "Oat milk, lentils, coffee, olive oil, sourdough.",
+          "an orphan in the graph, destined to become a hidden room."
+        ]
+      }
+    }
+  }
 }

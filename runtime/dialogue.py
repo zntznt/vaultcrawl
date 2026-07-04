@@ -48,12 +48,32 @@ class DialogueSystem(System):
         self.npcs = []
 
     def on_floor_enter(self, game):
-        """Spawn one Keeper for the floor's region on a deterministic free tile."""
+        """Spawn one Keeper for the floor's region on a deterministic free tile.
+        In the realm world, Keepers keep the TOWNS: one per district on the
+        surface, none in the depths."""
         self.game = game
         self.npcs = []
         player = getattr(game, "player", None)
         level = getattr(game, "level", None)
         if player is None or level is None:
+            return
+        if getattr(game, "_dungeon", None) is not None:
+            return                    # no keepers below: they keep the towns
+        if getattr(game, "sandbox", False):
+            for r in game.m.get("regions", []):
+                anchor = r.get("sourceNoteId", "")
+                room = game.room_of_note(anchor)
+                cells = sorted(getattr(room, "cells", []) or [])
+                opts = [t for t in cells
+                        if game.level.walkable(*t) and game.actor_at(*t) is None
+                        and game.level.tiles[t[1]][t[0]] == "."]
+                if not opts:
+                    continue
+                npc = make_npc(f"Keeper of {r.get('name', 'the Vault')}",
+                               NPC_GLYPH, *opts[0], source=anchor)
+                npc._parleys = 0
+                game.actors.append(npc)
+                self.npcs.append(npc)
             return
         region = game.region_for(game.floor) or {}
         name = region.get("name") or "the Vault"
@@ -65,7 +85,9 @@ class DialogueSystem(System):
             return
         rng = random.Random(f"{game.seed}:dialogue:{game.floor}")
         rng.shuffle(free)
-        x, y = free[0]
+        # the Keeper dwells in its anchor note's room when that room exists here
+        room = getattr(game, "room_of_note", lambda _n: None)(anchor)
+        x, y = next((t for t in free if room is not None and room.contains(*t)), free[0])
         npc = make_npc(f"Keeper of {name}", NPC_GLYPH, x, y, source=anchor)
         npc._parleys = 0
         game.actors.append(npc)
@@ -134,7 +156,13 @@ class DialogueSystem(System):
         if targets:
             idx = (getattr(npc, "_parleys", 1) - 1) % len(targets)   # rotate per visit
             self._reveal(game, targets[idx])
-        game.log(f"{npc.name} murmurs of what waits in the deeper dark.")
+        # a creature IS a note: when it speaks, it speaks that note's own words back
+        # at you (recognition), not a stock line
+        line = game._weave_note(getattr(npc, "source", ""), salt="gossip")
+        if line:
+            game.log(f'{npc.name} speaks: "{line}"')
+        else:
+            game.log(f"{npc.name} murmurs of what waits in the deeper dark.")
 
     # ---- helpers --------------------------------------------------------------
     def _reveal(self, game, target) -> None:

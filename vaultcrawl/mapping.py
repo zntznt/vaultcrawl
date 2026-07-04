@@ -19,8 +19,43 @@ from .ingest import Vault
 MAX_DEPTH = 26  # classic 26-floor descent
 
 BIOMES = ["archive", "garden", "foundry", "catacomb", "observatory", "marsh", "spire", "wastes"]
-ARCHETYPES = ["scribe", "golem", "swarm", "warden", "echo", "beast", "construct", "shade"]
+# The bestiary is READ from a note's nature, not blind-hashed. A note's graph ROLE
+# sets the creature FAMILY; its age and degree pick the member within it — so a lonely
+# ancient note and a fresh well-connected one yield visibly different creatures.
+#   hub (busy, central)     -> orchestrators & swarms of activity
+#   bridge (spans clusters) -> liminal, two-natured things
+#   cluster (in the thick)  -> social pack creatures
+#   leaf (a dead-end)       -> solitary specialists
+#   orphan (unlinked)       -> wild, feral, unbound
+ARCHETYPES = ["scribe", "golem", "swarm", "warden", "echo", "beast", "construct", "shade",
+              "seraph", "wisp", "colossus", "chorus", "revenant", "gloom", "sentinel",
+              "drifter", "hound", "myriad"]
+# family -> ordered members: [fresh/vivid ... old/decayed], picked by the note's age
+_FAMILY = {
+    "hub":     ["seraph", "warden", "colossus"],   # central, commanding
+    "bridge":  ["wisp", "echo", "revenant"],        # liminal, spanning
+    "cluster": ["chorus", "swarm", "myriad"],       # social, many
+    "leaf":    ["scribe", "sentinel", "gloom"],     # solitary specialists
+    "orphan":  ["beast", "hound", "drifter"],       # feral, unbound
+    "discovery": ["beast", "hound", "drifter"],
+}
 DAMAGE = ["blade", "flame", "frost", "venom", "psychic", "decay", "arc"]
+
+
+def _archetype_for(role, age, degree, nid=""):
+    """A creature's kind, read from its note: role -> family, then a within-family
+    member chosen from the signals that actually VARY across a vault. Age alone
+    collapses when a whole vault was edited at once (everything reads 'fresh'), so
+    we blend age, connection-degree, and a stable per-note hash to spread the three
+    members of each family. Still deterministic and note-driven, just not degenerate."""
+    fam = _FAMILY.get(role, ["construct", "golem", "shade"])
+    # combine: old notes lean decayed (+), highly-connected lean vivid (-), plus a
+    # per-note jitter so equal-signal notes still differ across the family.
+    score = 0
+    score += 0 if age >= 0.5 else 1           # older -> later member
+    score += 1 if degree >= 4 else 0          # busy note -> a different member
+    score += _shash("archmember", nid) % 3    # stable spread within the family
+    return fam[score % len(fam)]
 ITEM_SLOTS = ["weapon", "armor", "trinket", "consumable", "relic"]
 RARITY_BY_TIER = ["common", "common", "uncommon", "rare", "epic", "legendary"]  # index by tier 0..5
 POWER_BAND = {"common": 4, "uncommon": 8, "rare": 14, "epic": 22, "legendary": 32}
@@ -136,7 +171,7 @@ def build_graph_block(vault: Vault, an: Analysis) -> dict:
     seen, edges = set(), []
     for a in sorted(nbrs):
         ta = set(vault.notes[a].tags)
-        for b in nbrs[a]:
+        for b in sorted(nbrs[a]):   # sorted: edge order must not float run-to-run
             key = (a, b) if a < b else (b, a)
             if key in seen:
                 continue
@@ -165,6 +200,7 @@ def build_blueprint(vault: Vault, an: Analysis) -> dict:
     span = (hi - lo) or 1.0
     activity = {nid: (notes[nid].mtime - lo) / span for nid in notes}
 
+    hub_threshold = an.pr_sorted[int(len(an.pr_sorted) * 0.8)] if an.pr_sorted else 1.0
     regions, enemies, bosses, items, secrets, quests = [], [], [], [], [], []
 
     # --- one region + one faction + one boss per community ---
@@ -204,7 +240,8 @@ def build_blueprint(vault: Vault, an: Analysis) -> dict:
             tags = notes[m].tags
             enemies.append({
                 "id": f"enemy_{len(enemies)}",
-                "archetype": _pick(ARCHETYPES, "arch", tags[0] if tags else m, m),
+                "archetype": _archetype_for(_node_role(m, an, hub_threshold),
+                                            activity.get(m, 0.5), an.degree.get(m, 0), m),
                 "tier": _tier_of(an.pagerank.get(m, 0.0), an.pr_sorted),
                 "damageType": _pick(DAMAGE, "dmg", tags[0] if tags else m, m),
                 "regionId": rid,

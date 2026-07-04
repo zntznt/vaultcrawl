@@ -89,6 +89,7 @@ def _iter_markdown(root: str):
 def load_vault(root: str) -> Vault:
     paths = sorted(_iter_markdown(root))
     notes: dict = {}
+    excluded_titles: list = []
 
     for path in paths:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
@@ -100,6 +101,12 @@ def load_vault(root: str) -> Vault:
         tags = list(_TAG.findall(body))
         for t in fm.get("tags", []) if isinstance(fm.get("tags"), list) else []:
             tags.append(str(t).lstrip("#"))
+        # privacy opt-out: a #nogame or #private tag (inline or frontmatter, any
+        # nesting like private/journal) keeps the note out of the world entirely --
+        # no graph node, no corpus words, no seed contribution
+        if any(t.split("/")[0].lower() in ("nogame", "private") for t in tags):
+            excluded_titles.append(stem)
+            continue
         raw_links = [_norm(x) for x in _WIKILINK.findall(body)]
         images = [a or b for a, b in _IMG.findall(body)]
 
@@ -114,6 +121,20 @@ def load_vault(root: str) -> Vault:
             images=images,
             mtime=os.path.getmtime(path),
         )
+
+    # an excluded note leaves NO trace: even its title is scrubbed from the kept
+    # bodies (a private note's filename can itself be sensitive), so nothing of
+    # it reaches the seed, the corpus, or an LLM prompt
+    # word-BOUNDARY anchored: a bare re.escape substring scrub silently corrupts
+    # every kept body when a private note has a short/common title (a note titled
+    # "AI" would strip "ai" out of "said", "detail", "maintain"). Anchor to whole
+    # words, and skip 1-2 char titles entirely (too ambiguous to redact safely).
+    titles = sorted({t for t in excluded_titles if len(t) >= 3}, key=len, reverse=True)
+    if titles:
+        rx = re.compile(r"\b(?:" + "|".join(re.escape(t) for t in titles) + r")\b",
+                        re.IGNORECASE)
+        for n in notes.values():
+            n.body = rx.sub("", n.body)
 
     # resolve links against existing note ids
     out_adj = {nid: [] for nid in notes}

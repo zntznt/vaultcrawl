@@ -24,6 +24,9 @@ class Room:
     def center(self):
         return (self.x + self.w // 2, self.y + self.h // 2)
 
+    def contains(self, x: int, y: int) -> bool:
+        return self.x <= x < self.x + self.w and self.y <= y < self.y + self.h
+
     def intersects(self, o: "Room", pad: int = 1) -> bool:
         return (self.x - pad < o.x + o.w and self.x + self.w + pad > o.x and
                 self.y - pad < o.y + o.h and self.y + self.h + pad > o.y)

@@ -57,9 +57,13 @@ _GLYPH = {
 _RENDER_ORDER = ("fire", "acid", "charged", "wet", "ice", "sacred")
 
 _PLAYER_CAP = 2        # max environmental damage to the player per turn
-_FIRE_SEED_LIFE = 6    # turns a seeded fire burns before dying out
-_FIRE_SPREAD_LIFE = 5  # turns a freshly spread flame burns
-_FIRE_SPREAD_P = 0.20  # per-neighbour chance fire jumps to an adjacent floor tile
+# Fire is SUBCRITICAL: each flame spawns fewer than one successor over its life
+# (0.06 * 4 neighbours * 3 turns ~= 0.7 < 1), so a fire is a brief flare that
+# spreads a tile or two and burns out — never the runaway wildfire that ate the
+# whole map (the old 0.20*4*5 ~= 4 successors was supercritical, exponential).
+_FIRE_SEED_LIFE = 4    # turns a seeded fire burns before dying out
+_FIRE_SPREAD_LIFE = 3  # turns a freshly spread flame burns (shorter, so cascades damp)
+_FIRE_SPREAD_P = 0.06  # per-neighbour chance fire jumps to an adjacent floor tile
 
 
 class ReactionSystem(System):
@@ -176,8 +180,10 @@ class ReactionSystem(System):
         n_patches = max(1, area // 55)
 
         if prop == "fire":
-            # the region is dry tinder: only a few seed flames, which then spread
-            n_seed = max(2, n_patches // 6)
+            # a FEW small fires scattered in the wild, not a wall of flame: capped low
+            # and absolute, so a large map doesn't get hundreds of ignition points
+            # (each would spread; hundreds of subcritical fires still add up).
+            n_seed = min(4, max(1, n_patches // 40))
             for pos in self.rng.sample(free, min(n_seed, len(free))):
                 self._add(pos, "fire")
                 self.fire_life[pos] = _FIRE_SEED_LIFE
@@ -212,6 +218,9 @@ class ReactionSystem(System):
             chained_any = True
         if ppos in acid_tiles:
             p_dmg += 1
+        eff = game.system("effects")
+        if eff is not None and eff.can_drift(game):
+            p_dmg = 0   # 'drift' effect: you go weightless over hazard, unharmed
         if p_dmg:
             applied = min(p_dmg, _PLAYER_CAP, game.player.hp)
             game.player.hp -= applied

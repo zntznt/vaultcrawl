@@ -80,38 +80,45 @@ def generate_world(vault: Vault, an: Analysis, blueprint: dict, llm=None) -> dic
                "faction_name": fac, **extra}
         return llm.complete_json(prompts.CONTENT_SYSTEM, user, prompts.CONTENT_SCHEMAS[kind], context=ctx)
 
+    # A real LLM may return partial JSON (a missing key, a refusal). The bake must
+    # never abort on that: fall back to the note's own title / a plain default, so
+    # every slot always gets a name. The offline stub always supplies these keys.
+    def _named(slot, out):
+        raw = slot.get("_src", {}).get("title") or slot.get("id", "the nameless")
+        return out.get("name") or " ".join(w.capitalize() for w in str(raw).replace("_", " ").split())
+
     # ---- PASS 2: local content ----
     regions = []
     for r in blueprint["regions"]:
         out = fill("region", r, {"biome": r["biome"]})
-        regions.append(_clean({**r, "name": out["name"], "flavor": out.get("flavor", "")}))
+        regions.append(_clean({**r, "name": _named(r, out), "flavor": out.get("flavor", "")}))
 
     bosses = []
     for b in blueprint["bosses"]:
         out = fill("boss", b, {"biome": region_biome.get(b["regionId"], "archive"),
                                "backlinks": b.get("_src", {}).get("backlinks", 0)})
-        bosses.append(_clean({**b, "name": out["name"], "title": out.get("title", ""),
+        bosses.append(_clean({**b, "name": _named(b, out), "title": out.get("title", ""),
                               "flavor": out.get("flavor", "")}))
 
     enemies = []
     for e in blueprint["enemies"]:
         out = fill("enemy", e, {"archetype": e["archetype"], "damageType": e["damageType"]})
-        enemies.append(_clean({**e, "name": out["name"], "flavor": out.get("flavor", "")}))
+        enemies.append(_clean({**e, "name": _named(e, out), "flavor": out.get("flavor", "")}))
 
     items = []
     for it in blueprint["items"]:
         out = fill("item", it, {"rarity": it["rarity"], "slot": it["slot"]})
-        items.append(_clean({**it, "name": out["name"], "flavor": out.get("flavor", "")}))
+        items.append(_clean({**it, "name": _named(it, out), "flavor": out.get("flavor", "")}))
 
     secrets = []
     for s in blueprint["secrets"]:
         out = fill("secret", s, {"kind": s["kind"]})
-        secrets.append(_clean({**s, "flavor": out["flavor"]}))
+        secrets.append(_clean({**s, "flavor": out.get("flavor", "Something here resists being read.")}))
 
     quests = []
     for q in blueprint["quests"]:
         out = fill("quest", q, {"kind": q["kind"], "todo": q.get("_todo", "")})
-        quests.append(_clean({**q, "objective": out["objective"]}))
+        quests.append(_clean({**q, "objective": out.get("objective", "A charge left unfinished in your own hand.")}))
 
     return {
         "version": __version__,

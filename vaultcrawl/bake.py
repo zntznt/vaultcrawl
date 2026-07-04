@@ -12,6 +12,7 @@ import os
 import sys
 
 from .analyze import analyze
+from .corpus import build_corpus
 from .generate import generate_world
 from .ingest import load_vault
 from .mapping import build_blueprint
@@ -24,6 +25,7 @@ def bake(vault_path: str, out_path: str, llm=None):
     blueprint = build_blueprint(vault, an)
     manifest = generate_world(vault, an, blueprint, llm=llm)
     manifest["generatedFrom"]["vaultPath"] = os.path.abspath(vault_path)
+    manifest["corpus"] = build_corpus(vault, an)
 
     manifest = pad_if_sparse(manifest)
     errs = validate(manifest)
