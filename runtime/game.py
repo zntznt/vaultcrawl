@@ -1272,6 +1272,20 @@ class Game:
         from .notehistory import one_fact
         return one_fact(node, node.get("title", nid), salt=salt)
 
+    def region_palette(self, rid) -> str:
+        """The COLOR lean a region's ground wears: its AREA KIND's palette if the kind
+        declares one (a grove is verdant, a necropolis ashen), else the region's
+        blended-environment palette. This is what makes a place colorful — or not."""
+        if rid is None:
+            return ""
+        from .arch import areakinds
+        kind = self._region_kind.get(rid, "wilds")
+        lean = areakinds.palette(kind)
+        if lean:
+            return lean
+        env = self._region_env.get(rid)
+        return env.palette() if env is not None else ""
+
     def creature_stats(self, target) -> list:
         """A few READABLE metrics about a creature, surfaced in the talk window (which
         otherwise wastes the space under the name). All plain fact, no combat spoilers

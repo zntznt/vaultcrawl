@@ -165,9 +165,13 @@ def interactive(game: Game) -> int:
             palette["el:" + element] = P(col)
         # an ENVIRONMENT's palette-lean: the whole vibe's color signature (blocks.py).
         # A place's wild terrain wears this, so crossing into a different vibe shifts hue.
-        for lean, col, ex in (("cold", C, DIM), ("holy", M, 0), ("rust", Y, DIM),
-                              ("verdant", G, 0), ("pale", W, DIM), ("harsh", Y, BOLD),
-                              ("dim", W, DIM)):
+        # a place's color is its CHARACTER: vivid leans (a grove, a shrine, a forge)
+        # burn bright; muted leans (ash, dust, waste) recede. This is the "colorful
+        # or NOT, depending on the place" axis — brightness itself signals the mood.
+        for lean, col, ex in (("verdant", G, BOLD), ("holy", M, BOLD), ("rust", R, BOLD),
+                              ("harsh", Y, BOLD), ("cold", C, BOLD), ("bloom", M, BOLD),
+                              ("gold", Y, BOLD),
+                              ("pale", W, 0), ("dim", W, DIM), ("ash", W, DIM)):
             palette["pal:" + lean] = P(col, ex)
         msg_rules.extend([
             (lambda m: "hits you" in m or "strikes you down" in m or "You die" in m,
@@ -229,18 +233,18 @@ def interactive(game: Game) -> int:
             for x, ch in enumerate(row):
                 a = palette.get(ch, 0)
                 wx, wy = ox + x, oy + y
-                # ground + block terrain wears its ENVIRONMENT's palette-lean (the vibe
-                # color), so crossing into a different atmosphere shifts the whole hue;
-                # bare floor keeps the plain element tint, receding and dim.
-                if ch in block_glyphs:
+                # THE PLACE HAS A COLOR: all of a region's ground — block terrain AND
+                # bare floor AND grain — wears its palette-lean, so a whole place reads
+                # in one hue and crossing a border visibly changes the world's color.
+                # A vivid kind (grove/market) burns; a muted one (necropolis) recedes.
+                if ch in block_glyphs or ch in ".,'`\"":
                     rid = game._region_of.get((wx, wy)) if hasattr(game, "_region_of") else None
-                    env = getattr(game, "_region_env", {}).get(rid)
-                    if env is not None:
-                        a = palette.get("pal:" + env.palette(), a)
-                elif ch in ".,'":
-                    el = game._tint.get((wx, wy))
-                    if el is not None:
-                        a = palette.get("el:" + el, a) | curses.A_DIM
+                    lean = game.region_palette(rid) if hasattr(game, "region_palette") else None
+                    if lean:
+                        pa = palette.get("pal:" + lean)
+                        if pa is not None:
+                            # bare floor takes the hue but stays quieter than features
+                            a = pa | (curses.A_DIM if ch == "." else 0)
                 elif ch == "#":
                     stance = game._frictions.get((wx, wy))
                     if stance == "war":
@@ -438,7 +442,8 @@ def interactive(game: Game) -> int:
         ret = fn(*a, **kw)
         return ret, list(game.messages[before:])
 
-    def dialog_frame(scr, name, transcript, verbs, topics, face=None, stats=None):
+    def dialog_frame(scr, name, transcript, verbs, topics, face=None, stats=None,
+                     face_attr=0):
         """The ONE unified conversation frame — every talk uses it, so it can be styled
         once, here, later. Two kinds of choice, deliberately in different places:
 
@@ -502,7 +507,10 @@ def interactive(game: Game) -> int:
                 for i in range(vh):
                     scr.addstr(top + 1 + i, left, "│", acc)
                     if i < len(view):
-                        scr.addstr(top + 1 + i, left + 2, view[i][:w - 4])
+                        # the portrait rows wear the creature's element colour; the
+                        # first stat row and the exchange stay plain
+                        ra = face_attr if (face and 1 <= i < 1 + len(face)) else 0
+                        scr.addstr(top + 1 + i, left + 2, view[i][:w - 4], ra)
                     scr.addstr(top + 1 + i, left + w - 1, "│", acc)
                 scr.addstr(top + 1 + vh, left, "├" + bar + "┤", acc)
                 for j, brow in enumerate(bar_rows):
@@ -578,9 +586,14 @@ def interactive(game: Game) -> int:
         face = portrait(arch, nid, getattr(target, "tier", 1),
                         getattr(target, "quality", 0), dmg)
         stats = game.creature_stats(target)   # readable metrics under the name
+        # the portrait wears the creature's ELEMENT colour (arc gold, flame red,
+        # frost cyan, ...), so a face reads as its nature at a glance
+        _DMG_GLYPH = {"flame": "^", "frost": ":", "arc": "!", "venom": ";",
+                      "decay": "%", "psychic": "M", "blade": "|"}
+        face_attr = palette.get(_DMG_GLYPH.get(dmg, ""), 0)
         while True:
             i = dialog_frame(scr, target.name, transcript, TALK_VERBS, topics,
-                             face, stats)
+                             face, stats, face_attr)
             if i is None:
                 break
             if i < len(TALK_VERBS):

@@ -85,35 +85,39 @@ def _flood(tiles, cells, rng, w, h):
 # the registry — add a kind here; that is the whole change
 # --------------------------------------------------------------------------- #
 
+# each kind declares a PALETTE lean: the place's COLOR CHARACTER, and thus how
+# vivid or muted it reads. This is the "colorful or NOT, depending on the place"
+# axis — a grove blazes verdant, a market glows gold, a necropolis is ashen grey,
+# a labyrinth cold and close. None -> fall back to the region's block palette.
 KINDS = {
     # the default: a plain region (no shape, no rule change) — texture only
-    "wilds": dict(favors=[], shape=None, sight=0, voice=[]),
+    "wilds": dict(favors=[], shape=None, sight=0, palette=None, voice=[]),
 
     "labyrinth": dict(
-        favors=["archive"], shape=_maze, sight=-4,
+        favors=["archive"], shape=_maze, sight=-4, palette="cold",
         voice=["The way forks, and forks again.",
                "You have passed this turning before. Or one like it.",
                "Walls lean close; the path remembers no one."]),
 
     "grove": dict(
-        favors=["garden"], shape=None, sight=-2,     # thickets already occlude
+        favors=["garden"], shape=None, sight=-2, palette="verdant",   # blazing green
         voice=["Green closes overhead.", "Something rustles and goes still.",
                "The canopy breathes without wind."]),
 
     "flooded": dict(
-        favors=["wet"], shape=_flood, sight=0,
+        favors=["wet"], shape=_flood, sight=0, palette="cold",
         voice=["Black water lies where the floor should be.",
                "Your reflection wavers and is gone.",
                "The drowned rooms keep their own counsel."]),
 
     "necropolis": dict(
-        favors=["catacomb"], shape=None, sight=-1,
+        favors=["catacomb"], shape=None, sight=-1, palette="ash",     # grey, receding
         voice=["The dead are filed here, and patient.",
                "Dust holds the shape of who knelt last.",
                "Something remembers being read."]),
 
     "market": dict(
-        favors=["hub"], shape=None, sight=0,
+        favors=["hub"], shape=None, sight=0, palette="gold",          # warm, alive
         voice=["Voices cross, too many to follow.",
                "The square never quite empties.",
                "Trade and rumor, rumor and trade."]),
@@ -176,3 +180,8 @@ def sight_mod(kind: str) -> int:
 
 def shape(kind: str):
     return KINDS.get(kind, KINDS["wilds"]).get("shape", None)
+
+
+def palette(kind: str):
+    """The kind's COLOR lean (None if it takes its region's block palette instead)."""
+    return KINDS.get(kind, KINDS["wilds"]).get("palette", None)

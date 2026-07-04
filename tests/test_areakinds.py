@@ -63,6 +63,22 @@ def test_kinds_are_assigned_to_regions():
     assert all(v in areakinds.KINDS for v in g._region_kind.values())
 
 
+def test_a_place_has_a_colour():
+    # every region resolves to a palette lean — its COLOUR character. A kind that
+    # declares one (grove=verdant, necropolis=ash) wins; else the block palette.
+    g = _game()
+    leans = {g.region_palette(r["id"]) for r in g.m["regions"]}
+    assert leans, "regions carry colour"
+    assert "" not in leans or len(leans) > 1, "at least some place has a colour"
+    # a grove is verdant and a necropolis is ashen wherever they occur
+    for r in g.m["regions"]:
+        k = g._region_kind.get(r["id"])
+        if k == "grove":
+            assert g.region_palette(r["id"]) == "verdant"
+        if k == "necropolis":
+            assert g.region_palette(r["id"]) == "ash"
+
+
 if __name__ == "__main__":
     for fn in (test_kind_is_deterministic_and_nature_biased,
                test_every_kind_declares_the_four_channels,
