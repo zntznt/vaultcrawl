@@ -118,7 +118,36 @@ def _check_query_api():
     assert s.is_hazard(9, 9) is False
 
 
+def _check_fire_burns_out():
+    """Fire is SUBCRITICAL: a seeded blaze spreads a little and BURNS OUT — it never
+    grows to consume the map (regression for the old 0.20*4*5 supercritical spread)."""
+    g = Game(load_manifest("examples/world.json"), systems=[ReactionSystem()])
+    s = g.system("reactions")
+    area = g.level.w * g.level.h
+    # light a 3x3 block of floor near the player
+    px, py = g.player.x, g.player.y
+    for dx in range(-1, 2):
+        for dy in range(-1, 2):
+            if g.level.walkable(px + dx, py + dy):
+                s.ignite(px + dx, py + dy)
+
+    def burning():
+        return sum(1 for p in s.props.values() if "fire" in p)
+
+    peak, died = burning(), False
+    for _ in range(60):
+        s.on_player_act(g)
+        peak = max(peak, burning())
+        if burning() == 0:
+            died = True
+            break
+    assert died, "fire never burned out — it is supercritical again"
+    assert peak < area * 0.05, f"fire peaked at {peak}/{area} tiles — spread too aggressive"
+
+
 def main():
+    _check_fire_burns_out()
+
     g = Game(load_manifest("examples/world.json"))
     s = ReactionSystem()
     s.on_world_start(g)
