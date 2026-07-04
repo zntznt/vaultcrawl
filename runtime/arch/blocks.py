@@ -168,12 +168,15 @@ class Environment:
         return "-".join(self.names)
 
 
-def environment_for(element, biome, role=None) -> Environment:
+def environment_for(element, biome, role=None, favors=()) -> Environment:
     """Compose a place's environment from its signals, ordered by dominance: the
     biome is the ground truth of the LAND, the element is its CHARGE, the role a
-    faint personal tint. Order = which reads strongest. (A different vault, or a
-    swapped element/biome, permutes to a different place from the same blocks.)"""
-    order = [b for b in (biome, element) if b in BLOCKS]
-    if role in BLOCKS:
+    faint personal tint. `favors` are the region's AREA-KIND blocks (labyrinth ->
+    archive, grove -> garden); they lead, so the kind reads strongest of all. Order =
+    which reads strongest. (A different vault, or a swapped element/biome, permutes to
+    a different place from the same blocks.)"""
+    order = [b for b in favors if b in BLOCKS]
+    order += [b for b in (biome, element) if b in BLOCKS and b not in order]
+    if role in BLOCKS and role not in order:
         order.append(role)
     return Environment(order or ["inert"])

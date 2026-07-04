@@ -101,6 +101,7 @@ class Game:
         self._frictions: dict = {}    # wall (x, y) -> stance between the regions it parts
         self._overlay: dict = {}      # (x, y) -> biome/structure glyph, drawn over floor
         self._region_env: dict = {}   # region id -> Environment (blended design blocks)
+        self._region_kind: dict = {}  # region id -> area kind (labyrinth/grove/...)
         self._region_by_comm = {self._region_community(r): r
                                 for r in manifest["regions"]}
         self._region_faction = {r["id"]: r.get("factionId", "")
@@ -169,7 +170,12 @@ class Game:
         env = self._region_env.get(r["id"]) if r else None
         if env is None:
             return
-        lines = env.voice()
+        lines = list(env.voice())
+        # the AREA KIND speaks too: a labyrinth's disorientation, a market's crowd —
+        # its lines join the region's own so a place-of-a-kind sounds like one.
+        if r:
+            from .arch import areakinds
+            lines += areakinds.voice(self._region_kind.get(r["id"], "wilds"))
         if lines:
             self.log(lines[(self.turn // 11) % len(lines)], ambient=True)
 
@@ -198,7 +204,7 @@ class Game:
             with open(self.site_cache, "r", encoding="utf-8") as fh:
                 d = json.load(fh)
             if (d.get("seed") != self.seed or d.get("sprawl", 1.0) != self.sprawl
-                    or d.get("fmt") != 7):
+                    or d.get("fmt") != 8):
                 return None
             from .dungeon import Level
             level = Level(w=d["w"], h=d["h"],
@@ -226,7 +232,7 @@ class Game:
             return
         try:
             with open(self.site_cache, "w", encoding="utf-8") as fh:
-                json.dump({"seed": self.seed, "sprawl": self.sprawl, "fmt": 7,
+                json.dump({"seed": self.seed, "sprawl": self.sprawl, "fmt": 8,
                            "w": level.w, "h": level.h,
                            "tiles": ["".join(r) for r in level.tiles],
                            "player_start": list(level.player_start),
@@ -245,6 +251,16 @@ class Game:
         depth = centrality becomes SPATIAL. You start at the periphery; the
         deepest thought holds the greatest center. Walk inward."""
         self.floor = 1
+        # each region's AREA KIND (labyrinth, grove, flooded, ...) — a nature-biased
+        # roll from its anchor note. Kinds fold favored blocks into the environment
+        # (flavor), add ambient voice, modify sight, and may reshape the region's
+        # LAYOUT. Deterministic; computed before settle so shapes bake into the cache.
+        from .arch import areakinds
+        self._region_kind = {}
+        for r in self.m["regions"]:
+            node = self.m["graph"]["nodes"].get(r.get("sourceNoteId"), {})
+            self._region_kind[r["id"]] = areakinds.kind_for(r, node, self.seed)
+
         cached = self._load_site()
         if cached is not None:
             self.level, placed = cached
@@ -342,11 +358,19 @@ class Game:
         # each region's ATMOSPHERE is a blend of design blocks (element + biome + anchor
         # role), ordered by dominance — the "playset" that permutes into a distinct vibe
         # per region. Kept for the renderer (palette) and ambient voice.
+        from .arch import areakinds
         self._region_env = {}
         for r in self.m["regions"]:
             anchor = self.m["graph"]["nodes"].get(r.get("sourceNoteId"), {})
+            kind = self._region_kind.get(r["id"], "wilds")
             self._region_env[r["id"]] = environment_for(
-                r.get("element", "inert"), r.get("biome"), anchor.get("role"))
+                r.get("element", "inert"), r.get("biome"), anchor.get("role"),
+                favors=areakinds.favors(kind))
+        # an area kind may RESHAPE its region's layout (a labyrinth's maze walls, a
+        # flooded ruin's pools). Deterministic, re-applied on cached loads too, and
+        # only ever touches a region's own INTERIOR floor, so the world stays whole
+        # (settle already ran _ensure_connected; we re-verify after).
+        self._apply_area_shapes()
         # biomes + wild structures are OVERLAYS (drawn by the renderer), never baked
         # into level.tiles, so spawning/pathing/cache stay identical fresh-vs-cached.
         # Buildings anchor the fill: settled ground is dense, deep wild tapers to open.
@@ -402,6 +426,33 @@ class Game:
             self.log(f'It murmurs: "{voice}"')
         for s in self.systems:
             s.on_floor_enter(self)
+
+    def _apply_area_shapes(self):
+        """Run each region's area-kind layout transform (maze walls, flooding) on its
+        own cells, then re-verify the whole level stays connected. Deterministic:
+        seeded per region; re-applied identically on cached loads."""
+        from .arch import areakinds
+        from .arch.terrain import region_map_only
+        # flood region ids to every floor tile (the transform needs full region cells)
+        region_of = region_map_only(self.level, self._cell_region)
+        cells_by_region: dict = {}
+        for cell, rid in region_of.items():
+            if self.level.tiles[cell[1]][cell[0]] != "#":
+                cells_by_region.setdefault(rid, []).append(cell)
+        shaped = False
+        for rid, cells in sorted(cells_by_region.items(), key=lambda kv: str(kv[0])):
+            fn = areakinds.shape(self._region_kind.get(rid, "wilds"))
+            if fn is None:
+                continue
+            rng = random.Random(f"{self.seed}:areashape:{rid}")
+            fn(self.level.tiles, sorted(cells), rng, self.level.w, self.level.h)
+            shaped = True
+        if shaped:
+            # the maze/flood is walls; guarantee the world is still one body
+            from .arch.carve import _ensure_connected
+            placed = [c for _pl, c in self._places]
+            _ensure_connected(self.level.tiles, (self.player.x, self.player.y),
+                              placed, self.level.w, self.level.h)
 
     def _relocate_spawn(self):
         """Move the player to open ground beside a road, at the edge of the start

@@ -139,10 +139,24 @@ class KnowledgeSystem(System):
 
     def _sight(self, game) -> int:
         """Sight radius. Generous on the open SURFACE (you wander a vista), tighter in
-        the dark DEPTHS (fog is dread); widened further by the 'lantern' effect."""
+        the dark DEPTHS (fog is dread); widened by the 'lantern' effect; and the AREA
+        KIND you stand in leans it (a labyrinth presses close, a market is open)."""
         base = SURFACE_RADIUS if getattr(game, "_on_surface", lambda: False)() else RADIUS
         eff = game.system("effects")
-        return base + (eff.perception_bonus(game) if eff is not None else 0)
+        base += (eff.perception_bonus(game) if eff is not None else 0)
+        kind = self._current_kind(game)
+        if kind:
+            from .arch import areakinds
+            base += areakinds.sight_mod(kind)
+        return max(2, base)      # never blind
+
+    def _current_kind(self, game):
+        rof = getattr(game, "_region_of", None)
+        kinds = getattr(game, "_region_kind", None)
+        if not rof or not kinds:
+            return None
+        rid = rof.get((game.player.x, game.player.y))
+        return kinds.get(rid)
 
     def _occludes(self, game, x, y) -> bool:
         """A tile blocks the view PAST it: a wall, or dense canopy in the overlay."""
