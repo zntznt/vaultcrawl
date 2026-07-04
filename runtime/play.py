@@ -438,11 +438,12 @@ def interactive(game: Game) -> int:
         ret = fn(*a, **kw)
         return ret, list(game.messages[before:])
 
-    def dialog_frame(scr, name, transcript, verbs, topics):
+    def dialog_frame(scr, name, transcript, verbs, topics, face=None):
         """The ONE unified conversation frame — every talk uses it, so it can be styled
         once, here, later. Two kinds of choice, deliberately in different places:
 
           * NAME in the TOP border.
+          * a procedural PORTRAIT of the interlocutor at the top of the body.
           * the running exchange fills the BODY (auto-scrolled to the latest line).
           * the STANDARD mechanical VERBS (same for every creature) render along the
             BOTTOM BORDER — the fixed, universal frame.
@@ -466,15 +467,24 @@ def interactive(game: Game) -> int:
             cur += lab + "  "
         if cur.strip():
             bar_rows.append(cur.rstrip())
+        # the portrait, centered, sits at the very top of the body
+        art = []
+        if face:
+            fw = max((len(r) for r in face), default=0)
+            pad = max((w - 4 - fw) // 2, 0)
+            art = [" " * pad + r for r in face] + [""]
         # topics live in the body, appended under the exchange
         topic_lines = ([""] + [f"  {nv + n + 1}. {lbl}" for n, (lbl, _) in
                                enumerate(topics)]) if topics else []
         while True:
-            body = _wrap(transcript, w - 4) + topic_lines
+            # the portrait is a FIXED header (art); only the exchange+topics scroll
+            scroll = _wrap(transcript, w - 4) + topic_lines
+            body = art + scroll                       # art pinned at top
             vh = max(3, min(len(body), rows - 6 - len(bar_rows)))
             top = max(0, (rows - vh - 4 - len(bar_rows)) // 2)
-            # keep the newest exchange AND the topic list in view
-            off = max(0, len(body) - vh)
+            # scroll the CONTENT under the fixed portrait to its newest line
+            scroll_vh = max(1, vh - len(art))
+            view = art + scroll[max(0, len(scroll) - scroll_vh):]
             bar = "─" * (w - 2)
             try:
                 for r in range(vh + 3 + len(bar_rows)):
@@ -484,8 +494,8 @@ def interactive(game: Game) -> int:
                 scr.addstr(top, left + 2, nm[:w - 4], acc)
                 for i in range(vh):
                     scr.addstr(top + 1 + i, left, "│", acc)
-                    if off + i < len(body):
-                        scr.addstr(top + 1 + i, left + 2, body[off + i][:w - 4])
+                    if i < len(view):
+                        scr.addstr(top + 1 + i, left + 2, view[i][:w - 4])
                     scr.addstr(top + 1 + i, left + w - 1, "│", acc)
                 scr.addstr(top + 1 + vh, left, "├" + bar + "┤", acc)
                 for j, brow in enumerate(bar_rows):
@@ -546,8 +556,13 @@ def interactive(game: Game) -> int:
         opening = game._weave_note(nid, salt="talk") if nid else ""
         transcript = [f'{target.name}: "{opening}"' if opening
                       else f"{target.name} regards you."]
+        # a Spore-style procedural PORTRAIT, built from the creature's own traits
+        from .portrait import portrait
+        arch, dmg = game.creature_look(target)
+        face = portrait(arch, nid, getattr(target, "tier", 1),
+                        getattr(target, "quality", 0), dmg)
         while True:
-            i = dialog_frame(scr, target.name, transcript, TALK_VERBS, topics)
+            i = dialog_frame(scr, target.name, transcript, TALK_VERBS, topics, face)
             if i is None:
                 break
             if i < len(TALK_VERBS):

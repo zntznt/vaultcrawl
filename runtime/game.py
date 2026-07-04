@@ -1272,6 +1272,19 @@ class Game:
         from .notehistory import one_fact
         return one_fact(node, node.get("title", nid), salt=salt)
 
+    def creature_look(self, target) -> tuple:
+        """(archetype, damage_type) for a creature's PORTRAIT — read from the baked
+        enemy/boss spec by its source note, falling back to the map glyph's archetype
+        so wildlife and NPCs still get a face. Deterministic, manifest-derived."""
+        src = getattr(target, "source", "")
+        for group in ("enemies", "bosses"):
+            for e in self.m.get(group, []):
+                if e.get("sourceNoteId") == src:
+                    return e.get("archetype", "construct"), e.get("damageType", "")
+        from .entities import ARCH_GLYPH
+        g2a = {v: k for k, v in ARCH_GLYPH.items()}
+        return g2a.get(getattr(target, "glyph", ""), "construct"), ""
+
     def dialogue_topics(self, nid: str) -> list:
         """DIALOGUE options exclusive to this creature's note — distinct from the
         mechanical verbs (offer/confide/truce) that every creature shares. These are
