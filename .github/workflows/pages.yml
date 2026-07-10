@@ -1,0 +1,55 @@
+name: Pages
+
+# Rebuild the GitHub Page on every push to main. The demo is CAPTURED FROM THE REAL
+# GAME here, so the site can never drift from the current build: change the game,
+# push, and the animation on the page reflects it.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Bake the sample world (deterministic, offline stub)
+        run: python -m vaultcrawl.bake sample_vault -o examples/world.json
+
+      - name: Capture the real game as an animated SVG
+        run: python -m tools.capture_demo --world examples/world.json --out docs/demo.svg --frames 30 --width 50 --height 20 --fps 6
+
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp docs/index.html _site/index.html
+          cp docs/demo.svg _site/demo.svg
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
