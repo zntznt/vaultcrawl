@@ -31,19 +31,35 @@ from runtime.systems import System
 
 LOUD_CAUSES = ("melee", "sigil")  # heard by the faction; environment kills are quiet
 
+# faction standing perks — ranked unlocks from reputation thresholds
+_FACTION_PERK_TABLE = {
+    "default": [
+        (1, "kin_calm"),       # standing 1+: faction creatures deal -1 damage to you
+        (2, "hunter_vision"),  # standing 2+: see hunters on overworld map
+        (3, "call_ally"),      # standing 3+: one friendly creature per floor
+        (4, "threshold"),      # standing 4+: anchor door opens (terrain mod)
+    ],
+}
+
+def _has_perk(standing: int, fac_id: str, perk_name: str) -> bool:
+    perks = _FACTION_PERK_TABLE.get(fac_id, _FACTION_PERK_TABLE["default"])
+    for rank, name in perks:
+        if name == perk_name and standing >= rank:
+            return True
+    return False
+
 
 class FactionSystem(System):
     name = "factions"
 
     def __init__(self):
-        # faction_id -> noise (alert level); faction_id -> favor (reputation)
         self.disturbance: dict[str, int] = {}
         self.standing: dict[str, int] = {}
-        # lookups built from the bible the first time we see the game
-        self._names: dict[str, str] = {}                 # faction_id -> display name
-        self._relations: dict[str, list] = {}            # faction_id -> [(other_id, stance)]
+        self._names: dict[str, str] = {}
+        self._relations: dict[str, list] = {}
         self._built = False
-        self._game = None                                # captured for the query API
+        self._game = None
+        self._allies_called: set = set()     # factions whose ally has been summoned this floor
 
     # ---- lookup construction ---------------------------------------------------
     def _build(self, game):
@@ -62,10 +78,17 @@ class FactionSystem(System):
     def on_world_start(self, game):
         self._build(game)
 
+    def on_floor_enter(self, game):
+        self._allies_called = set()   # reset per floor
+
     def faction_name(self, fid):
         if not fid:
             return "Unknown"
         return self._names.get(fid, fid)
+
+    def faction_perk(self, fac_id: str, perk_name: str) -> bool:
+        """Check if the player has unlocked a specific faction perk at current standing."""
+        return _has_perk(self.standing_of(fac_id), fac_id, perk_name)
 
     # ---- query API (INTERACTIONS_SPEC.md) -------------------------------------
     def faction_of(self, note_id):
@@ -145,6 +168,8 @@ class FactionSystem(System):
         if fac:
             self.disturbance[fac] = self.disturbance.get(fac, 0) + 1
             self.standing[fac] = self.standing.get(fac, 0) - 1
+            s = self.standing[fac]
+            game.emit("standing_changed", faction=fac, standing=s)
             # antagonizing a faction pleases everyone who already opposes it
             for other, stance in self._relations.get(fac, []):
                 if stance in ("rival", "war"):
@@ -237,5 +262,29 @@ class FactionSystem(System):
             v = self.standing.get(f, 0)
             nm = self.faction_name(f).replace("House ", "")[:10]
             mark = "♥" if v >= FRIEND_STANDING else ""
-            parts.append(f"{nm} {v:+d}{mark}")
+            sigil = "+ " if v >= 0 else (". " if v > -4 else "- ")
+            parts.append(f"{sigil}{nm} {v:+d}{mark}")
         return ("Houses: " + " · ".join(parts)) if parts else None
+
+    def on_interact(self, game) -> bool:
+        px, py = game.player.x, game.player.y
+        decay = game.system("decay")
+        if decay is None:
+            return False
+        if not decay.corpse_at(px, py):
+            return False
+        fac = self._corpse_faction(game, px, py)
+        if not fac:
+            game.log("This fallen one held no allegiance.")
+            return False
+        decay.consume(px, py)
+        self.standing[fac] = self.standing.get(fac, 0) + 1
+        game.emit("standing_changed", faction=fac, standing=self.standing[fac])
+        game.log(f"You honour the fallen. {self.faction_name(fac)} will remember.")
+        return True
+
+    def _corpse_faction(self, game, x, y):
+        for a in game.actors:
+            if a.x == x and a.y == y and a.hp <= 0:
+                return getattr(a, "faction", "")
+        return ""

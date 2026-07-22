@@ -1,4 +1,4 @@
-# Senses contract — perception by capacity (CDDA-style)
+# Senses contract — perception by capacity 
 
 The perception core lives in `runtime/senses.py`. Read it first. Two layers:
 - **detection/exploration** — locating senses (SOUND, SMELL) give a *position*, no identity →

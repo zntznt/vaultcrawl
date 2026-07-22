@@ -312,5 +312,56 @@ def make_brain(game, actor, name=None):
     while name and name not in BRAIN_REGISTRY and name not in seen:
         seen.add(name)
         name = _FALLBACK.get(name)
-    cls = BRAIN_REGISTRY.get(name, HunterBrain)
+    cls = BRAIN_REGISTRY.get(name) or BRAIN_REGISTRY.get("hunter", HunterBrain)
     return cls()
+
+
+# --------------------------------------------------------------------------- #
+# Trigger / emotion system — anger and fear tracking for creature brains.
+# --------------------------------------------------------------------------- #
+#
+# Each monster has anger (0..1) and fear (0..1) that decay toward base values.
+# Triggers modify them; brains query them to pick behaviour (charge harder,
+# flee, ignore, etc.). Deterministic: derived from board state + actor memory.
+
+def anger_of(actor) -> float:
+    return getattr(actor, "_anger", 0.0)
+
+
+def fear_of(actor) -> float:
+    return getattr(actor, "_fear", 0.0)
+
+
+def apply_trigger(game, actor, trigger: str, amount: float = 0.3):
+    """Modify a creature's emotion state from a named trigger.
+    Triggers: hurt, friend_died, fire_near, sound_heard, kin_hurt, weak_foe_seen."""
+    trig = {
+        "hurt": ("_anger", 0.3),
+        "friend_died": ("_anger", 0.5),
+        "fire_near": ("_fear", 0.2),
+        "sound_heard": ("_anger", 0.15),
+        "kin_hurt": ("_anger", 0.4),
+        "weak_foe_seen": ("_anger", 0.25),
+        "player_close": ("_anger", 0.2),
+    }.get(trigger)
+    if trig is None:
+        return
+    attr, base = trig
+    cur = getattr(actor, attr, 0.0)
+    setattr(actor, attr, min(1.0, cur + base * amount))
+
+
+def decay_emotions(actor):
+    """Call each turn: emotions drift toward baseline."""
+    for attr in ("_anger", "_fear"):
+        v = getattr(actor, attr, 0.0)
+        if v > 0.01:
+            setattr(actor, attr, max(0.0, v - 0.05))
+
+
+def is_enraged(actor) -> bool:
+    return anger_of(actor) > 0.6
+
+
+def is_fearful(actor) -> bool:
+    return fear_of(actor) > 0.5

@@ -72,7 +72,10 @@ def main():
     assert s.region_mapped(g), "directly learned anchor maps the region"
     grid = [row[:] for row in g.level.tiles]
     s.render_overlay(g, grid)
-    assert grid == g.level.tiles, "a mapped region's terrain must be fully visible"
+    expected = [row[:] for row in g.level.tiles]
+    if 0 <= py < len(expected) and 0 <= px < len(expected[py]):
+        expected[py][px] = g.player.glyph
+    assert grid == expected, "a mapped region's terrain must be fully visible (except player glyph)"
 
     # --- status line ---
     line = s.status_line(g)

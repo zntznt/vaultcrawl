@@ -40,6 +40,7 @@ class Level:
     rooms: list
     player_start: tuple
     stairs: tuple
+    z: int = 0
 
     def walkable(self, x: int, y: int) -> bool:
         return 0 <= x < self.w and 0 <= y < self.h and self.tiles[y][x] != WALL
@@ -88,24 +89,22 @@ def _connect_mst(tiles, rooms, rng):
 
 
 def _architecture_level(graph: dict, seed: str, floor: int) -> Level:
-    """Grow + carve a living level from the vault graph (ARCHITECTURE_SPEC, Phase 6).
-    Seeded by (seed, floor) so each floor is a distinct living layout from the same
-    corpus. Imports lazily: runtime.arch.carve imports dungeon.Level, so a top-level
-    import here would be circular."""
+    """Grow + carve a living level from the vault graph (ARCHITECTURE_SPEC, Phase 6)."""
     from runtime.arch import grow as _grow
     from runtime.arch.carve import carve as _carve
     plan = _grow.grow(graph, seed=f"{seed}:floor:{floor}")
-    return _carve(plan, seed=f"{seed}:floor:{floor}")
+    level = _carve(plan, seed=f"{seed}:floor:{floor}")
+    level.z = 0
+    return level
 
 
 def build_world(graph: dict, seed: str):
-    """Sandbox: grow + carve the WHOLE vault as ONE persistent world (no floors).
-    Returns (level, region_map, plan) where region_map is {(x,y) -> note id} so the
-    game can resolve which district the player stands in. Lazy import (circular)."""
+    """Sandbox: grow + carve the WHOLE vault as ONE persistent world (no floors)."""
     from runtime.arch import grow as _grow
     from runtime.arch.carve import carve as _carve, region_map as _region_map
     plan = _grow.grow(graph, seed=f"{seed}:world")
     level = _carve(plan, seed=f"{seed}:world")
+    level.z = 0
     return level, _region_map(plan), plan
 
 
@@ -145,7 +144,7 @@ def generate_level(width: int, height: int, seed: str, floor: int,
         sx, sy = (r.x + r.w - 1, r.y + r.h - 1)
     tiles[sy][sx] = STAIRS
     return Level(w=width, h=height, tiles=tiles, rooms=rooms,
-                 player_start=player_start, stairs=(sx, sy))
+                  player_start=player_start, stairs=(sx, sy), z=0)
 
 
 def free_floor_tiles(level: Level, exclude: set) -> list:

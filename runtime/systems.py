@@ -45,6 +45,12 @@ class System:
     def status_line(self, game):
         return None
 
+    def on_interact(self, game) -> bool:
+        """Called when the player presses the interact key. The tile under the player
+        is checked against each system. Return True to consume the action and advance
+        the turn; return False to pass to the next system."""
+        return False
+
     def points_of_interest(self, game):
         """Tiles an autonomous agent may want to visit (sigils to grab, lore to read).
         Defaults to the keys of a `self.ground` dict if the system keeps one."""

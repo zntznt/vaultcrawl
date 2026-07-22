@@ -42,6 +42,54 @@ _FAMILY = {
 DAMAGE = ["blade", "flame", "frost", "venom", "psychic", "decay", "arc"]
 
 
+# family -> inherited properties (template-based trait inheritance)
+# Every member of a family inherits these base traits.
+_FAMILY_TRAITS = {
+    "hub":     {"actions": ["shield", "rally"], "desc": "commanding presence"},
+    "bridge":  {"actions": ["blink", "spit"], "desc": "liminal nature"},
+    "cluster": {"actions": ["rally", "summon"], "desc": "social cohesion"},
+    "leaf":    {"actions": ["shield"], "desc": "solitary guard"},
+    "orphan":  {"actions": ["enrage", "split"], "desc": "feral instinct"},
+    "discovery": {"actions": ["enrage"], "desc": "wild discovery"},
+}
+
+# per-archetype overrides: specific members add or remove inherited actions
+_ARCHETYPE_OVERRIDES: dict[str, dict] = {
+    "seraph":    {"add": ["blink"], "remove": {"rally"}},
+    "warden":    {"add": [], "remove": set()},
+    "colossus":  {"add": ["enrage"], "remove": {"rally"}},
+    "wisp":      {"add": [], "remove": set()},
+    "echo":      {"add": ["summon"], "remove": set()},
+    "revenant":  {"add": ["enrage"], "remove": {"spit"}},
+    "chorus":    {"add": ["split"], "remove": {"summon"}},
+    "swarm":     {"add": [], "remove": set()},
+    "myriad":    {"add": ["blink"], "remove": {"rally"}},
+    "scribe":    {"add": [], "remove": set()},
+    "sentinel":  {"add": ["enrage"], "remove": set()},
+    "gloom":     {"add": ["spit"], "remove": {"shield"}},
+    "beast":     {"add": ["shield"], "remove": set()},
+    "hound":     {"add": [], "remove": set()},
+    "drifter":   {"add": ["blink"], "remove": {"split"}},
+}
+
+
+def family_actions(role: str, archetype: str) -> list[str]:
+    """Inherited special actions for an enemy: family base + archetype overrides."""
+    base = list(_FAMILY_TRAITS.get(role, {}).get("actions", []))
+    over = _ARCHETYPE_OVERRIDES.get(archetype, {})
+    for a in over.get("add", []):
+        if a not in base:
+            base.append(a)
+    for r in over.get("remove", set()):
+        if r in base:
+            base.remove(r)
+    return base
+
+
+def family_desc(role: str) -> str:
+    return _FAMILY_TRAITS.get(role, {}).get("desc", "")
+
+
 def _archetype_for(role, age, degree, nid=""):
     """A creature's kind, read from its note: role -> family, then a within-family
     member chosen from the signals that actually VARY across a vault. Age alone

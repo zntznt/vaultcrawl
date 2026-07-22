@@ -102,6 +102,15 @@ class DecaySystem(System):
             return True
         return False
 
+    def on_interact(self, game) -> bool:
+        pos = (game.player.x, game.player.y)
+        if not self.corpse_at(*pos):
+            return False
+        self.consume(*pos)
+        game.player._hidden = max(getattr(game.player, "_hidden", 0), 3)
+        game.log("You hunker behind the corpse — your scent is masked.")
+        return True
+
     # ---- rendering / HUD ----
     def render_overlay(self, game, grid):
         h = len(grid)

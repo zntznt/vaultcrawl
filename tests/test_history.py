@@ -51,7 +51,7 @@ def main():
     assert len(g.messages) > before_log, "reading should grow the message log"
     assert frag_xy not in s.ground, "the fragment should be consumed once read"
     assert isinstance(s.status_line(g), str), "status_line must return a string"
-    assert s.status_line(g) == "Lore: 1 read"
+    assert "Lore: 1 read" in s.status_line(g)
 
     # standing on an empty tile does nothing
     log_now = len(g.messages)

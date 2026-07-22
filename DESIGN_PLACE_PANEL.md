@@ -1,7 +1,7 @@
 # Sense-of-Place Design Panel — Build Plan
 
 _Convened 2026-07-02 after the verdict: "the feeling of place is garbage and absent."_
-_Panel: CoQ level designer, Cogmind UX, CDDA modder, ASCII env-artist, atmosphere designer.
+_Panel: CoQ level designer, Cogmind UX, terrain modder, ASCII env-artist, atmosphere designer.
  35 fixes proposed, 9 survived adversarial review._
 
 ## Thesis

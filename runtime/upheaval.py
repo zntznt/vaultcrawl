@@ -30,7 +30,14 @@ class Upheaval:
         self.risen_regions: set = set()
         self.contested: set = set()
         self.throne = None
-        self.lost_floor: dict = {}   # floor -> [note ids]
+        self.lost_floor: dict = {}
+        # terrain-modifying events
+        self.sanctums: set = set()             # note ids whose bosses are slain → monument
+        self.opened_thresholds: dict = {}      # faction_id → (x, y) gate tile
+        self.unsealed_alcoves: dict = {}       # region_id → [(x, y)] wall tiles opened
+        self.bridges_built: list = []          # [(x, y), ...] road tiles bridging regions
+        self.forge_sanctums: set = set()       # note ids of forge-grown rooms
+        self.revealed_notes: set = set()       # note ids fully illuminated
 
     @classmethod
     def from_events(cls, events: list, echo_span: int = 6):
@@ -49,6 +56,31 @@ class Upheaval:
                 u.throne = note
             elif k in ("border_shifts", "border_opens"):
                 u.contested.add(note)
+            # terrain-modifying events
+            elif k == "sanctum_cleared":
+                u.sanctums.add(note)
+                tile = e.get("tile")
+                if tile and len(tile) == 2:
+                    u._monuments = getattr(u, "_monuments", {})
+                    u._monuments[tuple(tile)] = note
+            elif k == "threshold_opened":
+                fac = e.get("faction", "")
+                tile = e.get("tile")
+                if fac and tile and len(tile) == 2:
+                    u.opened_thresholds[fac] = tuple(tile)
+            elif k == "alcove_unsealed":
+                rid = e.get("region", "")
+                tiles = e.get("tiles", [])
+                if rid and tiles:
+                    u.unsealed_alcoves.setdefault(rid, []).extend(tuple(t) for t in tiles if len(t) == 2)
+            elif k == "bridge_built":
+                tiles = e.get("tiles", [])
+                if tiles:
+                    u.bridges_built.append([tuple(t) for t in tiles if len(t) == 2])
+            elif k == "forge_grown":
+                u.forge_sanctums.add(note)
+            elif k == "thought_revealed":
+                u.revealed_notes.add(note)
         # scatter lost notes across the early floors, deterministically
         for n in sorted(u.lost):
             h = int(hashlib.sha256(n.encode()).hexdigest()[:8], 16)
@@ -58,7 +90,11 @@ class Upheaval:
     @property
     def total(self) -> int:
         return (len(self.ascended) + len(self.waned) + len(self.lost)
-                + len(self.risen_regions) + len(self.contested) + (1 if self.throne else 0))
+                + len(self.risen_regions) + len(self.contested) + (1 if self.throne else 0)
+                + len(self.sanctums) + len(self.opened_thresholds)
+                + sum(len(v) for v in self.unsealed_alcoves.values())
+                + len(self.bridges_built) + len(self.forge_sanctums)
+                + len(self.revealed_notes))
 
 
 def empower(actor: Actor):

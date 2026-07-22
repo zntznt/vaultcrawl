@@ -307,7 +307,7 @@ Glyphs: `@` you · `>` stairs down · `M` boss · lowercase = enemies (by archet
    any entity: `--embody <name-or-note>` hands you its body, stats, house, and
    relations — wake as a shade of House Philosophy and its kin part around you while
    its rivals and the wild hunt you.
-   **The CDDA layer — places are distinct opportunities**: a note-room may hold a
+   **Places — places are distinct opportunities**: a note-room may hold a
    **cache** (`□`) of that place's OWN matter, named from the note's tags ('rust'
    ground yields lang-matter, Stoicism's chamber mind-matter). Old thoughts yield
    seasoned quality-2 matter (ruins are worth the trip); caches in charged, flammable,
@@ -340,7 +340,7 @@ Glyphs: `@` you · `>` stairs down · `M` boss · lowercase = enemies (by archet
 **Rooms are places.** Each room on a floor carries the identity of a note from the
 region's community (the anchor note always claims the deepest room), named by its graph
 role: a hub is a Hall, a bridge a Gallery, an orphan a Sealed Alcove. Contents are
-contextual to place, CDDA-style: an enemy, sigil, machine, or Keeper spawns inside the
+contextual to place, a place-typed spawn: an enemy, sigil, machine, or Keeper spawns inside the
 room of its own source note when that room exists on the floor. Entering a room
 announces it; `x` (examine) names where you stand and what is nearby.
 
@@ -581,7 +581,7 @@ than an exploiter that turns the same terrain against them.
 
 ---
 
-## Senses — perception, not omniscience (CDDA-style)
+## Senses — perception, not omniscience 
 
 Brains used to be omniscient: every creature always knew where you were. The senses layer
 (`senses.py`, the perception model — distinct from `sense.py`, the brains' movement toolkit)

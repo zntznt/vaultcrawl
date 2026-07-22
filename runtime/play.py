@@ -78,8 +78,8 @@ def auto_play(game: Game, floors: int, max_turns: int = 500):
     return transcript, cleared
 
 
-KEYS_HELP = ("move:hjkl+yubn  g:travel  >enter <climb .wait  x:examine t:speak e:effect m:log  "
-             "z:toss c:cast f:forge b:breakdown  q:quit")
+KEYS_HELP = ("move:hjkl+yubn  o:explore g:travel  >enter <climb .wait  x:examine t:speak e:effect m:log  "
+              "z:toss c:cast f:forge b:breakdown  d:shield p:shove a:act  i:inspect Q:quests C:companions V:overworld  q:quit")
 ABILITIES = ["Recall", "Phase", "Rally", "Ward", "Echo"]
 
 
@@ -226,6 +226,9 @@ def interactive(game: Game) -> int:
         except ImportError:
             RADIUS = 4
         px, py = game.player.x, game.player.y
+        actors_at = {}
+        for a in game.actors:
+            actors_at[(a.x, a.y)] = a
         for y, row in enumerate(grid):
             put(y + 1, 0, "│", dim)
             put(y + 1, vw + 1, "│", dim)
@@ -233,6 +236,11 @@ def interactive(game: Game) -> int:
             for x, ch in enumerate(row):
                 a = palette.get(ch, 0)
                 wx, wy = ox + x, oy + y
+                actor = actors_at.get((wx, wy))
+                if actor is not None and getattr(actor, "quality", 0) > 0:
+                    tier = actor.quality
+                    qcol = [(G, BOLD), (B, BOLD), (M, BOLD), (Y, BOLD)][min(tier - 1, 3)]
+                    a = curses.color_pair(qcol[0] + 1) | qcol[1]
                 # THE PLACE HAS A COLOR: all of a region's ground — block terrain AND
                 # bare floor AND grain — wears its palette-lean, so a whole place reads
                 # in one hue and crossing a border visibly changes the world's color.
@@ -267,6 +275,13 @@ def interactive(game: Game) -> int:
                 else:
                     put(sy_, sx_, ">", palette.get(">", curses.A_BOLD))
         put(vh + 1, 0, "└" + "─" * vw + "┘", dim)
+        # waypoint beacon: a faint marker through the fog guiding toward the target
+        wp = getattr(game, "_ow_waypoint", None)
+        if wp is not None:
+            wpx, wpy = wp
+            sx_, sy_ = wpx - ox + 1, wpy - oy + 1
+            if 1 <= sx_ <= vw and 1 <= sy_ <= vh and (wpx, wpy) != (px, py):
+                put(sy_, sx_, "✦", palette.get("?", curses.A_BOLD))
 
         # sidebar: identity, vitals, then one line per live system
         sx = vw + 3
@@ -282,20 +297,70 @@ def interactive(game: Game) -> int:
         hp_attr = (palette.get(":", 0) if ratio > 0.5
                    else palette.get("*", 0) if ratio > 0.25
                    else palette.get("^", curses.A_BOLD))
-        put(1, sx, f"HP [{'=' * fill}{' ' * (barw - fill)}] {max(0, p.hp)}/{p.max_hp}",
-            hp_attr)
+        body = getattr(p, "body", None)
+        if body:
+            hh, th, lh = body["head"]["hp"], body["torso"]["hp"], body["legs"]["hp"]
+            leg_tag = "!" if lh <= 0 else ""
+            put(1, sx, f"HP H{hh} T{th} L{leg_tag}{lh} [{'=' * fill}] {max(0, p.hp)}/{p.max_hp}",
+                hp_attr)
+        else:
+            put(1, sx, f"HP [{'=' * fill}{' ' * (barw - fill)}] {max(0, p.hp)}/{p.max_hp}",
+                hp_attr)
         put(2, sx, f"ATK {p.atk}  DEF {p.defense}"
+            + (f"  items {game.items_taken}" if game.items_taken else "")
             + ("" if game.sandbox else f"   floor {game.floor}/{game.max_floor}")
             + (f"  DEBUG @({p.x},{p.y}) t{game.turn}"
                if getattr(game, "debug", False) else ""), 0)
-        row = 4
+        row = 3
+        # active effects — shield, enrage, bleeding, etc.
+        effs = []
+        sh = getattr(p, "_shield_bonus", 0)
+        if sh: effs.append(("Shield +" + str(sh), palette.get("n", 0)))
+        en = getattr(p, "_enrage_stacks", 0)
+        if en: effs.append(("Enrage +" + str(en), palette.get("*", curses.A_BOLD)))
+        if getattr(p, "speed", 1.0) > 1.0: effs.append(("Haste", palette.get("n", 0)))
+        if getattr(p, "speed", 1.0) < 1.0 and getattr(p, "speed", 1.0) > 0:
+            effs.append(("Slow", palette.get("^", 0)))
+        for tag, tag_attr in [("Bleed " + str(getattr(p, "_bleeding", 0)),
+                               palette.get("^", curses.A_BOLD)),
+                              ("Staggered", palette.get("^", curses.A_BOLD)),
+                              ("Winded", palette.get("^", 0)),
+                              ("Slowed " + str(getattr(p, "_slowed", 0)) + "t",
+                               palette.get("^", 0))]:
+            if tag.split()[0] not in "".join(e[0] for e in effs):
+                val = getattr(p, tag.lower().split()[0] if " " not in tag else
+                             "_" + tag.lower().split()[0], 0)
+                if val > 0: effs.append((tag, tag_attr))
+        if effs:
+            put(row, sx, "  ".join(tag for tag, _ in effs)[:cols - sx - 1], 0)
+            row += 1
+        if getattr(game, "_resting", False):
+            put(row, sx, "RESTING", palette.get("*", curses.A_BOLD))
+            row += 1
+        # tension indicator
+        t = getattr(game, "_tension", 0)
+        if t >= 50:
+            tc = palette.get(":", 0) if t < 100 else (palette.get("*", 0) if t < 200 else palette.get("^", curses.A_BOLD))
+            put(row, sx, f"Tension: {t}", tc)
+            row += 1
+        # region aspect
+        asp = getattr(game, "_aspect", "")
+        if asp:
+            put(row, sx, asp[:cols - sx - 1], palette.get("?", curses.A_BOLD))
+            row += 1
+        row = max(row, 4)
         comps = [a for a in game.actors if a.allegiance == "companion"]
         if comps and row < vh:
             put(row, sx, f"With you ({len(comps)}):", palette.get("P", curses.A_BOLD))
             row += 1
             for a in comps[:3]:
                 if row < vh:
-                    put(row, sx, f" {a.name[:16]} {max(0, a.hp)}/{a.max_hp}",
+                    tags = []
+                    if getattr(a, "_bleeding", 0): tags.append("B")
+                    if getattr(a, "_staggered", 0): tags.append("!")
+                    if getattr(a, "_slowed", 0): tags.append("~")
+                    eff = " " + "".join(tags) if tags else ""
+                    put(row, sx, f" {a.name[:14]}{eff} {max(0, a.hp)}/{a.max_hp}",
                         palette.get("n", 0))
                     row += 1
             if len(comps) > 3 and row < vh:
@@ -303,8 +368,8 @@ def interactive(game: Game) -> int:
                 row += 1
         # decision-relevant lines first: on a short terminal the ambience is
         # what falls off the bottom, never your build, wealth, or reputation
-        order = ("sigils", "salvage", "factions", "quests", "knowledge",
-                 "caches", "history", "marginalia", "machines", "dialogue")
+        order = ("sigils", "salvage", "effects", "factions", "quests", "knowledge",
+                 "caches", "history", "marginalia", "machines", "dialogue", "body", "terrain")
         ranked = sorted(game.systems,
                         key=lambda s: (order.index(s.name)
                                        if getattr(s, "name", "") in order else 99))
@@ -379,12 +444,30 @@ def interactive(game: Game) -> int:
                 off = min(off + vh, len(body) - vh)
             elif k in (curses.KEY_PPAGE,):
                 off = max(0, off - vh)
+            elif k in (curses.KEY_HOME, ord("g")) and off > 0:
+                off = 0
+            elif k in (curses.KEY_END, ord("G")) and off + vh < len(body):
+                off = max(0, len(body) - vh)
             else:
                 return k
 
-    def show_log(scr):
-        """Full scrollback of every message this run — Qud's message history."""
-        popup(scr, "Message Log", list(game.messages), footer="[q/Esc close]")
+    def show_log(scr, tag=""):
+        """Full scrollback with optional category filter."""
+        msgs = list(game.messages)
+        tags = getattr(game, "message_tags", [])
+        if tag and tags and len(tags) == len(msgs):
+            msgs = [m for m, t in zip(msgs, tags) if t == tag]
+        title = f"Message Log — {tag}" if tag else "Message Log"
+        k = popup(scr, title, msgs or ["(no messages in this category)"],
+                  footer="m:all  c:combat  d:discovery  a:ambient  q/esc close")
+        if k == ord("m"):
+            show_log(scr, "")
+        elif k == ord("c"):
+            show_log(scr, "combat")
+        elif k == ord("d"):
+            show_log(scr, "discovery")
+        elif k == ord("a"):
+            show_log(scr, "ambient")
 
     def menu(scr, title, options, lead=None):
         """A bordered choice window: options as a numbered list, returns index or None."""
@@ -627,7 +710,30 @@ def interactive(game: Game) -> int:
         draw(scr, f"{prompt} [arrows/hjkl/yubn, other cancels]")
         return _DIRKEYS.get(scr.getch())
 
-    def travel(scr):
+    def autoexplore(scr):
+        """Autoexplore: BFS toward nearest fog edge. Stops on monsters, items, rooms, damage."""
+        know = game.system("knowledge")
+        if know is None:
+            game.try_move(1, 0)
+            return
+        seen = know.seen.get(game.floor, set())
+        px, py = game.player.x, game.player.y
+        # find nearest unseen floor tile within 20 tiles
+        best, bd = None, 999
+        for y in range(max(0, py - 20), min(game.level.h, py + 21)):
+            for x in range(max(0, px - 20), min(game.level.w, px + 21)):
+                if game.level.walkable(x, y) and (x, y) not in seen:
+                    d = max(abs(x - px), abs(y - py))
+                    if d < bd:
+                        best, bd = (x, y), d
+        if best is None:
+            game.log("Nothing unexplored nearby.")
+            return
+        step = bfs_step(game.level, (px, py), best)
+        if step is None or step == (0, 0):
+            return
+        game.try_move(*step)
+        draw(scr)
         """Glide in a chosen direction until something worth stopping for. Turns one
         intention into real traversal across the wilderness; any key aborts. Stops on:
         a wall/edge, a new place entered, a region crossed, a discovery in reach, or a
@@ -637,8 +743,10 @@ def interactive(game: Game) -> int:
             return
         dx, dy = d
         scr.nodelay(True)
+        steps = 0
         try:
             for _ in range(400):                      # hard cap; a glide is bounded
+                steps += 1
                 px, py, msgs = game.player.x, game.player.y, len(game.messages)
                 seen_before = set(game._rooms_seen)
                 nx, ny = px + dx, py + dy
@@ -666,6 +774,196 @@ def interactive(game: Game) -> int:
                     break                             # any key aborts
         finally:
             scr.nodelay(False)
+            if steps > 1:
+                game.log(f"Travelled {steps} paces.", ambient=True)
+
+    def _can_overlook(game):
+        idx = game.room_at(game.player.x, game.player.y)
+        if idx is not None and getattr(game, "_places", None):
+            for pl, c in game._places:
+                if pl.contains(game.player.x, game.player.y) and c.intensity >= 0.5:
+                    return True
+        return (game.player.x, game.player.y) in getattr(game, "_gates", {})
+
+    def quest_log(scr):
+        qs = game.system("quests")
+        if qs is None:
+            game.log("No quest system active.")
+            return
+        lines = []
+        if qs.active:
+            lines.append("─ Active ─")
+            for q in qs.active:
+                obj = q.get("objective", q.get("id", "?"))
+                prog = qs.quest_progress(game, q)
+                reward = qs.quest_reward_text(q)
+                lines.append(f"▸ {obj[:50]}")
+                lines.append(f"  progress: {prog}  ·  reward: {reward}")
+        if qs.completed:
+            lines.append("─ Completed ─")
+            for q in qs.quests:
+                if q.get("id") in qs.completed:
+                    lines.append(f"✓ {q.get('objective', q.get('id', '?'))[:50]}")
+        if not lines:
+            lines = ["No quests yet. Seek a Keeper in town."]
+        popup(scr, "Quests", lines)
+
+    def companion_panel(scr):
+        comps = [a for a in game.actors if a.allegiance == "companion"]
+        if not comps:
+            game.log("No companions walk with you.")
+            return
+        lines = []
+        for c in comps:
+            body = getattr(c, "body", None)
+            hp_str = f"HP {max(0, c.hp)}/{c.max_hp}"
+            if body:
+                parts = [f"{p[0]}{body[p]['hp']}" for p in ("head", "torso", "legs")]
+                hp_str = f"HP {' '.join(parts)} [{c.hp}/{c.max_hp}]"
+            effs = []
+            if getattr(c, "_bleeding", 0): effs.append("bleeding")
+            if getattr(c, "_staggered", 0): effs.append("staggered")
+            if getattr(c, "_slowed", 0): effs.append(f"slowed {c._slowed}t")
+            eff = " · " + " ".join(effs) if effs else ""
+            lines.append(f"{c.name[:20]}  {hp_str}")
+            lines.append(f"  tier {c.tier}  ·  {c.faction or 'no house'}{eff}")
+            if len(lines) >= 30:
+                break
+        popup(scr, f"Companions ({len(comps)})", lines)
+
+    def completion_plaque(scr):
+        nodes = game.m.get("graph", {}).get("nodes", {})
+        know = game.system("knowledge")
+        lines = []
+        total, seen = len(nodes), 0
+        for nid, nd in sorted(nodes.items(), key=lambda kv: kv[0]):
+            role = nd.get("role", "?")
+            known = "◆" if (know and nid in know.learned) else ("◎" if (know and nid in know.known) else "☐")
+            title = nd.get("title", nid)[:30]
+            depth = nd.get("pagerank", 0)
+            d_tag = f"←{max(1, int(depth * 10))}" if depth else ""
+            lines.append(f"{known} {title} · {role}")
+            if known != "☐":
+                seen += 1
+        lines.insert(0, f"Discoveries · {seen}/{total} notes ({int(100*seen/max(1,total))}%)")
+        popup(scr, "Discoveries", lines)
+
+    def overworld_loop(scr):
+        scr.nodelay(False)
+        curses.curs_set(0)
+        dim = palette.get("#", curses.A_DIM)
+        game._in_overworld = True
+        cursor_x, cursor_y = game._ow_cursor
+        try:
+            while True:
+                scr.erase()
+                rows, cols = scr.getmaxyx()
+                ow_w = cols - 4
+                ow_h = rows - 5
+                ow_w, ow_h = max(20, ow_w), max(6, ow_h)
+                grid, meta = game.compose_overworld(ow_w, ow_h)
+                bar = "─" * (ow_w - 2)
+                acc = palette.get("@", curses.A_BOLD)
+
+                # title bar
+                txt = f"The Overworld · sprawl={game.sprawl:.1f}"
+                try:
+                    scr.addstr(0, 1, "┌" + bar + "┐", acc)
+                    scr.addstr(0, 3, txt[:ow_w - 4], acc)
+                except curses.error:
+                    pass
+
+                for y in range(min(ow_h, len(grid))):
+                    try:
+                        scr.addstr(y + 1, 1, "│", dim)
+                        scr.addstr(y + 1, ow_w, "│", dim)
+                    except curses.error:
+                        pass
+                    for x, ch in enumerate(row := grid[y]):
+                        wx, wy = x, y
+                        a = palette.get(ch, 0)
+                        rid = meta.get((x, y), "")
+                        if rid:
+                            r = next((r for r in game.m["regions"] if r.get("name") == rid), None)
+                            if r:
+                                lean = game.region_palette(r.get("id", ""))
+                                pa = palette.get("pal:" + lean) if lean else None
+                                if pa is not None:
+                                    a = pa
+                                # mapped check: dim unknown regions
+                                know = game.system("knowledge")
+                                if know is not None and not know.region_known_for(r.get("id", "")):
+                                    a = a | curses.A_DIM if a else dim
+                        # cursor highlight
+                        if (wx, wy) == (cursor_x, cursor_y):
+                            a = a | curses.A_REVERSE
+                        try:
+                            scr.addstr(y + 1, 2 + x, ch, a)
+                        except curses.error:
+                            pass
+
+                # landmarks at scaled positions
+                for (lx, ly), kind in getattr(game, "_landmarks", {}).items():
+                    bw = max(1, (game.level.w + ow_w - 1) // ow_w)
+                    bh = max(1, (game.level.h + ow_h - 1) // ow_h)
+                    ocx, ocy = lx // bw, ly // bh
+                    if 0 <= ocx < ow_w and 0 <= ocy < ow_h:
+                        gly = {"heart": "◆", "town": ">", "wild": "*"}.get(kind, "*")
+                        pa = palette.get(gly, 0) | curses.A_BOLD
+                        try:
+                            scr.addstr(ocy + 1, 2 + ocx, gly, pa)
+                        except curses.error:
+                            pass
+
+                # footer
+                cur_info = meta.get((cursor_x, cursor_y), "")
+                foot = f"cursor: {cur_info or 'wilds'}  ·  [arrows]move  [tab]player  [enter]inspect  [esc/v]return"
+                try:
+                    scr.addstr(ow_h + 2, 1, "├" + bar + "┤", acc)
+                    scr.addstr(ow_h + 3, 1, "│ " + foot[:ow_w - 4].ljust(ow_w - 4) + " │", acc)
+                    scr.addstr(ow_h + 4, 1, "└" + bar + "┘", acc)
+                except curses.error:
+                    pass
+                scr.refresh()
+
+                k = scr.getch()
+                if k in (ord("v"), ord("V"), 27, ord("q")):
+                    game._ow_cursor = (cursor_x, cursor_y)
+                    return
+                elif k == ord("\t"):
+                    px, py = game.player.x, game.player.y
+                    bw = max(1, (game.level.w + ow_w - 1) // ow_w)
+                    bh = max(1, (game.level.h + ow_h - 1) // ow_h)
+                    cursor_x, cursor_y = px // bw, py // bh
+                elif k == curses.KEY_UP or k == ord("k"):
+                    cursor_y = max(0, cursor_y - 1)
+                elif k == curses.KEY_DOWN or k == ord("j"):
+                    cursor_y = min(ow_h - 1, cursor_y + 1)
+                elif k == curses.KEY_LEFT or k == ord("h"):
+                    cursor_x = max(0, cursor_x - 1)
+                elif k == curses.KEY_RIGHT or k == ord("l"):
+                    cursor_x = min(ow_w - 1, cursor_x + 1)
+                elif k in (10, 13):
+                    info = meta.get((cursor_x, cursor_y), "")
+                    rid = next((r["id"] for r in game.m["regions"] if r["name"] == info), "")
+                    lines = [f"Region: {info}"]
+                    if rid:
+                        r = next((r for r in game.m["regions"] if r["id"] == rid), None)
+                        if r:
+                            lines.append(f"Element: {r.get('element', '?')}")
+                            lines.append(f"Faction: {game._region_faction.get(rid, '?')}")
+                            know = game.system("knowledge")
+                            mapped = know.region_known_for(rid) if know else False
+                            lines.append(f"Mapped: {'yes' if mapped else 'no'}")
+                    popup(scr, "Inspect Region", lines)
+                elif k == ord("w"):
+                    bw = max(1, (game.level.w + ow_w - 1) // ow_w)
+                    bh = max(1, (game.level.h + ow_h - 1) // ow_h)
+                    game._ow_waypoint = (cursor_x * bw + bw // 2, cursor_y * bh + bh // 2)
+                elif k == ord("W"):
+                    game._ow_waypoint = None
+        finally:
+            game._in_overworld = False
 
     def run(scr):
         curses.curs_set(0)
@@ -687,6 +985,10 @@ def interactive(game: Game) -> int:
                     pass
                 return
             k = scr.getch()
+            if k == curses.KEY_RESIZE:
+                curses.update_lines_cols()
+                draw(scr)
+                continue
             # q only: bare ESC is dropped, because fast arrow-mashing can leak a
             # partial escape sequence that would otherwise quit the game mid-fight
             if k == ord("q"):
@@ -695,6 +997,8 @@ def interactive(game: Game) -> int:
                 game.try_move(*moves[k])
             elif k == ord("g"):
                 travel(scr)   # TRAVEL: pick a direction, glide until something happens
+            elif k == ord("o"):
+                autoexplore(scr)  # AUTOEXPLORE: one step toward nearest fog edge
             elif k == ord(">") and game.on_stairs():
                 game.descend()
             elif k == ord("<"):
@@ -712,6 +1016,8 @@ def interactive(game: Game) -> int:
                     popup(scr, "You look around", new)
             elif k in (ord("m"), ord("P")):
                 show_log(scr)   # full scrollable message history (nothing is lost)
+            elif k == ord("M"):
+                show_log(scr, "combat")
             elif k == ord("e"):
                 # wear an effect (Yume Nikki menu): switch your way of being
                 eff = game.system("effects")
@@ -805,7 +1111,12 @@ def interactive(game: Game) -> int:
                         if not ok:
                             game.log(f"Your {lbl} finds no purchase here.")
                     if ok:
-                        game.wait()   # a cast spends the turn; the world answers
+                        from .proficiency import exercise
+                        if kind == "sigil":
+                            exercise(slots[ref]["ability"])
+                        else:
+                            exercise(ref)
+                        game.wait()
             elif k == ord("f"):
                 if forge is None:
                     continue
@@ -813,19 +1124,72 @@ def interactive(game: Game) -> int:
                 i = pick(scr, f"forge which? {names}", len(ABILITIES))
                 if i is not None:
                     if forge.forge(game, ABILITIES[i]):
+                        from .proficiency import exercise
+                        exercise(ABILITIES[i])
                         game.wait()
                     else:
                         game.log("The forge does not answer (need a free slot and matter).")
-            elif k == ord("b"):
-                sigs, salv = game.system("sigils"), game.system("salvage")
-                if not (sigs and salv and sigs.slots):
-                    game.log("Nothing slotted to break down.")
-                    continue
-                names = ", ".join(f"{n + 1}:{s['ability']}" for n, s in enumerate(sigs.slots))
-                i = pick(scr, f"break down which? {names}", len(sigs.slots))
-                if i is not None:
-                    salv.breakdown_sigil(game, sigs.slots[i]["ability"])
-                    game.wait()
+                elif k == ord("b"):
+                    sigs, salv = game.system("sigils"), game.system("salvage")
+                    if not (sigs and salv and sigs.slots):
+                        game.log("Nothing slotted to break down.")
+                        continue
+                    names = ", ".join(f"{n + 1}:{s['ability']}" for n, s in enumerate(sigs.slots))
+                    i = pick(scr, f"break down which? {names}", len(sigs.slots))
+                    if i is not None:
+                        salv.breakdown_sigil(game, sigs.slots[i]["ability"])
+                        game.wait()
+                elif k == ord("a"):
+                    game.interact()
+                    # sacrifice shrine popup
+                    pending = getattr(game, "_pending_sacrifice", None)
+                    if pending:
+                        opts = [f"{o[0]}: {o[2]}" for o in pending] + ["Reject all — the shrine crumbles"]
+                        i = menu(scr, "Renunciation Shrine", opts,
+                                 lead=["Choose a sacrifice, or reject all."])
+                        if i is not None and i < len(pending):
+                            sac = game.system("sacrifice")
+                            if sac:
+                                sac.apply(game, pending[i][1])
+                        else:
+                            game._pending_sacrifice = None
+                            game.log("You turn away. The shrine crumbles to dust.")
+                elif k == ord("d"):
+                    game.shield()
+                elif k == ord("p"):
+                    d = pick_dir(scr, "shove which way?")
+                    if d is not None:
+                        game.shove(*d)
+            elif k == ord("V"):
+                if not game._on_surface():
+                    game.log("There is no overlooking the depths from below.")
+                elif not _can_overlook(game):
+                    game.log("You need a vantage — a heart of a place, or a town's gate.")
+                else:
+                    overworld_loop(scr)
+            elif k == ord("i"):
+                px, py = game.player.x, game.player.y
+                adj = [a for a in game.actors
+                       if max(abs(a.x - px), abs(a.y - py)) <= 1 and a.allegiance != "companion"]
+                if adj:
+                    target = sorted(adj, key=lambda a: abs(a.x-px) + abs(a.y-py))[0]
+                    lines = game.inspect_actor(target)
+                    popup(scr, target.name, lines)
+                else:
+                    game.log("Nothing to inspect nearby.")
+            elif k == ord("Q"):
+                quest_log(scr)
+            elif k == ord("C"):
+                companion_panel(scr)
+            elif k == ord("D"):
+                completion_plaque(scr)
+            elif k == ord("G"):
+                # gravestone lookup: if standing on a grave tile, read it
+                gv = game._graves.get((game.player.x, game.player.y))
+                if gv:
+                    popup(scr, "Grave Marker", [gv])
+                else:
+                    game.log("No grave marker here.")
 
     curses.wrapper(run)
     return 0
@@ -882,6 +1246,11 @@ def main(argv=None) -> int:
         from .fauna import FaunaSystem
         from .salvage import SalvageSystem
         from .forge import ForgeSystem
+        from .scent import ScentSystem
+        from .body_parts import BodySystem
+        from .terrain_mod import TerrainModSystem
+        from .portals import PortalSystem
+        from .sacrifice import SacrificeSystem
         from .quests import QuestSystem
         from .dialogue import DialogueSystem
         from .machines import MachineSystem
@@ -900,9 +1269,13 @@ def main(argv=None) -> int:
         systems = [SenseField(), MemorySystem(), SigilSystem(), ReactionSystem(), WeatherSystem(),
                    FloraSystem(), StructureSystem(), DecaySystem(), FaunaSystem(),
                    SalvageSystem(), ForgeSystem(),   # salvage pools matter, then forge spends it
+                   ScentSystem(),   # scent trails for tracking and stealth
                    QuestSystem(), DialogueSystem(), MachineSystem(),   # objectives · NPCs · machines
-                   CacheSystem(),   # each place is a distinct opportunity (CDDA)
-                   FactionSystem(), QualitySystem(),   # quality grades all spawned foes (incl. hunters)
+                   CacheSystem(),   # each place is a distinct opportunity
+                   TerrainModSystem(),   # dynamic terrain: sanctums, scars, thresholds
+                   PortalSystem(),       # timed realm gates
+                   SacrificeSystem(),    # renunciation shrines
+                   FactionSystem(), BodySystem(), QualitySystem(),   # factions, body parts, then quality grades all spawned foes
                    HistorySystem(), MarginaliaSystem(), KnowledgeSystem(),
                    EffectSystem()]   # Yume-Nikki ways-of-being (exploration, not power)
 

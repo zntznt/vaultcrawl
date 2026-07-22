@@ -28,9 +28,6 @@ NORMAL, UNCOMMON, RARE, EPIC, LEGENDARY = 0, 1, 2, 3, 4
 NAMES = ["Normal", "Uncommon", "Rare", "Epic", "Legendary"]
 MARK = ["", "+", "*", "★", "✦"]   # terse tier marker for names/HUD
 
-_BASE = 0.09       # per-roll chance to bump a tier (quality is rare)
-_CASCADE = 0.45    # a successful bump's chance decays by this factor (Factorio-style)
-
 
 def name(tier: int) -> str:
     return NAMES[max(0, min(LEGENDARY, int(tier)))]
@@ -41,14 +38,19 @@ def mark(tier: int) -> str:
 
 
 def roll(rng: random.Random, floor: int = 0, bias: float = 0.0) -> int:
-    """Roll a quality tier >= floor. `bias` (>=0) raises the upgrade odds (good inputs /
-    additives). Cascades: each success may bump again at decaying probability."""
-    tier = max(0, min(LEGENDARY, int(floor)))
-    p = min(0.95, _BASE + max(0.0, bias))
-    while tier < LEGENDARY and rng.random() < p:
-        tier += 1
-        p *= _CASCADE
-    return tier
+    """Binomial quality distribution — most items Normal, Legendary is rare.
+    `floor` guarantees minimum tier. `bias` (>=0) shifts the distribution upward.
+    Each tier above 0 is a success on a binomial trial; successes reduce odds."""
+    max_tier = LEGENDARY
+    base_prob = 15 + int(bias * 20)   # default 15/100 per trial, bias raises it
+    base_prob = min(90, max(4, base_prob))
+    successes = 0
+    prob = base_prob
+    for _ in range(max_tier):
+        if rng.randint(1, 100) <= prob:
+            successes += 1
+            prob = prob * 3 // 4      # each success makes next harder
+    return max(0, min(LEGENDARY, floor + successes))
 
 
 # --------------------------------------------------------------------------- #
@@ -61,6 +63,8 @@ def scale_creature(actor, tier: int):
         return
     actor.max_hp = int(actor.max_hp * (1.0 + 0.5 * tier))
     actor.hp = actor.max_hp
+    from .body_parts import init_body
+    init_body(actor)   # recompute body parts from scaled HP
     actor.atk += tier
     actor.defense = getattr(actor, "defense", 0) + tier // 2
     base = getattr(actor, "name", "creature")
@@ -230,30 +234,35 @@ class QualitySystem(System):
 
     # -- equippables (called by sigils.py / forge.py) --
     def qualify_sigil(self, game, sigil, floor=0, bias=0.0, additives=None):
-        """Roll a sigil's quality and grant one perk per tier. `floor`/`bias` come from
-        crafting (input quality + additives); `additives` (list of materials) steer perks."""
+        """Roll a sigil's quality and grant one perk per tier using the property vector."""
         r = random.Random(f"{game.seed}:{game.floor}:{sigil.get('note','')}:{sigil.get('ability','')}")
         tier = roll(r, floor, bias)
         sigil["quality"] = tier
-        perks = list(sigil.get("perks", []))
+        from runtime.sigils import _props, _add_prop, _PROP_IDX
+        _props(sigil)
+        # map old perk names to prop vector indices
+        _PERK_TO_PROP = {"reinforced": "durability", "keen": "magnitude",
+                         "ward_reach": "reach", "phase_decoy": "decoy",
+                         "recall_cleanse": "cleanse", "thrifty": "thrifty",
+                         "echo_twin": "twin"}
         favoured = [ADDITIVE_AFFINITY[m] for m in (additives or []) if m in ADDITIVE_AFFINITY]
         pool = list(PERKS.keys())
         for i in range(tier):
             choice = None
             if favoured:
-                choice = favoured[i % len(favoured)]      # additives bias which perk
+                choice = favoured[i % len(favoured)]
             if choice not in PERKS:
                 choice = pool[(r.randint(0, 10_000) + i) % len(pool)] if pool else None
             if not choice:
                 break
-            perks.append(choice)
+            prop_name = _PERK_TO_PROP.get(choice, choice)
+            _add_prop(sigil, prop_name)
             ap = PERKS.get(choice, {}).get("apply")
             if ap:
                 try:
                     ap(sigil)
                 except Exception:
                     pass
-        sigil["perks"] = perks
         if tier > 0:
             sigil["ability"] = f"{NAMES[tier]} {sigil.get('ability','sigil')}" \
                 if not str(sigil.get("ability", "")).startswith(NAMES[tier]) else sigil["ability"]

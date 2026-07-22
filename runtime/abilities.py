@@ -104,7 +104,8 @@ def act_shield(game, actor) -> bool:
         actor.defense = getattr(actor, "defense", 0) + 1
         return True
     if actor.hp < actor.max_hp:
-        actor.hp = min(actor.max_hp, actor.hp + SHIELD_HEAL)
+        from .body_parts import heal_body
+        heal_body(actor, SHIELD_HEAL)
         return True
     return False
 
@@ -226,6 +227,19 @@ quality.register_action("spit", act_spit)
 quality.register_action("blink", act_blink)
 quality.register_action("summon", act_summon)
 quality.register_action("split", act_split)
+
+# targeting metadata for telegraph overlay
+ACTION_TARGETING = {
+    "enrage": "self",        # buffs self
+    "shield": "self",        # buffs self
+    "rally": "adjacent",      # buffs nearest ally
+    "spit": "bolt",           # straight line toward player
+    "blink": "self",          # teleports self
+    "summon": "near_self",    # spawns ally near caster
+    "split": "near_self",     # clone near caster
+}
+
+_TARGET_GLYPH = {"self": "✦", "bolt": "→", "adjacent": "·", "near_self": "◉"}
 
 
 # --------------------------------------------------------------------------- #

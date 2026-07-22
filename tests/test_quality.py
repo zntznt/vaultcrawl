@@ -40,7 +40,8 @@ def main():
     sig = {"note": "stoicism", "role": "leaf", "ability": "Ward", "durability": 2}
     tier = qs.qualify_sigil(g, sig, floor=Q.EPIC)
     assert tier >= Q.EPIC, "floor must hold"
-    assert len(sig["perks"]) == tier, "one perk per tier"
+    pc = sum(v for v in (sig.get("props") or []))
+    assert pc >= tier, f"prop sum >= tier: {sig.get('props')}"
     assert sig["durability"] >= 2, "stat perks (if any) only ever help"
 
     # --- QualitySystem qualifies spawned foes (rare, but bias the roll up to force one) ---

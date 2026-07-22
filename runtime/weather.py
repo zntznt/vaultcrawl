@@ -40,6 +40,16 @@ _WEATHER = {
 }
 _DEFAULT_WEATHER = "still air"
 
+_WEATHER_ICON = {
+    "static storm": "!",
+    "rising damp": "~",
+    "ember drift": ",",
+    "cold snap": "*",
+    "acrid haze": "%",
+    "hallowed calm": "+",
+    "still air": ".",
+}
+
 # which tile props each weather can introduce (documentation + lets a test attribute
 # a substrate change to the weather without reaching into its internals)
 WEATHER_PROPS = {
@@ -69,9 +79,13 @@ class WeatherSystem(System):
     # ---- floor lifecycle ----
     def on_floor_enter(self, game):
         element = game.region_for(game.floor).get("element", "inert")
+        # underground: weather is muted or absent
+        if getattr(game, "current_z", 0) < 0:
+            element = "wet" if element == "wet" else "inert"
         self.weather = _WEATHER.get(element, _DEFAULT_WEATHER)
         self.rng = random.Random(f"{game.seed}:{game.floor}:weather")
         self._turn = 0
+        game.player.speed = 1.0
 
     # ---- per-turn ambient process ----
     def on_player_act(self, game):
@@ -80,6 +94,7 @@ class WeatherSystem(System):
         self._turn += 1
         if self._turn % _CADENCE != 0:           # sparse: most turns the sky just sits there
             return
+        self._affect_player(game)
 
         r = game.system("reactions")
         if r is None:                            # no substrate to shape — weather is only a name
@@ -99,6 +114,18 @@ class WeatherSystem(System):
         }.get(self.weather)
         if handler is not None:                  # hallowed calm / still air do nothing
             handler(game, r, free)
+
+    def _affect_player(self, game):
+        """Weather directly impacts the player: haze deals damage, cold slows, ember adds fire."""
+        p = game.player
+        if self.weather == "acrid haze":
+            p.hp = max(1, p.hp - 1)
+            if self._turn % (_CADENCE * 5) == 0:
+                game.log("The acrid haze burns your lungs (-1 HP).", ambient=True)
+        elif self.weather == "cold snap" and hasattr(p, "speed"):
+            p.speed = 0.8
+        elif self.weather == "ember drift" and p.defense >= 0:
+            p._ember_warmth = p.max_hp
 
     # ---- weather handlers (each keeps its touch sparse: atmosphere, not a death sentence) ----
     def _static_storm(self, game, r, free):
@@ -168,4 +195,5 @@ class WeatherSystem(System):
         return self.weather
 
     def status_line(self, game):
-        return f"Weather: {self.current(game)}"
+        icon = _WEATHER_ICON.get(self.current(game), ".")
+        return f"Weather: {icon} {self.current(game)}"

@@ -372,3 +372,21 @@ class ReactionSystem(System):
 
     def status_line(self, game):
         return f"Ground: {game.region_for(game.floor).get('element', 'inert')}"
+
+    def on_interact(self, game) -> bool:
+        eff = game.system("effects")
+        if eff is None or eff.worn != "drift":
+            return False
+        px, py = game.player.x, game.player.y
+        found = None
+        for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
+            if self.is_hazard(px + dx, py + dy):
+                found = (px + dx, py + dy)
+                break
+        if found is None:
+            return False
+        props = self.props_at(*found)
+        for p in list(props):
+            self.clear_prop(*found, p)
+        game.log("You drift through and douse the hazard.")
+        return True

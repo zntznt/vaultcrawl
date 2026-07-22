@@ -302,3 +302,39 @@ class QuestSystem(System):
 
     def status_line(self, game):
         return f"Quests: {len(self.completed)}/{len(self.quests)}"
+
+    def quest_progress(self, game, q: dict) -> str:
+        """Human-readable progress for an active quest."""
+        kind = q.get("kind")
+        if kind == "slay":
+            done = bool(q.get("target_source")) and q["target_source"] in self._slain_bosses
+            return "1/1 ✓" if done else "0/1"
+        if kind == "recover":
+            player = getattr(game, "player", None)
+            cur = inv(player).total() if player else 0
+            need = q.get("need", 1)
+            return f"matter {cur}/{need}" + (" ✓" if cur >= need else "")
+        if kind in ("fetch", "escort"):
+            floor = getattr(game, "floor", 0)
+            target = q.get("descend_to", 1)
+            return f"floor {floor}/{target}" + (" ✓" if floor >= target else "")
+        if kind == "cleanse":
+            if self._floor_clear(game):
+                return "clear ✓"
+            hostiles = sum(1 for a in getattr(game, "actors", [])
+                           if a.allegiance == "monster" and getattr(a, "hp", 0) > 0)
+            return f"{hostiles} hostiles remain"
+        return "?"
+
+    def quest_reward_text(self, q: dict) -> str:
+        """Short reward description for a completed quest."""
+        kind = q.get("kind")
+        if kind == "slay":
+            rid = q.get("region_id", "")
+            return f"standing +2 with {rid}"
+        if kind == "recover":
+            need = q.get("need", 0)
+            return f"+{need} matter"
+        if kind in ("fetch", "escort", "cleanse"):
+            return "reveal region"
+        return "?"

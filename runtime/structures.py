@@ -203,3 +203,16 @@ class StructureSystem(System):
         stepping on. (Crystals are not listed: they are only dangerous once a fire
         or shock reaches them, which the reactions hazard map already surfaces.)"""
         return list(self.traps.keys())
+
+    def on_interact(self, game) -> bool:
+        pos = (game.player.x, game.player.y)
+        if pos in self.crystals:
+            self._detonate(game, game.system("reactions"), pos)
+            game.log("You strike the crystal — it erupts! Your blow yields to the burst.")
+            game.player.hp = min(game.player.hp, game.player.hp + 1)  # half-damage mitigation
+            return True
+        if pos in self.traps:
+            del self.traps[pos]
+            game.log("You disarm the trap — it clacks harmlessly into the floor.")
+            return True
+        return False

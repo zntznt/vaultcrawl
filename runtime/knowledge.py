@@ -45,6 +45,8 @@ class KnowledgeSystem(System):
         self.learned: set[str] = set()
         # explored tiles, per floor: {floor: {(x, y), ...}}
         self.seen: dict[int, set[tuple[int, int]]] = {}
+        # faction insight: count of known notes per faction for combat bonuses
+        self._known_faction_notes: dict[str, int] = {}
         # last game we were attached to, so the param-less query API
         # (reveal / is_known, called by other systems) can resolve regions + graph.
         self.game = None
@@ -57,6 +59,8 @@ class KnowledgeSystem(System):
         if not note_id:
             return
         nodes = game.m.get("graph", {}).get("nodes", {})
+        if note_id not in self.known:
+            self._update_faction_insight(game, note_id)
         self.known.add(note_id)
         if direct:
             self.learned.add(note_id)
@@ -119,12 +123,61 @@ class KnowledgeSystem(System):
         """True once `note_id` is on the revealed knowledge frontier."""
         return note_id in self.known
 
+    def region_known_for(self, region_id: str) -> bool:
+        """True if the region's anchor note has been DIRECTLY learned (mapped)."""
+        if not region_id:
+            return False
+        game = self.game
+        if game is None:
+            return False
+        for r in game.m.get("regions", []):
+            if r.get("id") == region_id:
+                anchor = r.get("sourceNoteId", "")
+                return anchor in self.learned
+        return False
+
     # ---- lifecycle hooks ----
     def on_world_start(self, game):
         self.game = game
         self.known = set()
         self.learned = set()
         self.seen = {}
+        self._known_faction_notes = {}
+
+    def faction_insight(self, game, faction_id: str) -> tuple[int, int]:
+        """(atk_bonus, def_bonus) vs this faction, calculated from known notes.
+        Capped at +1/-1 (3 known notes from a faction)."""
+        if not faction_id:
+            return (0, 0)
+        count = self._known_faction_notes.get(faction_id, 0)
+        if count >= 3:
+            return (1, 1)
+        return (0, 0)
+
+    def _note_faction(self, game, note_id: str) -> str:
+        nodes = game.m.get("graph", {}).get("nodes", {})
+        node = nodes.get(note_id)
+        if not node:
+            return ""
+        community = node.get("community")
+        if community is None:
+            return ""
+        for r in game.m.get("regions", []):
+            if r.get("sourceNoteId") == note_id or r.get("id") == note_id:
+                return r.get("factionId", "")
+        fid = f"faction_{community}"
+        for r in game.m.get("regions", []):
+            if r.get("factionId") == fid:
+                return fid
+        return ""
+
+    def _update_faction_insight(self, game, note_id: str):
+        fac = self._note_faction(game, note_id)
+        if fac:
+            self._known_faction_notes[fac] = self._known_faction_notes.get(fac, 0) + 1
+            if self._known_faction_notes[fac] == 3:
+                rname = fac.replace("faction_", "House ").replace("_", " ")
+                game.log(f"You've learned {rname}'s ways — their weaknesses are plain to you.")
 
     def on_floor_enter(self, game):
         self.game = game
@@ -138,10 +191,11 @@ class KnowledgeSystem(System):
             game.log("You know this ground's shape; its map unfurls in your mind.")
 
     def _sight(self, game) -> int:
-        """Sight radius. Generous on the open SURFACE (you wander a vista), tighter in
-        the dark DEPTHS (fog is dread); widened by the 'lantern' effect; and the AREA
-        KIND you stand in leans it (a labyrinth presses close, a market is open)."""
+        """Sight radius. Generous on the open SURFACE, tighter in the dark DEPTHS;
+        shrinks further with z-depth (intimacy compression)."""
         base = SURFACE_RADIUS if getattr(game, "_on_surface", lambda: False)() else RADIUS
+        z = abs(getattr(game, "current_z", 0))
+        base = max(2, base - z)  # -1 sight per z-level below surface
         eff = game.system("effects")
         base += (eff.perception_bonus(game) if eff is not None else 0)
         kind = self._current_kind(game)

@@ -19,6 +19,7 @@ from runtime import quality
 from runtime.components import inv, world_materials
 from runtime.sigils import MAX_SLOTS, ROLE_ABILITY
 from runtime.systems import System
+from runtime.proficiency import ptracker
 
 # ability -> graph role (inverse of sigils' role->ability table), so a forged sigil
 # carries the same {note, role, ability, durability} shape a found one would.
@@ -148,6 +149,12 @@ class ForgeSystem(System):
         ability = ability or self._default_ability(game)
         cost = self.cost(game)
         player_inv = inv(game.player)
+        # Proficiency gating: must know enough notes of the required role
+        if not self._has_proficiency(game, ability):
+            role = _ABILITY_ROLE.get(ability, "?")
+            need = self._proficiency_required(role)
+            game.log(f"You need to explore {need} {role}-role notes to forge {ability}.")
+            return False
         # Affordability of the recipe is the gate (checked up front so nothing mutates on a
         # failed craft); Inventory.pay below is atomic and guaranteed to succeed here.
         if not player_inv.can_pay(cost):
@@ -161,6 +168,7 @@ class ForgeSystem(System):
         }
 
         q = game.system("quality")
+        tier = 0
         if q is not None:
             # output never below the lowest-quality ingredient; odds rise with inputs + additives
             floor = player_inv.min_quality(list(cost))
@@ -183,6 +191,7 @@ class ForgeSystem(System):
             player_inv.pay(cost)
 
         slots.append(sigil)
+        game.emit("forge_used", ability=ability, tier=tier)
         return True
 
     # ---- auto-forge ---------------------------------------------------------
@@ -207,3 +216,23 @@ class ForgeSystem(System):
         if len(getattr(sigils, "slots", [])) >= cap:
             return None
         return "Forge: ready" if inv(game.player).can_pay(self.cost(game)) else None
+
+    def _has_proficiency(self, game, ability) -> bool:
+        """Check knowledge of note-role AND recent practice with the ability."""
+        role = _ABILITY_ROLE.get(ability)
+        # static knowledge gate: must know enough notes of the required role
+        if role is not None:
+            know = game.system("knowledge")
+            if know is not None:
+                nodes = game.m.get("graph", {}).get("nodes", {})
+                count = sum(1 for nid in know.known
+                            if nodes.get(nid, {}).get("role") == role)
+                if count < self._proficiency_required(role):
+                    return False
+        # dynamic practice gate: must have exercised the ability recently
+        return ptracker().can_craft(ability, required=1.0)
+
+    @staticmethod
+    def _proficiency_required(role: str) -> int:
+        """How many notes of this role must be known to forge its sigil."""
+        return {"hub": 2, "bridge": 2, "cluster": 2, "leaf": 1, "orphan": 1}.get(role, 1)

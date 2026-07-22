@@ -39,6 +39,7 @@ class HistorySystem(System):
         self.read: int = 0                 # how many fragments the player has read
         self._knowledge: list = []         # bosses + secrets, revealed one per fragment
         self._kidx: int = 0                # cursor into _knowledge (so-far-unmentioned)
+        self.insight: int = 0              # insight charges earned from lore fragments
 
     # ---- title helpers ----
     @staticmethod
@@ -184,6 +185,7 @@ class HistorySystem(System):
         self.read = 0
         self._kidx = 0
         self.ground = {}
+        self.insight = 0
         # Bosses carry a depth (a place); secrets are shapes to seek. Reveal in order.
         self._knowledge = list(game.m.get("bosses", [])) + list(game.m.get("secrets", []))
 
@@ -209,6 +211,9 @@ class HistorySystem(System):
             return
         game.log(f"You read a lore fragment: {line}")
         self.read += 1
+        if self.insight < 3:
+            self.insight += 1
+            game.log(f"You gain an insight charge ({self.insight}/3).")
         # Grant a piece of knowledge: the location/shape of an as-yet-unmentioned power.
         if self._knowledge:
             item = self._knowledge[self._kidx % len(self._knowledge)]
@@ -232,4 +237,11 @@ class HistorySystem(System):
                 grid[y][x] = self.GLYPH
 
     def status_line(self, game):
-        return f"Lore: {self.read} read"
+        ins = f" · Insight: {self.insight}" if self.insight > 0 else ""
+        return f"Lore: {self.read} read{ins}"
+
+    def spend_insight(self, game) -> bool:
+        if self.insight <= 0:
+            return False
+        self.insight -= 1
+        return True

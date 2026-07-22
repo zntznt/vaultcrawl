@@ -30,12 +30,13 @@ class Actor:
     is_player: bool = False
     is_boss: bool = False
     source: str = ""
-    allegiance: str = "monster"   # "player" | "monster" (faction foes) | "wild" (fauna)
-    faction: str = ""             # the house it belongs to; relations decide hostility
-    quality: int = 0              # Factorio-style grade 0..4 (set by the QualitySystem)
-    flavor: str = ""              # baked note-derived prose, surfaced on examine/first blood
-    speed: float = 1.0            # actions per world tick; 1.0 = one action every turn,
-    energy: float = 0.0           # 0.5 = every other turn, 2.0 = twice per turn (energy sys)
+    allegiance: str = "monster"
+    faction: str = ""
+    quality: int = 0
+    flavor: str = ""
+    speed: float = 1.0
+    energy: float = 0.0
+    z: int = 0
 
     @property
     def alive(self) -> bool:
@@ -53,6 +54,7 @@ class Item:
     flavor: str = ""
     source: str = ""
     quality: int = 0
+    z: int = 0
 
 
 def enemy_stats(tier: int):

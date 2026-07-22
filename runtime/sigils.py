@@ -32,24 +32,58 @@ SIGIL_GLYPH = "$"
 MAX_SLOTS = 3
 _ORTHO = ((1, 0), (-1, 0), (0, 1), (0, -1))
 
-# --- quality perks --------------------------------------------------------- #
-# Registered at import so the QualitySystem can grant them (one per tier). Factorio-
-# style grades are utility, NOT flat damage: stat perks nudge a value the abilities
-# already read; passive perks are flags the abilities interpret where they fire.
-#   stat    -> apply(sigil) mutates the dict immediately when the perk is granted.
-#   passive -> apply is None; the sigil dict just carries the name in ["perks"].
-# `mag` is the effect-magnitude the abilities read (default 1); `keen` raises it.
+# modular property vector — enum of all possible sigil properties
+_PROP_NAMES = ("durability", "magnitude", "reach", "decoy", "cleanse",
+               "thrifty", "twin", "fire_resist", "cold_resist", "shock_resist")
+_PROP_IDX = {n: i for i, n in enumerate(_PROP_NAMES)}
+
+
+def _props(sigil: dict) -> list[int]:
+    """Return the property vector for a sigil (creates if absent).
+    Backward-compatible: converts old 'perks' list on first access."""
+    if "props" not in sigil:
+        sigil["props"] = [0] * len(_PROP_NAMES)
+        # migrate old perk names to new prop indices
+        _OLD_MAP = {"reinforced": "durability", "keen": "magnitude",
+                    "ward_reach": "reach", "phase_decoy": "decoy",
+                    "recall_cleanse": "cleanse", "thrifty": "thrifty",
+                    "echo_twin": "twin"}
+        for perk in sigil.pop("perks", []):
+            prop = _OLD_MAP.get(perk, perk)
+            if prop in _PROP_IDX:
+                sigil["props"][_PROP_IDX[prop]] = 1
+    return sigil["props"]
+
+
+def _prop(sigil: dict, name: str) -> int:
+    """Read one property value O(1)."""
+    ps = sigil.get("props")
+    if ps is None:
+        return 0
+    return ps[_PROP_IDX.get(name, -1)] if name in _PROP_IDX else 0
+
+
+def _add_prop(sigil: dict, name: str, val: int = 1):
+    """Add a property value to a sigil."""
+    ps = sigil.get("props")
+    if ps is not None and name in _PROP_IDX:
+        ps[_PROP_IDX[name]] += val
+
+# --- quality perks (now registered into the property vector) ---
 quality.register_perk(
     "reinforced", "stat",
-    lambda s: s.__setitem__("durability", s.get("durability", 2) + 1))   # +1 use
+    lambda s: (s.__setitem__("durability", s.get("durability", 2) + 1),
+               _props(s).__setitem__(_PROP_IDX["durability"],
+               _prop(s, "durability") + 1))[0])
 quality.register_perk(
     "keen", "stat",
-    lambda s: s.__setitem__("mag", s.get("mag", 1) + 1))                  # +1 magnitude
-quality.register_perk("ward_reach", "passive", None)      # Ward shoves 2 tiles, not 1
-quality.register_perk("phase_decoy", "passive", None)     # Phase leaves a decoy lure
-quality.register_perk("recall_cleanse", "passive", None)  # Recall also clears feared
-quality.register_perk("thrifty", "passive", None)         # 1-in-2 uses cost no durability
-quality.register_perk("echo_twin", "passive", None)       # Echo revives at 2 hp, not 1
+    lambda s: _props(s).__setitem__(_PROP_IDX["magnitude"],
+                                    _prop(s, "magnitude") + 1))
+quality.register_perk("ward_reach", "passive", None)     # reach prop checked in _ward
+quality.register_perk("phase_decoy", "passive", None)     # decoy prop checked in _phase
+quality.register_perk("recall_cleanse", "passive", None)   # cleanse prop
+quality.register_perk("thrifty", "passive", None)          # thrifty prop
+quality.register_perk("echo_twin", "passive", None)        # twin prop
 
 
 class SigilSystem(System):
@@ -60,11 +94,17 @@ class SigilSystem(System):
         self.slots: list[dict] = []
         self.ground: dict = {}          # (x, y) -> sigil
         self.rng = random.Random(0)
+        self._seen: set[str] = set()   # ability types whose tutorial was shown
 
     # ---- lifecycle ----------------------------------------------------------
     def on_world_start(self, game):
         self.slots = []
         self.ground = {}
+        self.slots.append({"note": "__starter__", "role": "leaf",
+                            "ability": "Ward", "base": "Ward",
+                            "durability": 2, "quality": 0})
+        self._seen = set()
+        game.log("You feel a Ward within you — press c to cast; it pushes threats away.")
 
     def on_floor_enter(self, game):
         # One deterministic stream per floor (placement + any phase blinks).
@@ -186,21 +226,35 @@ class SigilSystem(System):
         if sigil is None:
             return
         title = self._title(game, sigil)
+        ab = sigil["ability"]
         if len(self.slots) < self.max_slots(game):
             self.slots.append(sigil)
-            game.log(f"You slot the {sigil['ability']} sigil of {title}.")
+            game.log(f"You slot the {ab} sigil of {title}.")
         else:
             weakest = min(self.slots, key=lambda s: s["durability"])
             self.slots.remove(weakest)
             self.slots.append(sigil)
             game.log(f"You discard your worn {weakest['ability']} sigil for "
-                     f"the {sigil['ability']} sigil of {title}.")
+                     f"the {ab} sigil of {title}.")
+        base = sigil.get("base", ab)
+        if base not in self._seen:
+            self._seen.add(base)
+            hints = {
+                "Ward": "Ward shimmers in your grasp — press c to cast; it pushes threats away.",
+                "Phase": "Phase flickers — press c to cast; it blinks you past danger.",
+                "Recall": "Recall hums deep — press c to cast; it mends your wounds.",
+                "Rally": "Rally stirs — press c to cast; it placates a single foe.",
+                "Echo": "Echo lies dormant — it will save you once from the killing blow.",
+            }
+            hint = hints.get(base)
+            if hint:
+                game.log(hint)
 
     # ---- lossiness ----------------------------------------------------------
     def _consume(self, game, sigil):
         """One use of an active effect (or one Recall floor). Shatter at 0."""
         # 'thrifty' (a quality passive): every other use is free, deterministically.
-        if "thrifty" in sigil.get("perks", []):
+        if _prop(sigil, "thrifty"):
             sigil["_uses"] = sigil.get("_uses", 0) + 1
             if sigil["_uses"] % 2 == 0:
                 game.log(f"Your {sigil['ability']} sigil holds together (thrifty).")
@@ -239,11 +293,14 @@ class SigilSystem(System):
 
     def _fire_recall(self, game, s):
         p = game.player
-        amount = 6 + 2 * (s.get("mag", 1) - 1)        # 'keen' (mag) scales the mend
-        healed = min(p.max_hp, p.hp + amount) - p.hp
-        p.hp += healed
+        mag = max(1, _prop(s, "magnitude"))
+        amount = 6 + 2 * (mag - 1)
+        from .body_parts import heal_body
+        before = p.hp
+        heal_body(p, amount)
+        healed = max(0, p.hp - before)
         game.log(f"The Recall sigil mends you (+{healed} HP).")
-        if "recall_cleanse" in s.get("perks", []):
+        if _prop(s, "cleanse"):
             # also wash away the player's learned dreads (memory may be absent)
             try:
                 from runtime.memory import mem
@@ -325,7 +382,7 @@ class SigilSystem(System):
         # reactions partner may be unregistered; None-guard every call to it
         r = game.system("reactions")
         # 'ward_reach' (a quality passive) doubles the shove distance.
-        reach = 2 if "ward_reach" in ward.get("perks", []) else 1
+        reach = 2 if _prop(ward, "reach") else 1
         shoved = False
         for a, dx, dy in adj:
             # prefer the natural away push, then any other orthogonal escape
@@ -376,7 +433,7 @@ class SigilSystem(System):
         old = (p.x, p.y)
         p.x, p.y = self.rng.choice(tiles)
         game.log("You phase through the wall.")
-        if "phase_decoy" in phase.get("perks", []):
+        if _prop(phase, "decoy"):
             # leave a flickering after-image that draws attention to the old tile
             game.log("A phantom of you lingers as a decoy.")
             game.emit("noise", pos=old, volume=6)   # harmless if no system listens
@@ -433,13 +490,24 @@ class SigilSystem(System):
         return False
 
     def _echo(self, game):
-        # orphan: one-shot save — soak the killing blow once.
         echo = self._first("Echo")
         if echo is None:
             return
         game.alive = True
-        # 'echo_twin' (a quality passive) brings you back a touch sturdier.
-        game.player.hp = 2 if "echo_twin" in echo.get("perks", []) else 1
+        from .body_parts import init_body, sync_hp
+        p = game.player
+        # restore all parts, then cap at echo_twin threshold
+        if getattr(p, "body", None):
+            for pt in p.body.values():
+                pt["hp"] = pt["max"]
+            if not _prop(echo, "twin"):
+                for pt in p.body.values():
+                    pt["hp"] = min(1, pt["max"])
+            sync_hp(p)
+            p.speed = getattr(p, "_base_speed", 1.0)
+            p._slowed = 0
+        else:
+            p.hp = 2 if _prop(echo, "twin") else 1
         game.log("An echo of you takes the blow.")
         self._consume(game, echo)
 
@@ -483,4 +551,6 @@ class SigilSystem(System):
         if not self.slots:
             return f"Sigils: [0/{cap}]"
         parts = " ".join(f"{s['ability']}({s['durability']})" for s in self.slots)
-        return f"Sigils: {parts} [{len(self.slots)}/{cap}]"
+        dur_blink = any(s.get("durability", 0) == 1 for s in self.slots)
+        prefix = "c:" if not dur_blink else "!"
+        return f"Sigils: {prefix} {parts} [{len(self.slots)}/{cap}]"

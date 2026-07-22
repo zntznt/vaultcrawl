@@ -161,6 +161,18 @@ class FloraSystem(System):
             return True
         return False
 
+    def on_interact(self, game) -> bool:
+        p = game.player
+        if not self.flora_at(p.x, p.y):
+            return False
+        self.consume(p.x, p.y)
+        salv = game.system("salvage")
+        if salv is not None:
+            salv.inventory(game).add({"growth": 1})
+        game.log("You harvest the plant. A rustle carries on the air.")
+        game.emit("noise", pos=(p.x, p.y), volume=5)
+        return True
+
     # ---- rendering / HUD -----------------------------------------------------
     def render_overlay(self, game, grid):
         h = len(grid)

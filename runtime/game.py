@@ -62,6 +62,11 @@ class Game:
         self.up = upheaval or Upheaval()
         self.systems = systems or []
         self.sandbox = sandbox
+        self._in_overworld: bool = False        # Zen View map mode
+        self._ow_cursor: tuple = (0, 0)         # cursor position in overworld grid
+        self._ow_waypoint: tuple | None = None  # travel target set in overworld
+        self.current_z: int = 0                # spatial z-coordinate (0=surface, negative=depths)
+        self._levels: dict[int, object] = {}   # z -> Level for the current realm's z-stack
         self.announced: set = set()
         self._flavored: set = set()   # note ids whose flavor has been shown once
         self._truths_spent = 0        # read truths traded away via confide()
@@ -74,39 +79,56 @@ class Game:
         for e in manifest["enemies"]:
             self.enemies_by_region.setdefault(e["regionId"], []).append(e)
         self.messages: list = []
-        self._last_logged = None   # dedup: last line appended (folds repeats to "xN")
+        self._last_logged = None
         self._dup_n = 1
-        self._last_was_ambient = False   # newest log line was mood, not an event
-        self.turn = 0           # advances each player action; drives perception caching
+        self._last_was_ambient = False
+        self.turn = 0
         self.kills = 0
         self.items_taken = 0
+        self.messages: list = []
+        self.message_tags: list[str] = []
         self.alive = True
         self.won = False
+        self._resting = False
+        self._consecutive_rest = 0
+        self._tension: int = 0              # complacency counter — rises on idle, decays on action
+        self._aspect: str = ""              # region-granted temporary trait
+        self._aspect_turns: int = 0         # turns spent in current region
+        self._cant_camp: bool = False       # true if Renounce Rest was chosen
         self.player = None
         self.level = None
+        self._levels = {}
+        self.current_z = 0
         self.actors: list = []
         self.items: list = []
         self.region_name = ""
-        self._places: list = []       # sandbox: [(cells, note_id)] per grown center
-        self._dungeon = None          # {"region": r} while in a depths-realm
-        self._realm = "surface"       # current node of the realm semilattice
-        self._realms: dict = {}       # realm id -> persisted snapshot
-        self._gates: dict = {}        # (x, y) -> destination realm id, current map
+        self._places: list = []
+        self._dungeon = None
+        self._realm = "surface"
+        self._realms: dict = {}
+        self._gates: dict = {}
         self._town_rooms: set = set()
+        # visual/UX features
+        self._pulses: list = []           # Pulse Wave: [(x, y, ttl, glyph)] sound rings
+        self._stains: dict = {}           # Memory Stains: (x,y) -> (glyph, event_text)
+        self._graves: dict = {}           # Gravestone Glyphs: (x,y) -> death_record
         self._town_tiles: set = set()
-        self._tint: dict = {}         # (x, y) -> region element, for place-local palettes
-        self._cell_region: dict = {}  # (x, y) -> region id (border detection)
-        self._glow_cells: dict = {}   # (x, y) -> intensity (light rises toward the heart)
-        self._landmarks: dict = {}    # (x, y) -> "heart" | "town" | "gate" (seen through fog)
-        self._frictions: dict = {}    # wall (x, y) -> stance between the regions it parts
-        self._overlay: dict = {}      # (x, y) -> biome/structure glyph, drawn over floor
-        self._region_env: dict = {}   # region id -> Environment (blended design blocks)
-        self._region_kind: dict = {}  # region id -> area kind (labyrinth/grove/...)
+        self._tint: dict = {}
+        self._cell_region: dict = {}
+        self._glow_cells: dict = {}
+        self._landmarks: dict = {}
+        self._frictions: dict = {}
+        self._overlay: dict = {}
+        self._region_env: dict = {}
+        self._region_kind: dict = {}
+        self._scarred_tiles: dict = {}      # terrain mod: scar glyphs with TTL
+        self._bridges: list = []            # terrain mod: added road bridge tiles
+        self._monuments: dict = {}          # terrain mod: boss-death landmarks
         self._region_by_comm = {self._region_community(r): r
                                 for r in manifest["regions"]}
         self._region_faction = {r["id"]: r.get("factionId", "")
                                 for r in manifest["regions"]}
-        self._rel: dict = {}          # (factionA, factionB) -> stance, both ways
+        self._rel: dict = {}
         for f in manifest.get("bible", {}).get("factions", []):
             for r in f.get("relations", []):
                 self._rel[(f["id"], r["factionId"])] = r["stance"]
@@ -118,9 +140,23 @@ class Game:
             self.messages.append(
                 f"~ The world has shifted since you last descended: {self.up.total} upheaval(s). ~")
         if sandbox:
+            self._load_graves()
             self._build_sandbox()
         else:
-            self.descend()  # enter floor 1
+            self.descend()
+
+    def _set_level(self, level, z: int = 0):
+        self.level = level
+        level.z = getattr(level, "z", z)
+        self._levels[level.z] = level
+        self.current_z = level.z
+
+    def _depth_count(self, region: dict) -> int:
+        if not self.sandbox:
+            bos = max((b["depth"] for b in self.m["bosses"]
+                       if b.get("regionId") == region["id"]), default=3)
+            return max(1, min(4, bos // 6 + 1))
+        return 1
 
     # ---- content selection ----
     def _build_zones(self):
@@ -204,8 +240,63 @@ class Game:
             with open(self.site_cache, "r", encoding="utf-8") as fh:
                 d = json.load(fh)
             if (d.get("seed") != self.seed or d.get("sprawl", 1.0) != self.sprawl
-                    or d.get("fmt") != 9):
+                    or d.get("fmt") not in (9, 10)):
                 return None
+            from .dungeon import Level
+            level = Level(w=d["w"], h=d["h"],
+                          tiles=[list(row) for row in d["tiles"]], rooms=[],
+                          player_start=tuple(d["player_start"]),
+                          stairs=tuple(d["stairs"]))
+
+            class C:
+                pass
+            placed = []
+            for cd in d["centers"]:
+                c = C()
+                c.id = cd["id"]
+                c.pos = tuple(cd["pos"])
+                c.footprint = [tuple(t) for t in cd["footprint"]]
+                c.intensity = cd["intensity"]
+                c.motifs = [tuple(m) for m in cd["motifs"]]
+                placed.append(c)
+            return level, placed
+        except Exception:
+            return None
+
+    def _load_graves(self):
+        """Load cross-run death records from a graves file keyed by world seed."""
+        import os, json as j
+        path = os.path.expanduser("~/.vaultcrawl/graves.json")
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = j.load(fh)
+            for entry in data.get(self.seed, []):
+                self._graves[tuple(entry["pos"])] = entry["text"]
+        except (OSError, ValueError, KeyError):
+            pass
+
+    def _save_death(self, cause: str = "unknown"):
+        """Record this death to the graves file for future runs."""
+        import os, json as j
+        path = os.path.expanduser("~/.vaultcrawl/graves.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        data = {}
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = j.load(fh)
+        except (OSError, ValueError):
+            pass
+        entry = {"pos": [self.player.x, self.player.y],
+                 "text": f"Here lies you, slain by {cause} on floor {self.floor}"
+                         f" in {self.region_name}.\n"
+                         f"ATK {self.player.atk}  DEF {self.player.defense}  "
+                         f"{self.kills} kills · {self.items_taken} items taken."}
+        data.setdefault(self.seed, []).append(entry)
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                j.dump(data, fh)
+        except OSError:
+            pass
             from .dungeon import Level
             level = Level(w=d["w"], h=d["h"],
                           tiles=[list(row) for row in d["tiles"]], rooms=[],
@@ -232,7 +323,7 @@ class Game:
             return
         try:
             with open(self.site_cache, "w", encoding="utf-8") as fh:
-                json.dump({"seed": self.seed, "sprawl": self.sprawl, "fmt": 9,
+                json.dump({"seed": self.seed, "sprawl": self.sprawl, "fmt": 10,
                            "w": level.w, "h": level.h,
                            "tiles": ["".join(r) for r in level.tiles],
                            "player_start": list(level.player_start),
@@ -271,7 +362,7 @@ class Game:
             # across the wild as landmarks (below), so the settlements are the real
             # structure of your vault and the between is full of discoveries.
             plan = grow(self._connected_graph(), seed=self.seed, sprawl=self.sprawl)
-            self.level = settle(plan, seed=self.seed)
+            self._set_level(settle(plan, seed=self.seed), z=0)
             placed = sorted(plan.placed(), key=lambda c: c.id)
             self._save_site(self.level, placed)
         self.room_notes = {}
@@ -426,6 +517,8 @@ class Game:
             self.log(f'It murmurs: "{voice}"')
         for s in self.systems:
             s.on_floor_enter(self)
+        if self._graves:
+            self._animate_graves()
 
     def _apply_area_shapes(self):
         """Run each region's area-kind layout transform (maze walls, flooding) on its
@@ -527,15 +620,38 @@ class Game:
         # ambient (weather/atmosphere) lines are mood, not events: they don't halt a
         # travel-glide. Track the count so a front-end can tell if the newest line is one.
         self._last_was_ambient = ambient
-        # dedup consecutive identical lines (ambient systems can repeat verbatim):
-        # fold a run into a "(xN)" suffix so it reads as one event, not a stuck machine.
-        if self.messages and (self.messages[-1] == msg or self._last_logged == msg):
+        # dedup consecutive identical lines — but never dedup combat messages
+        tag = "ambient" if ambient else self._tag_for(msg)
+        if tag != "combat" and self.messages and (self.messages[-1] == msg or self._last_logged == msg):
             self._dup_n += 1
             self.messages[-1] = msg if self._dup_n == 1 else f"{msg} (x{self._dup_n})"
             return
         self._last_logged = msg
         self._dup_n = 1
+        tag = "ambient" if ambient else self._tag_for(msg)
+        getattr(self, "message_tags", []).extend([tag])
         self.messages.append(msg)
+
+    def _tag_for(self, msg: str) -> str:
+        """Categorize a message for filtered log display."""
+        combat_kw = ("hits you", "strikes you", "You destroy", "You win",
+                     "stands down", "fells", "You strike", "HP left",
+                     "You die", "bleeds", "staggers", "wounded",
+                     "shove", "blow", "Crystal", "detonates")
+        discovery_kw = ("You enter", "You cross", "You stand in",
+                        "You read", "cache", "lore fragment", "sigil slot",
+                        "You feel", "New charge", "Quest complete",
+                        "You integrate", "✦", "♛", "⚔", "~ The world",
+                        "You slot", "You forge", "You know", "learned",
+                        "You harvest", "You honour", "You hunker",
+                        "You rest", "settle", "You settle")
+        for kw in combat_kw:
+            if kw in msg:
+                return "combat"
+        for kw in discovery_kw:
+            if kw in msg:
+                return "discovery"
+        return ""
 
     # ---- realms & thresholds: the world is a SEMILATTICE of maps -------------
     # One flat map is still a tree (branches on a plane); a chain of floors is
@@ -560,9 +676,12 @@ class Game:
         return adj
 
     def _snapshot(self) -> dict:
-        return {"level": self.level, "actors": self.actors, "items": self.items,
-                "room_notes": self.room_notes, "places": self._places,
-                "motifs": self._motifs, "tint": self._tint,
+        return {"levels": dict(self._levels), "current_z": self.current_z,
+                "actors": self.actors, "items": self.items,
+                "room_notes": getattr(self, "room_notes", {}),
+                "places": getattr(self, "_places", []),
+                "motifs": getattr(self, "_motifs", {}),
+                "tint": getattr(self, "_tint", {}),
                 "rooms_seen": self._rooms_seen, "region_name": self.region_name,
                 "gates": self._gates, "towns": (self._town_rooms, self._town_tiles),
                 "dungeon": self._dungeon, "floor": self.floor,
@@ -572,15 +691,18 @@ class Game:
                          getattr(self, "_region_of", {}),
                          getattr(self, "_fixtures", {}),
                          getattr(self, "_fixture_room", {})),
-                # the render overlay + per-region environments are realm-specific
-                # (depths clears _overlay to {}); without these a surface return
-                # comes back with blank biome terrain and the wrong ambient voice.
                 "overlay": (getattr(self, "_overlay", {}),
                             getattr(self, "_region_env", {})),
+                "terrains": (getattr(self, "_scarred_tiles", {}),
+                             getattr(self, "_bridges", []),
+                             getattr(self, "_monuments", {})),
                 "pos": (self.player.x, self.player.y)}
 
     def _restore(self, s: dict, arrive=None):
-        self.level, self.actors, self.items = s["level"], s["actors"], s["items"]
+        self._levels = s.get("levels", {})
+        self.current_z = s.get("current_z", 0)
+        self.level = self._levels.get(self.current_z)
+        self.actors, self.items = s["actors"], s["items"]
         self.room_notes, self._places = s["room_notes"], s["places"]
         self._motifs, self._tint = s["motifs"], s["tint"]
         self._rooms_seen, self.region_name = s["rooms_seen"], s["region_name"]
@@ -592,6 +714,8 @@ class Game:
         (self._wild_structs, self._region_of,
          self._fixtures, self._fixture_room) = s.get("wild", ({}, {}, {}, {}))
         self._overlay, self._region_env = s.get("overlay", ({}, {}))
+        ter = s.get("terrains", ({}, [], {}))
+        self._scarred_tiles, self._bridges, self._monuments = ter
         self.player.x, self.player.y = arrive or s["pos"]
 
     def traverse(self) -> bool:
@@ -616,69 +740,120 @@ class Game:
         return True
 
     def _generate_depths(self, region_id: str, from_realm: str):
-        """First visit to a region's depths: one map, its notes as rooms, its
-        warden in the anchor room, a stair up (<) and a passage (>) to each
-        bordering region's depths."""
+        """First visit to a region's depths: generates a z-stack of deepening floors.
+        Each z-level is an independent Level; stairs connect adjacent z-levels.
+        The warden dwells at the deepest z-level."""
         region = next(r for r in self.m["regions"] if r["id"] == region_id)
         self._dungeon = {"region": region}
         order = sorted(r["id"] for r in self.m["regions"])
-        self.floor = 2 + order.index(region_id)   # a stable seed-space per realm
-        self.level = generate_level(max(64, self.width), max(26, self.height),
-                                    f"{self.seed}:depths:{region_id}", 1,
-                                    max_rooms=10)
-        self._town_rooms, self._town_tiles = set(), set()
+        self.floor = 2 + order.index(region_id)
         self.region_name = region["name"]
-        self._assign_rooms(region)
+        nz = self._depth_count(region)
+        self._town_rooms, self._town_tiles = set(), set()
         self._motifs, self._fixtures, self._fixture_room = {}, {}, {}
         self._wild_structs, self._region_of, self._overlay = {}, {}, {}
-        rng = random.Random(f"{self.seed}:depths:{region_id}:spawn")
-        px, py = self.level.player_start
-        free = free_floor_tiles(self.level, {(px, py), self.level.stairs})
-        rng.shuffle(free)
         self.actors, self.items = [], []
+        self._gates = {}
         boss_spec = next((b for b in self.m["bosses"]
                           if b["regionId"] == region_id), None)
         cap = max(2, boss_spec["tier"] if boss_spec else 3)
         pool = self.enemies_by_region.get(region_id) or self.m["enemies"]
-        for _ in range(min(4 + len(self.level.rooms), len(free) // 4)):
-            if not free:
-                break
-            spec = rng.choice(pool)
-            spec = {**spec, "tier": max(1, min(spec["tier"], cap))}
-            en = make_enemy(spec, *self.spot_for(spec["sourceNoteId"], free))
-            en.faction = self._region_faction.get(region_id, "")
-            self.actors.append(en)
-        if boss_spec is not None and free:
-            boss = make_boss(boss_spec, *self.spot_for(boss_spec["sourceNoteId"], free))
-            boss.faction = self._region_faction.get(region_id, "")
-            if boss_spec["sourceNoteId"] == self.up.throne:
-                boss.name = "Ascendant " + boss.name
-            self.actors.append(boss)
-            self.log(f"!! {boss.name} — {boss_spec.get('title', '')} — "
-                     "dwells in these depths.")
-            hist = self._note_history(boss.source, salt="boss")
-            if hist:
-                self.log(f"  {hist}")
-        # gates: the stair up, then one passage per bordering region's depths
-        self._gates = {(px, py): "surface"}
-        self.level.tiles[py][px] = "<"
-        exits = [self.level.stairs] + [r.center for r in self.level.rooms[1:-1]]
-        exits = [t for t in exits if self.level.walkable(*t) and t != (px, py)]
-        for i, adj in enumerate(sorted(self._region_adjacency().get(region_id, ()))):
-            if i >= len(exits):
-                break
-            t = exits[i]
-            self._gates[t] = adj
-            self.level.tiles[t[1]][t[0]] = ">"
-        if self.level.stairs not in self._gates:
-            sx, sy = self.level.stairs      # an exit no border claimed: just floor
-            self.level.tiles[sy][sx] = "."
+
+        # generate from z=-1 (shallowest) down to z=-nz (deepest)
+        for depth in range(1, nz + 1):
+            z = -depth
+            seed_str = f"{self.seed}:depths:{region_id}:z:{z}"
+            lvl = generate_level(max(64, self.width), max(26, self.height),
+                                 seed_str, 1, max_rooms=8 + depth)  # deeper=more rooms
+            lvl.z = z
+            self._levels[z] = lvl
+
+            # place stairs: < up (except z=-1 gets surface gate), > down (except deepest)
+            px, py = lvl.player_start
+            if depth == 1:
+                self._gates[(px, py)] = "surface"
+                lvl.tiles[py][px] = "<"
+            else:
+                lvl.tiles[py][px] = "<"   # stair to z=-depth+1
+            if depth < nz:
+                # stair down at the bottom of this floor
+                door = lvl.rooms[-1].center if lvl.rooms else (lvl.w // 2, lvl.h // 2)
+                lvl.tiles[door[1]][door[0]] = ">"
+                # link the stair-down to the Level below's player_start
+                lower = self._levels.get(z - 1)
+                if lower:
+                    # match stairs: down-stair at (door[0], door[1]) on this level
+                    # corresponds to the player_start on the level below
+                    lower.tiles[lower.player_start[1]][lower.player_start[0]] = "<"
+                    # also add a return stair at the lower level's end
+                    low_door = lower.rooms[-1].center if lower.rooms else (lower.w//2, lower.h//2)
+                    lower.tiles[low_door[1]][low_door[0]] = ">"
+                    # put a stair-up in the lower level matching this level's down
+                    # find a tile above or below
+                    if 0 <= door[1] < lower.h and 0 <= door[0] < lower.w:
+                        lower.tiles[door[1]][door[0]] = "<"
+
+            # spawn enemies on this z-level (sparser on shallower, denser on deeper)
+            free_tiles = free_floor_tiles(lvl, {(lvl.player_start[0], lvl.player_start[1])})
+            rng = random.Random(f"{seed_str}:spawn")
+            rng.shuffle(free_tiles)
+            n_enemies = min(2 + depth, len(free_tiles) // 4)
+            for _ in range(n_enemies):
+                if not free_tiles:
+                    break
+                spec = rng.choice(pool)
+                tier_cap = max(1, min(spec["tier"], cap + depth - 1))
+                spec = {**spec, "tier": tier_cap}
+                en = make_enemy(spec, *free_tiles.pop())
+                en.faction = self._region_faction.get(region_id, "")
+                en.z = z
+                self.actors.append(en)
+
+        # boss at deepest level
+        deepest = self._levels.get(-nz)
+        if boss_spec is not None and deepest is not None:
+            free = free_floor_tiles(deepest, {(deepest.player_start[0], deepest.player_start[1])})
+            if free:
+                rng = random.Random(f"{self.seed}:depths:{region_id}:boss")
+                bx, by = rng.choice(free)
+                boss = make_boss(boss_spec, bx, by)
+                boss.faction = self._region_faction.get(region_id, "")
+                boss.z = -nz
+                if boss_spec["sourceNoteId"] == self.up.throne:
+                    boss.name = "Ascendant " + boss.name
+                self.actors.append(boss)
+                self.log(f"!! {boss.name} — {boss_spec.get('title', '')} — "
+                         f"dwells in the deep (z={-nz}).")
+                hist = self._note_history(boss.source, salt="boss")
+                if hist:
+                    self.log(f"  {hist}")
+
+        # passages to bordering regions at each z-level
+        adj_regions = sorted(self._region_adjacency().get(region_id, ()))
+        for z, lvl in sorted(self._levels.items()):
+            exits = sorted(lvl.rooms[1:-1] if len(lvl.rooms) > 2 else [],
+                           key=lambda r: r.center)
+            for i, adj in enumerate(adj_regions):
+                if i >= len(exits):
+                    break
+                t = exits[i].center
+                if lvl.walkable(*t) and t not in self._gates:
+                    self._gates[t] = adj
+                    lvl.tiles[t[1]][t[0]] = ">"
+
+        # set current level to z=-1 (shallowest entry)
+        self._set_level(self._levels.get(-1, deepest), z=-1)
         self._build_felt()
-        if len(self._gates) > 1:
+
+        if nz > 1:
+            self.log(f"The depths descend {nz} floors; (<) climbs, (>) goes deeper.")
+        elif self.sandbox:
             self.log("Passages (>) lead beneath the borders; (<) climbs home.")
+
         arrive = next((p for p, dst in sorted(self._gates.items())
-                       if dst == from_realm), (px, py))
+                       if dst == from_realm), self.level.player_start)
         self.player.x, self.player.y = arrive
+        self.player.z = self.current_z
 
     # ---- rooms are places: each room carries a note's identity ----
     def _region_community(self, region):
@@ -862,14 +1037,22 @@ class Game:
     def descend(self):
         if self.sandbox:
             t = self.level.tiles[self.player.y][self.player.x]
-            if t in "><" and self.traverse():
+            if t in "><":
+                from .body_parts import is_immobilized
+                if is_immobilized(self.player):
+                    self.log("Your legs won't hold; you cannot descend.")
+                    return
+                if self.traverse():
+                    return
+                self._z_descend()
                 return
             self.log("No way through here; doors (>) wait in each district's "
                      "heart, stairs (<) climb home.")
             return
         self.floor += 1
         rng = random.Random(f"{self.seed}:spawn:{self.floor}")
-        self.level = generate_level(self.width, self.height, self.seed, self.floor)
+        lvl = generate_level(self.width, self.height, self.seed, self.floor)
+        self._set_level(lvl, z=0)
         px, py = self.level.player_start
         if self.player is None:
             self.player = make_player(px, py)
@@ -926,6 +1109,10 @@ class Game:
                 if boss.flavor:
                     self.log(boss.flavor)
                     self._flavored.add(boss.source)
+                hist = self.system("history")
+                if hist is not None and hist.read >= 3:
+                    boss._telegraphed = True
+                    self.log("You've read of this one before — you know its rhythm.")
 
         # Vanilla stat-loot only exists in the bare game. With the systems layer on,
         # the sigil economy (configuration, not creep) replaces it entirely.
@@ -956,6 +1143,8 @@ class Game:
             self.log(region["flavor"])
         for s in self.systems:
             s.on_floor_enter(self)
+        if self._graves:
+            self._animate_graves()
 
     # ---- actions ----
     def actor_at(self, x: int, y: int):
@@ -971,14 +1160,58 @@ class Game:
 
     def ascend(self):
         if self.sandbox and self.level.tiles[self.player.y][self.player.x] in "<>":
+            from .body_parts import is_immobilized
+            if is_immobilized(self.player):
+                self.log("Your legs won't hold; you cannot climb.")
+                return
             if self.traverse():
                 return
+            self._z_ascend()
+            return
         self.log("There is no way up from here.")
+
+    def _z_descend(self):
+        """Move one z-level deeper within the current realm."""
+        if not self._dungeon:
+            return
+        nxt = self.current_z - 1
+        if nxt not in self._levels:
+            self.log("There is no way deeper from here.")
+            return
+        self._set_level(self._levels[nxt], z=nxt)
+        self.player.x, self.player.y = self.level.player_start
+        self.player.z = nxt
+        self.log(f"-- You descend deeper (z={nxt}). --")
+        for s in self.systems:
+            s.on_floor_enter(self)
+
+    def _z_ascend(self):
+        """Move one z-level upward within the current realm."""
+        if not self._dungeon:
+            return
+        nxt = self.current_z + 1
+        if nxt not in self._levels:
+            self.log("There is no way up from here.")
+            return
+        self._set_level(self._levels[nxt], z=nxt)
+        self.player.x, self.player.y = self.level.player_start
+        self.player.z = nxt
+        self.log(f"-- You climb back up (z={nxt}). --")
+        for s in self.systems:
+            s.on_floor_enter(self)
 
     def try_move(self, dx: int, dy: int):
         if not self.alive or self.won:
             return
+        if dx != 0 or dy != 0:
+            if self._resting:
+                self.log("You break camp.")
+            self._resting = False
+            self._consecutive_rest = 0
         self.turn += 1
+        self._tick_pulses()
+        self._tick_tension()
+        self._tick_aspect()
         nx, ny = self.player.x + dx, self.player.y + dy
         target = self.actor_at(nx, ny)
         if target is not None and self.hostile(self.player, target):
@@ -1006,6 +1239,11 @@ class Game:
                 if r["name"] != self.region_name:
                     self.region_name = r["name"]
                     self.log(f"You cross into {self.region_name}.")
+                    # aspect resets on region change
+                    if self._aspect:
+                        self.log(f"The {self._aspect.split(':')[0]} fades as you leave.")
+                        self._aspect = ""
+                    self._aspect_turns = 0
                     # the atmosphere announces itself: the environment's leading voice
                     env = self._region_env.get(r["id"])
                     if env is not None:
@@ -1022,7 +1260,9 @@ class Game:
             # of teleport baked into try_move.)
             self._pickup()
             self.emit("noise", pos=(nx, ny), volume=3)   # footsteps carry
+        self._tick_effects()
         self.enemies_act()
+        self._restore_winded()
         for s in self.systems:
             s.on_player_act(self)
 
@@ -1175,18 +1415,105 @@ class Game:
         return True
 
     def wait(self):
-        """Pass the turn in place. Quiet: no footstep noise, so waiting is also hiding.
-        The ambient world (fire, fauna, weather) advances around you. On settled
-        town ground, waiting is REST."""
+        """Pass the turn in place. On settled ground, waiting is REST.
+        Three consecutive waits enter camp mode: faster healing, status recovery."""
         if not self.alive or self.won:
             return
-        if (self._on_surface()
-                and (self.player.x, self.player.y) in self._town_tiles
-                and self.player.hp < self.player.max_hp):
-            self.player.hp = min(self.player.max_hp, self.player.hp + 2)
-            self.log("You rest on settled ground (+2 HP).")
+        on_town = (self._on_surface()
+                   and (self.player.x, self.player.y) in self._town_tiles
+                   and not getattr(self, "_cant_camp", False))
+        near_hostile = any(self.hostile(self.player, a)
+                           and max(abs(a.x - self.player.x), abs(a.y - self.player.y)) <= 4
+                           for a in self.actors)
+        if on_town and near_hostile:
+            self.log("Hostiles too near; you cannot rest.")
+            on_town = False
+            self._resting = False
+            self._consecutive_rest = 0
+        if on_town and self.player.hp < self.player.max_hp:
+            self._consecutive_rest += 1
+            if self._consecutive_rest >= 3 and not self._resting:
+                self._resting = True
+                self.log("You settle in to rest...")
+                if getattr(self.player, "_bleeding", 0) > 0:
+                    self.player._bleeding = 0
+                    self.log("Your bleeding stops.")
+                if getattr(self.player, "_slowed", 0) > 0:
+                    self.player._slowed = 0
+                    self.player.speed = getattr(self.player, "_base_speed", 1.0)
+            from .body_parts import heal_body
+            heal = 3 if self._resting else 2
+            if self._aspect and "Hallowed" in self._aspect:
+                heal *= 2  # sacred region: double camp healing
+            heal_body(self.player, heal)
+            tag = "+" + str(heal) + " HP" if self._resting else "+2 HP"
+            self.log(f"You rest on settled ground ({tag}).")
         self.turn += 1
+        self._tick_effects()
         self.enemies_act()
+        self._restore_winded()
+        for s in self.systems:
+            s.on_player_act(self)
+
+    def interact(self):
+        """Contextual interaction with what's underfoot: flora, structures, decay, etc.
+        Iterates all systems, collects handlers, and consumes the turn if any fire."""
+        if not self.alive or self.won:
+            return
+        handled = False
+        for s in self.systems:
+            try:
+                if s.on_interact(self):
+                    handled = True
+            except Exception:
+                pass
+        if handled:
+            self.turn += 1
+            self._tick_effects()
+            self.enemies_act()
+            self._restore_winded()
+            for s in self.systems:
+                s.on_player_act(self)
+        else:
+            self.log("Nothing here to interact with.")
+
+    def shield(self):
+        """Raise your guard: +1 defense (capped) or a small self-heal once capped.
+        Uses the invariant-safe act_shield from abilities, so this costs no new
+        ability code."""
+        if not self.alive or self.won:
+            return
+        from .abilities import act_shield, SHIELD_CAP
+        if self.player.defense >= SHIELD_CAP and self.player.hp >= self.player.max_hp:
+            self.log("Your guard is already at its peak.")
+            return
+        act_shield(self, self.player)
+        self.turn += 1
+        self._tick_effects()
+        self.enemies_act()
+        self._restore_winded()
+        for s in self.systems:
+            s.on_player_act(self)
+
+    def shove(self, dx: int, dy: int):
+        """Push an adjacent enemy one tile in the given direction. Deals no direct
+        damage — only environmental damage if the destination is a hazard tile."""
+        if not self.alive or self.won:
+            return
+        target = self.actor_at(self.player.x + dx, self.player.y + dy)
+        if target is None or not self.hostile(self.player, target):
+            self.log("Nothing to shove there.")
+            return
+        dest = (target.x + dx, target.y + dy)
+        if not self.level.walkable(*dest) or self.actor_at(*dest) is not None or dest == (self.player.x, self.player.y):
+            self.log(f"{target.name} has no room to be pushed.")
+            return
+        target.x, target.y = dest
+        self.log(f"You shove {target.name}.")
+        self.turn += 1
+        self._tick_effects()
+        self.enemies_act()
+        self._restore_winded()
         for s in self.systems:
             s.on_player_act(self)
 
@@ -1327,9 +1654,7 @@ class Game:
         return out
 
     def creature_look(self, target) -> tuple:
-        """(archetype, damage_type) for a creature's PORTRAIT — read from the baked
-        enemy/boss spec by its source note, falling back to the map glyph's archetype
-        so wildlife and NPCs still get a face. Deterministic, manifest-derived."""
+        """(archetype, damage_type) for a creature's PORTRAIT."""
         src = getattr(target, "source", "")
         for group in ("enemies", "bosses"):
             for e in self.m.get(group, []):
@@ -1338,6 +1663,27 @@ class Game:
         from .entities import ARCH_GLYPH
         g2a = {v: k for k, v in ARCH_GLYPH.items()}
         return g2a.get(getattr(target, "glyph", ""), "construct"), ""
+
+    def inspect_actor(self, actor) -> list[str]:
+        """Return formatted lines describing one actor in detail (free action)."""
+        lines = [f"HP {max(0, actor.hp)}/{actor.max_hp}  ·  ATK {actor.atk}  ·  DEF {actor.defense}"]
+        tier = getattr(actor, "tier", 1)
+        if tier > 1:
+            lines[-1] += f"  ·  tier {tier}"
+        body = getattr(actor, "body", None)
+        if body:
+            parts = [f"{p[:1]}{body[p]['hp']}" for p in ("head", "torso", "legs")]
+            lines.append("body: " + " ".join(parts))
+        arch, dmg = self.creature_look(actor)
+        lines.append(f"damage: {dmg or 'physical'}  ·  faction: {actor.faction or 'none'}"
+                     + (f" ({actor.allegiance})" if actor.allegiance != "monster" else ""))
+        nid = getattr(actor, "source", "")
+        if nid:
+            voice = self._weave_note(nid, salt=f"inspect:{self.turn}")
+            if voice:
+                lines.append("")
+                lines.append(f'"{voice}"')
+        return lines
 
     def dialogue_topics(self, nid: str) -> list:
         """DIALOGUE options exclusive to this creature's note — distinct from the
@@ -1400,6 +1746,16 @@ class Game:
         if idx is not None:
             for phrase in getattr(self, "_motifs", {}).get(idx, []):
                 self.log(f"Here, {phrase}.")
+            # Flavor Window: the note's own words from the vault corpus
+            nid = self.room_notes.get(idx)
+            if nid not in self._flavored:
+                corpus = self.m.get("corpus", {})
+                lines = corpus.get("lines", {}).get(nid, [])
+                if lines:
+                    self.log(f"  \"{lines[0][:80]}\"")
+                    if len(lines) > 1:
+                        self.log(f"  \"{lines[1][:80]}\"")
+                self._flavored.add(nid)
 
         # the fixture answers in the note's own voice — a made thing you can approach
         # and that speaks. (design-panel step 2: a pillar you can only look past is
@@ -1522,26 +1878,128 @@ class Game:
                 return True
         return self._hostile(al, bl)
 
+    def _tick_effects(self):
+        """Per-turn decay of status effects: bleeding deals damage, counters tick.
+        Also decay creature emotions each turn (anger/fear drift)."""
+        from .sense import decay_emotions, apply_trigger
+        for a in list(self.actors):
+            bleed = getattr(a, "_bleeding", 0)
+            if bleed > 0:
+                a.hp -= bleed
+                if a.hp <= 0:
+                    self.kill(a, "bleeding")
+                    if a.is_player:
+                        self.alive = False
+                        self._save_death(cause="bleeding")
+                        self.log("You bleed out.")
+            decay_emotions(a)
+            # fire_near trigger: standing on or adjacent to fire
+            r = self.system("reactions")
+            if r is not None:
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        if r.is_hazard(a.x + dx, a.y + dy):
+                            apply_trigger(self, a, "fire_near", 0.4)
+                            break
+
+    def _restore_winded(self):
+        """Restore ATK for creatures that were temporarily winded this turn."""
+        for a in self.actors:
+            if getattr(a, "_was_winded", False):
+                a.atk = getattr(a, "_prewind_atk", a.atk)
+                a._was_winded = False
+
+    def _apply_onhit(self, victim, dmg: int, part: str = "torso"):
+        """On-hit effects: heavy blows inflict status conditions.
+        Mapped to body parts: head->stagger, torso->winded/bleed, legs->slowed."""
+        from random import Random
+        rng = Random(f"{self.seed}:{self.turn}:{victim.x}:{victim.y}")
+        if part == "head" and dmg >= 6 and rng.random() < 0.30:
+            v = getattr(victim, "_staggered", 0)
+            victim._staggered = v + 1
+            self.log(f"The blow to {victim.name}'s head leaves it reeling!")
+        elif part == "torso":
+            if dmg >= 5 and rng.random() < 0.15:
+                v = getattr(victim, "_winded", 0)
+                victim._winded = v + 1
+                self.log(f"{victim.name} is winded by the hit to its chest.")
+            if dmg >= 4 and rng.random() < 0.20:
+                v = getattr(victim, "_bleeding", 0)
+                victim._bleeding = v + 1
+                self.log(f"{victim.name} bleeds from its torso.")
+        elif part == "legs" and dmg >= 4 and rng.random() < 0.25:
+            v = getattr(victim, "_slowed", 0)
+            victim._slowed = v + 2
+            if not getattr(victim, "_base_speed", 0):
+                victim._base_speed = getattr(victim, "speed", 1.0)
+            victim.speed = getattr(victim, "_base_speed", 1.0) * 0.5
+            self.log(f"{victim.name} is slowed — its legs are battered.")
+
     def attack(self, att, dfn):
-        self.emit("noise", pos=(dfn.x, dfn.y), volume=8)   # combat is loud
+        from random import Random
+        from .body_parts import hit_part, damage_part, init_body
+        self.emit("noise", pos=(dfn.x, dfn.y), volume=8)
+        self._add_pulse(dfn.x, dfn.y)
         if att.is_player:
-            dfn._provoked = True   # a struck creature forgets its territory
-        # first blood reveals what a foe is: its baked note-derived flavor, once
+            dfn._provoked = True
+            self._add_stain(dfn.x, dfn.y, "·", f"blood of {dfn.name}")
         if att.is_player or dfn.is_player:
             foe = att if dfn.is_player else dfn
             if foe.flavor and foe.source not in self._flavored:
                 self._flavored.add(foe.source)
                 self.log(foe.flavor)
         dmg = max(1, att.atk - dfn.defense)
-        dfn.hp -= dmg
+        # aspect combat effects
+        if att.is_player and self._aspect:
+            if "Fever Heat" in self._aspect:
+                dmg += 1
+            if "Static Touch" in self._aspect:
+                el = self.system("reactions")
+                if el is not None:
+                    props = el.props_at(dfn.x, dfn.y) if hasattr(el, "props_at") else set()
+                    if "wet" in props or "frozen" in props:
+                        dmg += 1
+            if "Cold Endurance" in self._aspect:
+                dmg = max(1, dmg - 1)
+        if att.is_player:
+            know = self.system("knowledge")
+            fac = getattr(dfn, "faction", "")
+            if know is not None and fac:
+                ab, db = know.faction_insight(self, fac)
+                dmg = max(1, dmg + ab)
+                # faction standing perk: kin_calm reduces incoming damage by 1
+                fs = self.system("factions")
+                if fs is not None and fs.faction_perk(fac, "kin_calm"):
+                    dmg = max(1, dmg + 1)
+        elif dfn.is_player:
+            know = self.system("knowledge")
+            fac = getattr(att, "faction", "")
+            if know is not None and fac:
+                ab, db = know.faction_insight(self, fac)
+                dmg = max(1, dmg - db)
+                fs = self.system("factions")
+                if fs is not None and fs.faction_perk(fac, "kin_calm"):
+                    dmg = max(1, dmg - 1)
+        # body-part hit location
+        init_body(dfn)
+        rng = Random(f"{self.seed}:{self.turn}:{att.x}:{att.y}:{dfn.x}:{dfn.y}")
+        elite = getattr(att, "quality", 0) > 0 and dfn.is_player
+        part = hit_part(dfn, rng, elite_aim=elite)
+        damage_part(dfn, part, dmg)
+        pname = {"head": "head", "torso": "chest", "legs": "legs"}.get(part, part)
+        if dmg >= 4 and dfn.is_player:
+            self._apply_onhit(dfn, dmg, part)
+        elif dmg >= 4 and att.is_player:
+            self._apply_onhit(dfn, dmg, part)
         if dfn.hp > 0:
             if att.is_player:
-                self.log(f"You hit {dfn.name} for {dmg} ({max(0, dfn.hp)} HP left).")
+                self.log(f"You strike {dfn.name}'s {pname} for {dmg} ({max(0, dfn.hp)} HP left).")
             elif dfn.is_player:
-                self.log(f"{att.name} hits you for {dmg} ({max(0, dfn.hp)} HP left).")
+                self.log(f"{att.name} hits your {pname} for {dmg} ({max(0, dfn.hp)} HP left).")
             return
         if dfn.is_player:
             self.alive = False
+            self._save_death(cause=getattr(att, "name", "a foe"))
             where = (f"in {self.region_name}" if self.sandbox
                      else f"on floor {self.floor}")
             self.log(f"{att.name} strikes you down. You die {where}.")
@@ -1550,9 +2008,21 @@ class Game:
         if dfn.is_boss and dfn.source == self.final_boss_source:
             self.won = True
             self.log("The deepest thought in the vault falls silent. You win.")
+        # friend_died trigger
+        from .sense import apply_trigger as _trig
+        if dfn.allegiance == "monster":
+            for a in self.actors:
+                if a is not dfn and a.allegiance == "monster" and getattr(a, "faction", "") == getattr(dfn, "faction", ""):
+                    if max(abs(a.x - dfn.x), abs(a.y - dfn.y)) <= 8:
+                        _trig(self, a, "friend_died", 0.6)
         if att.is_player and dfn.allegiance == "monster":
             self.kills += 1
+            self._tension = max(0, self._tension - 20)  # action calms the wild
             self.log(f"You destroy {dfn.name}{' [BOSS]' if dfn.is_boss else ''}.")
+            if self.kills == 1:
+                sigs = self.system("sigils")
+                if sigs is None or not sigs.slots:
+                    self.log("You feel something wanting — sigils wait to be found in the rooms ahead.")
             for s in self.systems:
                 s.on_enemy_killed(self, dfn)
             self.emit("enemy_killed", enemy=dfn, cause="melee")
@@ -1587,6 +2057,17 @@ class Game:
         """One action for one actor (one tile of movement, one attack, or a mill).
         Returning early just means 'this action is spent'; the energy loop in
         enemies_act decides whether the actor gets another this tick."""
+        # on-hit effects: staggered creatures lose their turn
+        if getattr(a, "_staggered", 0) > 0:
+            a._staggered -= 1
+            return
+        winded = getattr(a, "_winded", 0) > 0
+        if winded:
+            a._winded -= 1
+            if not getattr(a, "_was_winded", False):
+                a._prewind_atk = a.atk
+                a._was_winded = True
+            a.atk = max(1, a.atk - 1)
         # territorial (sandbox): a creature belongs to its note's ground. It
         # stirs only if you stand on that ground, press in close, or provoked
         # it -- and drawn too far from home, it gives up and drifts back.
@@ -1670,15 +2151,136 @@ class Game:
             a.x, a.y = tx, ty
 
     # ---- rendering ----
+    def _add_pulse(self, x: int, y: int):
+        """A visible sound ring: concentric circles of ~ fading over turns."""
+        self._pulses.append([x, y, 3, "·"])
+
+    def _add_stain(self, x: int, y: int, glyph: str, text: str):
+        """A memory stain: tile permanently marked with an event glyph."""
+        if self.level and self.level.walkable(x, y):
+            self._stains[(x, y)] = (glyph, text)
+
+    def _tick_pulses(self):
+        """Decay pulse rings each turn."""
+        for p in list(self._pulses):
+            p[2] -= 1
+            if p[2] <= 0:
+                self._pulses.remove(p)
+
+    def _tick_tension(self):
+        """Complacency rises on idle, decays on action. High tension = camp risk."""
+        rate = 3 if self._resting else 1
+        self._tension += rate
+        # decay on kills: handled in attack() — subtract 20 per kill
+        if self._tension >= 200 and self.sandbox and self._on_surface():
+            from random import Random
+            rng = Random(f"{self.seed}:tension:{self.turn}")
+            if rng.random() < 0.30:
+                from .entities import make_enemy
+                pool = self.m.get("enemies", [])
+                if pool:
+                    spec = rng.choice(pool)
+                    free = [(x, y) for y in range(4, self.level.h - 4)
+                            for x in range(4, self.level.w - 4)
+                            if self.level.walkable(x, y) and self.actor_at(x, y) is None
+                            and max(abs(x - self.player.x), abs(y - self.player.y)) > 8]
+                    if free:
+                        fx, fy = rng.choice(free)
+                        e = make_enemy(spec, fx, fy)
+                        self.actors.append(e)
+                        self.log("Something stirs in the wild, drawn by your lingering.", ambient=True)
+
+    def _tick_aspect(self):
+        """Track time spent in current region. 50+ turns grants the region's aspect."""
+        if not self.sandbox or not self._on_surface():
+            return
+        r = self.region_for(self.floor)
+        self._aspect_turns += 1
+        if self._aspect_turns >= 50 and not self._aspect:
+            el = r.get("element", "")
+            asp = {"charged": "Static Touch: +1 ATK vs wet/frozen foes",
+                   "wet": "Water Affinity: +2 speed on water tiles",
+                   "flammable": "Fever Heat: melee deals +1 fire dmg",
+                   "frozen": "Cold Endurance: -1 dmg taken, speed ×0.8",
+                   "sacred": "Hallowed: camp heals 2× faster",
+                   "corrosive": "Acid Blood: on 5+ dmg taken, splash 2 to attacker"}.get(el, "")
+            if asp:
+                self._aspect = asp
+                self.log(f"The region's nature settles upon you: {asp}.")
+                if el == "frozen":
+                    self.player.speed = 0.8
+                elif el == "sacred":
+                    pass  # heal modifier checked in wait()
+
+    def _animate_graves(self):
+        """Ghost encounters: gravestone glyphs have chance to animate as combat echoes."""
+        from random import Random
+        rng = Random(f"{self.seed}:ghosts:{self.turn}")
+        for pos, text in list(self._graves.items()):
+            if self.actor_at(*pos) is not None:
+                continue
+            if not self.level.walkable(*pos):
+                continue
+            deaths = text.count("slain by") + 1
+            if rng.random() < 0.08 * deaths:  # more deaths = higher chance
+                from .entities import Actor
+                echo = Actor(x=pos[0], y=pos[1], glyph="†", name=f"Echo of the Fallen",
+                            hp=8 + deaths * 4, max_hp=8 + deaths * 4, atk=2 + deaths,
+                            source="ghost", allegiance="monster")
+                echo._special_actions = list(rng.sample(
+                    ["enrage", "shield", "spit", "blink"], min(2, deaths)))
+                echo.quality = min(deaths, 4)
+                echo.flavor = text[:80]
+                self.actors.append(echo)
+                self.log(f"† A grave marker shudders — {echo.name} rises!", ambient=True)
+
     def compose_frame(self):
-        """The composited, viewport-sliced glyph grid plus the viewport origin.
-        Front-ends colorize this; render() joins it into the plain string the
-        headless demo prints."""
+        """The composited, viewport-sliced glyph grid plus the viewport origin."""
         grid = [row[:] for row in self.level.tiles]
-        # biome terrain + wild landmarks paint over open floor (under everything else)
+        # void shaft: tiles that overlook the level below render its floor (dim)
+        if self.current_z < 0:
+            below = self._levels.get(self.current_z + 1)
+            # the deepest level shows a well at center
+            shaft_center = (self.level.w // 2, self.level.h // 2) if (
+                not self._dungeon and self.current_z < 0 and
+                self._levels and min(k for k in self._levels if k < 0) == self.current_z) else None
+        else:
+            below = None
+            shaft_center = None
         for (x, y), gph in self._overlay.items():
             if grid[y][x] == ".":
                 grid[y][x] = gph
+        # void shaft: a 3x3 well through which you glimpse the level below
+        if below is not None and shaft_center is not None:
+            cx, cy = shaft_center
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    sx, sy = cx + dx, cy + dy
+                    if 0 <= sy < len(grid) and 0 <= sx < len(grid[sy]):
+                        if grid[sy][sx] in (".", "#"):
+                            if below.walkable(sx, sy):
+                                grid[sy][sx] = "@" if dx == 0 and dy == 0 else "·"
+        # memory stains: permanent event markers on tiles
+        for (x, y), (gph, _) in self._stains.items():
+            if 0 <= y < len(grid) and 0 <= x < len(grid[0]) and grid[y][x] in (".", "#"):
+                grid[y][x] = gph
+        # gravestone glyphs: cross-run death markers
+        for (x, y), _ in self._graves.items():
+            if 0 <= y < len(grid) and 0 <= x < len(grid[0]) and grid[y][x] in (".",):
+                grid[y][x] = "†"
+        # pulse waves: fading sound rings
+        for (px, py, ttl, gph) in self._pulses:
+            for d in (3, 6, 9):
+                for dx in (-d, d):
+                    for dy in range(-d, d + 1):
+                        sx, sy = px + dx, py + dy
+                        if 0 <= sy < len(grid) and 0 <= sx < len(grid[0]) and grid[sy][sx] in (".", "░"):
+                            grid[sy][sx] = "~" if ttl >= 2 else "·"
+                for dy in (-d, d):
+                    for dx in range(-d + 1, d):
+                        sx, sy = px + dx, py + dy
+                        if 0 <= sy < len(grid) and 0 <= sx < len(grid[0]) and grid[sy][sx] in (".", "░"):
+                            grid[sy][sx] = "~" if ttl >= 2 else "·"
         for it in self.items:
             grid[it.y][it.x] = it.glyph
         for a in self.actors:
@@ -1698,10 +2300,11 @@ class Game:
         grid, _origin = self.compose_frame()
         body = "\n".join("".join(r) for r in grid)
         p = self.player
+        ztag = f" z={self.current_z}" if self.current_z != 0 else ""
         if self._dungeon is not None:
-            where = f"Depths of {self.region_name}"
+            where = f"Depths of {self.region_name}{ztag}"
         elif self.sandbox:
-            where = self.region_name
+            where = f"{self.region_name}{ztag}"
         else:
             where = f"Floor {self.floor}/{self.max_floor}"
         hud = (f"{where}  HP {max(0, p.hp)}/{p.max_hp}  "
@@ -1710,6 +2313,79 @@ class Game:
         extras = "  ·  ".join(e for e in (s.status_line(self) for s in self.systems) if e)
         tail = ("\n" + extras) if extras else ""
         return f"{body}\n{hud}{tail}\n" + "\n".join(self.messages[-last_n:])
+
+    def compose_overworld(self, width: int, height: int):
+        """Downsample the entire surface into a terminal-scale grid.
+        Each cell represents a block of world tiles, colored by dominant region.
+        Returns (grid, meta) where meta maps cell positions to region names."""
+        tiles = self.level.tiles
+        w, h = self.level.w, self.level.h
+        bw = max(1, (w + width - 1) // width)
+        bh = max(1, (h + height - 1) // height)
+        grid = [[" " for _ in range(width)] for _ in range(height)]
+        meta: dict[tuple[int, int], str] = {}
+        region_of = getattr(self, "_region_of", {})
+        frictions = getattr(self, "_frictions", {})
+        tint = getattr(self, "_tint", {})
+        landmarks = getattr(self, "_landmarks", {})
+        know = self.system("knowledge")
+        mapped_regions = know.region_known_for if know else (lambda rid: True)
+
+        for cy in range(height):
+            for cx in range(width):
+                x0, y0 = cx * bw, cy * bh
+                x1, y1 = min(x0 + bw, w), min(y0 + bh, h)
+                counts: dict[str, int] = {}
+                roads, walls, voids = 0, 0, 0
+                for wy in range(y0, y1):
+                    for wx in range(x0, x1):
+                        ch = tiles[wy][wx] if 0 <= wy < h and 0 <= wx < w else "#"
+                        if ch == "░":
+                            roads += 1
+                        elif ch == "#":
+                            walls += 1
+                        rid = region_of.get((wx, wy), "")
+                        if rid:
+                            counts[rid] = counts.get(rid, 0) + 1
+                total = max(1, (x1 - x0) * (y1 - y0))
+                if walls > total * 0.6:
+                    grid[cy][cx] = "#"
+                elif roads > total * 0.2 and roads >= walls:
+                    grid[cy][cx] = "░"
+                    rid = max(counts.items(), key=lambda kv: kv[1])[0] if counts else ""
+                elif counts:
+                    rid, _cnt = max(counts.items(), key=lambda kv: kv[1])
+                    grid[cy][cx] = "·"
+                    if rid:
+                        r = self._region_by_id(rid)
+                        if r:
+                            meta[(cx, cy)] = r.get("name", rid)
+                        if know and not mapped_regions(rid):
+                            grid[cy][cx] = "?"
+                else:
+                    grid[cy][cx] = " "
+
+        # overlay landmarks at scaled positions
+        for (lx, ly), kind in landmarks.items():
+            ocx, ocy = lx // bw, ly // bh
+            if 0 <= ocx < width and 0 <= ocy < height:
+                glyph = {"heart": "◆", "town": ">", "wild": "*"}.get(kind, "*")
+                if grid[ocy][ocx] not in ("·", "?", " "):
+                    grid[ocy][ocx] = glyph
+
+        # player marker
+        px, py = self.player.x, self.player.y
+        pcx, pcy = px // bw, py // bh
+        if 0 <= pcx < width and 0 <= pcy < height:
+            grid[pcy][pcx] = "@"
+
+        return grid, meta
+
+    def _region_by_id(self, target):
+        for r in self.m.get("regions", []):
+            if r.get("id") == target:
+                return r
+        return None
 
 
 def load_manifest(path: str) -> dict:

@@ -1,4 +1,4 @@
-"""A CDDA-inspired senses layer — perception, not omniscience.
+"""A tactical senses layer — perception, not omniscience.
 
 Two layers, per your design:
 

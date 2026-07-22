@@ -18,7 +18,7 @@ Deterministic (seeded rng, no wall-clock); prints OK and exits 0.
 """
 from runtime.game import Game, load_manifest
 from runtime.reactions import ReactionSystem
-from runtime.weather import WeatherSystem, _WEATHER, WEATHER_PROPS, _CADENCE
+from runtime.weather import WeatherSystem, _WEATHER, _WEATHER_ICON, WEATHER_PROPS, _CADENCE
 
 
 def _triples(props):
@@ -65,7 +65,8 @@ def main():
     assert word, "current(game) returned an empty weather word"
     assert word == _WEATHER.get(element, "still air"), (
         f"weather {word!r} does not match element {element!r}")
-    assert weather.status_line(g) == f"Weather: {word}", weather.status_line(g)
+    icon = _WEATHER_ICON.get(word, ".")
+    assert weather.status_line(g) == f"Weather: {icon} {word}", weather.status_line(g)
 
     # --- cross the cadence and look for a substrate change attributable to weather ---
     before = _triples(reactions.props)

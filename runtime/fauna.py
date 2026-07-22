@@ -246,3 +246,22 @@ class FaunaSystem(System):
     def status_line(self, game):
         n = self._count(game)
         return "Wild: %d" % n if n else None
+
+    def on_interact(self, game) -> bool:
+        px, py = game.player.x, game.player.y
+        targets = [a for a in game.actors
+                   if a.allegiance == "wild" and getattr(a, "source", "").startswith("fauna:grazer")
+                   and max(abs(a.x - px), abs(a.y - py)) <= 1]
+        if not targets:
+            return False
+        salv = game.system("salvage")
+        if salv is None or salv.inventory(game).total() < 1:
+            game.log("You have no matter to offer.")
+            return False
+        salv.inventory(game).pay({"growth": 1})
+        target = targets[0]
+        target.allegiance = "companion"
+        target._home = None
+        target.brain = None
+        game.log(f"{target.name} eats from your hand and falls in step beside you.")
+        return True

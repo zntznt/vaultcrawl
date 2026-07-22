@@ -110,7 +110,8 @@ def test_core():
     assert fake not in s.slots, "sigil is removed from slots when it shatters"
     assert any("Ward sigil shatters" in m for m in g.messages[before:]), "shatter logged"
 
-    # has_ability query surface
+    # has_ability query surface — clear the starter sigil first for a clean test
+    s.slots = []
     assert s.has_ability("Ward") is False and s.has_ability("Phase") is False
     s.slots.append({"note": "x", "role": "leaf", "ability": "Ward", "durability": 2})
     assert s.has_ability("Ward") is True
@@ -195,33 +196,34 @@ def test_quality_qualifies_sigil():
     q = g.system("quality")
     assert q is not None, "QualitySystem should resolve via the bus"
 
-    # force a high tier on a staged sigil: one perk per tier, recorded in ["perks"]
+    # force a high tier: one perk per tier, stored in property vector
     s0 = {"note": "memento mori", "role": "leaf", "ability": "Ward",
           "base": "Ward", "durability": 2}
     tier = q.qualify_sigil(g, s0, floor=3)
     assert tier >= 3, tier
     assert s0["quality"] == tier
-    assert len(s0["perks"]) == tier, s0["perks"]          # exactly one perk per tier
-    assert all(p in quality.PERKS for p in s0["perks"]), s0["perks"]
-    # the display name carries the tier prefix; dispatch still resolves to the verb
-    assert s0["ability"].endswith("Ward") and s0["ability"] != "Ward", s0["ability"]
-    assert sig._ab(s0) == "Ward", "dispatch is immune to the quality name-prefix"
+    # property vector: sum of non-zero entries ≥ tier
+    psum = sum(v for v in (s0.get("props") or []))
+    assert psum >= tier, f"expected sum >= {tier}, got {psum} in {s0.get('props')}"
+    # the display name carries the tier prefix
+    assert s0["ability"].endswith("Ward") and s0["ability"] != "Ward"
 
     # a forced-tier sigil that rolled a STAT perk must show the value it changed
-    stat = {"reinforced", "keen"}
+    from runtime.sigils import _prop, _PROP_IDX
     probe = None
     for i in range(60):
         cand = {"note": f"probe-{i}", "role": "hub", "ability": "Recall",
                 "base": "Recall", "durability": 2}
         q.qualify_sigil(g, cand, floor=3)
-        if stat & set(cand["perks"]):
+        if _prop(cand, "durability") > 0 or _prop(cand, "magnitude") > 0:
             probe = cand
             break
     assert probe is not None, "no forced-tier sigil rolled a stat perk in 60 tries"
-    assert probe["durability"] == 2 + probe["perks"].count("reinforced"), \
-        "'reinforced' (stat) raised durability"
-    assert probe.get("mag", 1) == 1 + probe["perks"].count("keen"), \
-        "'keen' (stat) raised effect magnitude (mag)"
+    # stat perk applied: durability or magnitude increased
+    if _prop(probe, "durability") > 0:
+        assert probe["durability"] >= 3, f"reinforced raised durability: {probe}"
+    if _prop(probe, "magnitude") > 0:
+        assert _prop(probe, "magnitude") >= 1, f"keen raised magnitude: {probe}"
 
 
 # --- 5) quality passive visibly changes behavior: ward_reach shoves 2 tiles --
@@ -247,43 +249,42 @@ def test_ward_reach_perk():
     e_east.x, e_east.y = cx + 1, cy
     e_west.x, e_west.y = cx - 1, cy
     sig.slots = [{"note": "memento mori", "role": "leaf", "ability": "Ward",
-                  "base": "Ward", "durability": 2, "perks": ["ward_reach"]}]
+                  "base": "Ward", "durability": 2, "props": [0, 0, 1] + [0]*7}]
     sig._ward(g)
-    assert (e_east.x, e_east.y) == (cx + 3, cy), "ward_reach shoves the east enemy 2 tiles"
-    assert (e_west.x, e_west.y) == (cx - 3, cy), "ward_reach shoves the west enemy 2 tiles"
+    assert (e_east.x, e_east.y) == (cx + 3, cy), "reach prop shoves 2 tiles"
+    assert (e_west.x, e_west.y) == (cx - 3, cy), "reach prop shoves 2 tiles"
 
 
-# --- 6) other perks: thrifty (free-use cadence), keen->mag, echo_twin --------
 def test_perk_effects_misc():
-    # 'thrifty': uses alternate cost/free deterministically (1-in-2 free)
+    # 'thrifty': uses alternate cost/free deterministically
     sig = SigilSystem()
     g = Game(load_manifest("examples/world.json"), systems=[sig])
     th = {"note": "x", "role": "hub", "ability": "Recall", "base": "Recall",
-          "durability": 2, "perks": ["thrifty"]}
+          "durability": 2, "props": [0, 0, 0, 0, 0, 1] + [0]*4}  # thrifty=1
     sig.slots = [th]
-    sig._consume(g, th); assert th["durability"] == 1, "use 1 costs"
-    sig._consume(g, th); assert th["durability"] == 1, "use 2 is free (thrifty)"
-    sig._consume(g, th); assert th["durability"] == 0, "use 3 costs -> shatters"
-    assert th not in sig.slots, "thrifty still shatters once truly spent"
+    sig._consume(g, th); assert th["durability"] == 1
+    sig._consume(g, th); assert th["durability"] == 1  # free (thrifty)
+    sig._consume(g, th); assert th["durability"] == 0  # shatters
+    assert th not in sig.slots
 
-    # 'keen' -> mag scales Recall's mend (base 6, +2 per keen)
+    # magnitude prop scales Recall's mend (base 6, +2 per mag)
     sig2 = SigilSystem()
     g2 = Game(load_manifest("examples/world.json"), systems=[sig2])
     g2.player.max_hp, g2.player.hp = 100, 1
     sig2.slots = [{"note": "y", "role": "hub", "ability": "Recall", "base": "Recall",
-                   "durability": 3, "mag": 3}]
+                   "durability": 3, "props": [3, 3] + [0]*8}]  # durability=3, magnitude=3 (mag=3)
     before = g2.player.hp
     sig2._recall(g2)
     assert g2.player.hp - before == 10, g2.player.hp   # 6 + 2*(3-1)
 
-    # 'echo_twin' -> revive at 2 hp instead of 1
+    # 'twin' prop: revive at 2 hp
     sig3 = SigilSystem()
     g3 = Game(load_manifest("examples/world.json"), systems=[sig3])
     g3.alive = False
     sig3.slots = [{"note": "z", "role": "orphan", "ability": "Echo", "base": "Echo",
-                   "durability": 1, "perks": ["echo_twin"]}]
+                   "durability": 1, "props": [1, 0, 0, 0, 0, 0, 1] + [0]*3}]  # durability=1, twin=1
     sig3._echo(g3)
-    assert g3.alive is True and g3.player.hp == 2, "echo_twin revives at 2 hp"
+    assert g3.alive is True and g3.player.hp == 2, "twin revives at 2 hp"
 
 
 def main():

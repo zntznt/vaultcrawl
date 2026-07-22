@@ -1,6 +1,6 @@
-"""Caches — each place is a distinct opportunity (the CDDA layer).
+"""Caches — each place is a distinct opportunity.
 
-CDDA's places work because they advertise a proposition: contents, uses, perils,
+A place should advertise a proposition: contents, uses, perils,
 all legible before you commit. Here, a note-room may hold a cache (□):
 
   CONTENTS  its matter is the PLACE'S own — the signature material comes from the
