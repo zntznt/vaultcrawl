@@ -5,7 +5,7 @@ from collections import deque
 
 from runtime.sense import (
     Brain, register_brain,
-    step_toward, step_toward_safe, step_away, attack_dir, is_dangerous,
+    step_toward, step_toward_safe, step_toward_avoiding_elites, step_away, attack_dir, is_dangerous,
     lure_step, hostiles, adjacent, points_of_interest,
 )
 from runtime.agent_action import AgentAction
@@ -74,7 +74,7 @@ class CartographerBrain(Brain):
                 return AgentAction("descend")
             st = _stairs(game)
             if st:
-                step = step_toward_safe(game, actor, st[0], st[1])
+                step = step_toward_avoiding_elites(game, actor, st[0], st[1])
                 return AgentAction("move", dx=step[0], dy=step[1])
 
         # ---- FACTION DE-ESCALATION: once 4+ kills, beeline stairs ----
@@ -90,7 +90,7 @@ class CartographerBrain(Brain):
                     return AgentAction("move", dx=away[0], dy=away[1])
             st = _stairs(game)
             if st:
-                step = step_toward_safe(game, actor, st[0], st[1])
+                step = step_toward_avoiding_elites(game, actor, st[0], st[1])
                 return AgentAction("move", dx=step[0], dy=step[1])
 
         # ---- UNIVERSAL PRIORITY 2: Fight or flight when adjacent ----
@@ -116,7 +116,7 @@ class CartographerBrain(Brain):
                     return AgentAction("move", dx=away[0], dy=away[1])
             st = _stairs(game)
             if st:
-                step = step_toward_safe(game, actor, st[0], st[1])
+                step = step_toward_avoiding_elites(game, actor, st[0], st[1])
                 return AgentAction("move", dx=step[0], dy=step[1])
 
         # ---- UNIVERSAL PRIORITY 3: Rest only when effective ----
@@ -170,7 +170,7 @@ class CartographerBrain(Brain):
             return AgentAction("descend")
         st = _stairs(game)
         if st is not None:
-            step = step_toward_safe(game, actor, st[0], st[1])
+            step = step_toward_avoiding_elites(game, actor, st[0], st[1])
             if step != WAIT:
                 return AgentAction("move", dx=step[0], dy=step[1])
 

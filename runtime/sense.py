@@ -175,6 +175,49 @@ def step_toward_safe(game, actor, tx, ty):
     return s or (0, 0)
 
 
+def step_toward_avoiding_elites(game, actor, tx, ty):
+    """Like step_toward_safe but also routes around elites with non-fight encounter
+    options available. The agent sees the elite and takes the long way."""
+    # Start with standard safe path
+    s = step_toward_safe(game, actor, tx, ty)
+    if s is None or s == (0, 0):
+        return (0, 0)
+    nx, ny = actor.x + s[0], actor.y + s[1]
+    # Check if we're walking toward an elite with non-fight options
+    for a in game.actors:
+        tier = getattr(a, "tier", 1)
+        if tier < 3 or a is actor or getattr(a, "hp", 0) <= 0:
+            continue
+        apos = (a.x, a.y)
+        d_to_actor = max(abs(nx - a.x), abs(ny - a.y))
+        if d_to_actor > 2:
+            continue
+        # Check if this elite offers non-fight options
+        if _has_non_fight_options(game, actor, a):
+            # Route around: add elite's position to danger set
+            avoid = danger_tiles(game) | {apos}
+            alt = bfs_step(game, actor, (tx, ty), avoid)
+            if alt is not None:
+                return alt
+    return s
+
+
+def _has_non_fight_options(game, actor, target) -> bool:
+    """Check if the agent has any non-fight encounter option for this elite."""
+    fcs = game.system("factions")
+    faction = getattr(target, "faction", "")
+    standing = getattr(fcs, "standing", {}).get(faction, 0) if fcs else 0
+    know = game.system("knowledge")
+    source_known = know.is_known(getattr(target, "source", "")) if know else False
+    salv = game.system("salvage")
+    matter = salv.inventory(game).total() if salv else 0
+    # Whisper always has parley
+    if getattr(getattr(game, "player", None), "_agent_name", "") == "whisper":
+        return True
+    # Any non-fight gate accessible?
+    return standing >= 1 or source_known or matter >= 1
+
+
 def greedy_dir(fx, fy, tx, ty):
     """Old-style single step: larger axis first (no pathfinding)."""
     sx = (tx > fx) - (tx < fx)
