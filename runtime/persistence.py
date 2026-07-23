@@ -178,21 +178,13 @@ class RunChronicle:
                 },
             })
 
-        # Healing terraforming events (Milestone C)
+        # Healing terraforming events (Milestone C) — lateral only
         if self.rest_count >= 50:
             events.append({"kind": "town_expanded", "count": self.rest_count})
-        if self.corpse_repair_count >= 20:
-            events.append({"kind": "marrow_rich", "count": self.corpse_repair_count})
-        if self.recall_cast_count >= 15:
-            events.append({"kind": "recall_sanctified", "count": self.recall_cast_count})
         if self.sacred_ground_ticks >= 40:
             events.append({"kind": "hallowed_bloom", "count": self.sacred_ground_ticks})
         if self.flora_harvest_count >= 30:
             events.append({"kind": "grove_established", "count": self.flora_harvest_count})
-        if self.sacrifice_shrine_count >= 5:
-            events.append({"kind": "covenant_sealed", "count": self.sacrifice_shrine_count})
-        if self.shield_count >= 50:
-            events.append({"kind": "bastion_genesis", "count": self.shield_count})
         if self.faction_sanctuaries >= 3:
             events.append({"kind": "coalition_formed", "count": self.faction_sanctuaries})
 

@@ -153,31 +153,9 @@ def tracker() -> AttractorTracker:
 class Dampener:
     @staticmethod
     def compute_mods(scores: dict) -> dict:
-        """Given attractor scores (0.0-1.0), return parameter mods for next run.
-        Extended with terraforming-specific dampening (Milestone C)."""
-        mods = {}
-
-        # Existing dampening (Milestone 1)
-        if scores.get("industrial", 0) > 0.7:
-            mods["forge_cost_penalty"] = min(3, int((scores["industrial"] - 0.5) * 6))
-        if scores.get("echo_cascade", 0) > 0.5:
-            mods["echo_durability_penalty"] = max(0, int((scores["echo_cascade"] - 0.25) * 4))
-        if scores.get("pacifist", 0) > 0.7:
-            mods["standing_decay_accel"] = min(3, int((scores["pacifist"] - 0.5) * 4))
-        if scores.get("standing_range", 0) > 0.8:
-            mods["standing_dampen"] = int(scores["standing_range"] * 2)
-
-        # Terraforming-specific dampening (Milestone C)
-        if scores.get("industrial", 0) >= 0.9:
-            mods["forge_quality_penalty"] = 1
-        if scores.get("haunted", 0) >= 0.7:
-            mods["ghost_chance_penalty"] = max(0, int(scores["haunted"] * 3))
-        if scores.get("companion_flux", 0) >= 0.8:
-            mods["companion_penalty_increase"] = 2
-
-        mods["_total_mods"] = len(mods)
-
-        return mods
+        """Attractor tracking only — no automated parameter modification.
+        Terraforming must be lateral (different content, same difficulty)."""
+        return {"_total_mods": 0, "_tracked_scores": scores}
 
     @staticmethod
     def compute_terraforming_velocity(prev_scores: dict, curr_scores: dict) -> float:

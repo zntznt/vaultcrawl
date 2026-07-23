@@ -1262,6 +1262,47 @@ class Game:
             self.actors.append(make_echo(note, *self.spot_for(note, free)))
             self.log(f"† The ruins of '{_title(note)}' stir here.")
 
+        # Early-floor safety: no elite blocks the path to stairs
+        if self.floor <= 3:
+            stairs = getattr(self.level, 'stairs', None)
+            if stairs:
+                from collections import deque
+                start = (self.player.x, self.player.y)
+                prev = {start: None}
+                q = deque([start])
+                found = False
+                while q:
+                    cur = q.popleft()
+                    if cur == stairs:
+                        found = True
+                        break
+                    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        nxt = (cur[0] + dx, cur[1] + dy)
+                        if nxt not in prev and self.level.walkable(*nxt):
+                            prev[nxt] = cur
+                            q.append(nxt)
+                if found:
+                    path = set()
+                    cur = stairs
+                    while cur != start:
+                        path.add(cur)
+                        cur = prev.get(cur)
+                        if cur is None:
+                            break
+                    for a in list(self.actors):
+                        tier = getattr(a, 'tier', 1)
+                        if tier >= 3 and (a.x, a.y) in path and not getattr(a, 'is_player', False):
+                            non_elites = [o for o in self.actors
+                                          if getattr(o, 'tier', 1) < 3
+                                          and not getattr(o, 'is_player', False)]
+                            if non_elites:
+                                furthest = max(non_elites,
+                                               key=lambda o: abs(o.x - stairs[0]) + abs(o.y - stairs[1]))
+                                ax, ay = a.x, a.y
+                                a.x, a.y = furthest.x, furthest.y
+                                furthest.x, furthest.y = ax, ay
+                                break
+
         self.log(f"-- Floor {self.floor}: {self.region_name} --")
         start_room = self.room_at(px, py)
         if start_room is not None:
@@ -1502,7 +1543,7 @@ class Game:
             if a is self.player or a.hp <= 0:
                 continue
             d = max(abs(a.x - self.player.x), abs(a.y - self.player.y))
-            if d <= 3 and (getattr(a, "is_boss", False) or getattr(a, "tier", 1) >= 3):
+            if d <= 6 and (getattr(a, "is_boss", False) or getattr(a, "tier", 1) >= 3):
                 nearby.append((d, a))
         if not nearby:
             return None
@@ -1525,15 +1566,16 @@ class Game:
 
         options = []
 
-        if standing >= 2:
+        if standing >= 1:
             options.append("coerce")
-        if source_known:
+        # Whisper always gets parley — personality, not a resource gate
+        if source_known or getattr(self.player, "_agent_name", "") == "whisper":
             options.append("parley")
-        if matter >= 2:
+        if matter >= 1:
             options.append("flee")
         if truths >= 1:
             options.append("appease")
-        if hp_pct >= 40:
+        if hp_pct >= 30:
             options.append("fight")
 
         # Mercy: desperate agents always get a way out

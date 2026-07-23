@@ -144,38 +144,50 @@ class WhisperBrain(Brain):
             game.system("effects").wear("small")
             return AgentAction("wait")
 
-        # 3) Negotiate with non-boss adjacent hostiles
+        # 3) Parley with elite/boss within 6 tiles
+        if "parley" in s["encounter_options"]:
+            elite = None
+            elite_dist = 7
+            for h in s["hostiles"]:
+                if h.get("tier", 0) >= 3 or h.get("is_boss"):
+                    if h["dist"] < elite_dist:
+                        elite = h
+                        elite_dist = h["dist"]
+            if elite is not None:
+                return AgentAction("negotiate", target=elite["name"])
+
+        # 4) Negotiate with non-boss adjacent hostiles
         for h in s["adjacent_hostiles"]:
             if not h["is_boss"]:
                 return AgentAction("negotiate", target=h["name"])
 
-        # 4) Becalm if can and adjacent hostile has known source
+        # 5) Becalm if can and adjacent hostile has known source
         if s["can_becalm"] and s["adjacent_hostiles"] and s["knowledge"]["learned_notes"] > 0:
             for h in s["adjacent_hostiles"]:
                 if h.get("source"):
                     return AgentAction("becalm")
 
-        # 5) Cast Phase if near hostiles
+        # 6) Cast Phase if near hostiles
         if s["near_hostiles"]:
             for i, sig in enumerate(s["sigils"]):
                 if sig.get("ability") == "Phase" or sig.get("base") == "Phase":
                     return AgentAction("cast", index=i)
 
-        # 6) Rest on town tiles
+        # 7) Rest on town tiles
         if s["position"]["on_town"] and s["vitals"]["hp"] < s["vitals"]["max_hp"]:
             return AgentAction("rest")
 
-        # 7) Interact with landmarks
+        # 8) Interact with landmarks
         if game.commune_landmark() is not None:
             return AgentAction("interact")
 
-        # 8) Cast Recall
+        # 9) Cast Recall
         if s["can_heal_meaningfully"] and hp_pct < 70:
             for i, sig in enumerate(s["sigils"]):
                 if sig.get("ability") == "Recall" or sig.get("base") == "Recall":
                     return AgentAction("cast", index=i)
 
-        # 9) Descend or walk to stairs
+        # 10) Descend or walk to stairs
         if s["position"]["on_stairs"]:
             return AgentAction("descend")
         st = _stairs(game)
@@ -184,13 +196,13 @@ class WhisperBrain(Brain):
             if step != WAIT:
                 return AgentAction("move", dx=step[0], dy=step[1])
 
-        # 10) Explore safe unseen tiles
+        # 11) Explore safe unseen tiles
         unseen = _nearest_safe_unseen(game, actor, s["position"]["floor"], 10)
         if unseen is not None:
             step = step_toward_safe(game, actor, unseen[0], unseen[1])
             return AgentAction("move", dx=step[0], dy=step[1])
 
-        # 11) Collect safe POIs
+        # 12) Collect safe POIs
         safe_pois = []
         for p in s["pois"]:
             try:
@@ -206,7 +218,7 @@ class WhisperBrain(Brain):
                 if step != WAIT:
                     return AgentAction("move", dx=step[0], dy=step[1])
 
-        # 12) Wait
+        # 13) Wait
         return AgentAction("wait")
 
 

@@ -404,7 +404,7 @@ def agent_state(game, actor) -> dict:
         if tier < 3 and not is_boss:
             continue
         d = max(abs(px - a.x), abs(py - a.y))
-        if d > 3:
+        if d > 6:
             continue
         if d < best_dist:
             best_dist = d
@@ -419,7 +419,7 @@ def agent_state(game, actor) -> dict:
                 encounter_options.append("coerce")
 
         if know_sys and source:
-            if know_sys.is_known(source):
+            if know_sys.is_known(source) or getattr(p, "_agent_name", "") == "whisper":
                 encounter_options.append("parley")
 
         if matter_total >= 2:
