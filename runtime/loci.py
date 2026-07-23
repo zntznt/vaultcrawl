@@ -114,25 +114,33 @@ class LocusSystem(System):
 
         if top_action == "forge":
             self._activate_forge(game, lx, ly, locus)
+            locus_type = "forge"
         elif top_action == "parley":
             self._activate_parley(game, lx, ly, locus)
+            locus_type = "parley"
         elif top_action == "explore":
             self._activate_explore(game, lx, ly, locus)
+            locus_type = "explore"
         elif top_action == "fight":
             self._activate_fight(game, lx, ly, locus)
+            locus_type = "fight"
         elif top_action == "shield":
             self._activate_shield(game, lx, ly, locus)
+            locus_type = "shield"
         elif top_action == "commune":
             self._activate_commune(game, lx, ly, locus)
+            locus_type = "commune"
         elif top_action == "becalm":
             self._activate_becalm(game, lx, ly, locus)
+            locus_type = "becalm"
         elif top_action == "recall":
-            self._activate_becalm(game, lx, ly, locus)  # heal-like
+            self._activate_becalm(game, lx, ly, locus)
+            locus_type = "becalm"
         else:
-            # For balanced/seeker — pick one at random from available
             from random import Random
             rng = Random(hash(f"{game.seed}:{game.turn}:locus") % (2**31))
             choice = rng.choice(["forge", "parley", "explore", "shield"])
+            locus_type = choice
             if choice == "forge":
                 self._activate_forge(game, lx, ly, locus)
             elif choice == "parley":
@@ -141,6 +149,13 @@ class LocusSystem(System):
                 self._activate_explore(game, lx, ly, locus)
             else:
                 self._activate_shield(game, lx, ly, locus)
+
+        # Metrics: record locus activation type
+        try:
+            from runtime.metrics import metrics
+            metrics().record_locus(locus_type)
+        except Exception:
+            pass
 
     def _activate_forge(self, game, lx, ly, locus):
         locus["type"] = "forge"

@@ -43,6 +43,13 @@ def _adjacent_monster_matching(game, target: str):
 
 def dispatch(game, action: AgentAction) -> bool:
     try:
+        # Metrics: record every verb usage
+        try:
+            from runtime.metrics import metrics
+            metrics().record_verb(action.kind)
+            metrics().turns_survived += 1
+        except Exception:
+            pass
         kind = action.kind
         # -- move ---------------------------------------------------------------
         if kind == "move":

@@ -1606,35 +1606,65 @@ class Game:
         return None
 
     def commune(self):
-        """Resolve the deepest thought without violence. Standing before the final
-        boss you may integrate it: by speaking enough read truths (marginalia +
-        lore), or by an offering of salvaged matter. Fighting it remains the old
-        way. Returns True on communion, False on refusal, None when the final
-        boss is not beside you (so a front-end can fall through to plain talk)."""
+        """Commune with a creature. Final boss: win. Any elite: lower guard, gain standing."""
         p = self.player
-        boss = next((a for a in self.actors if a.is_boss
-                     and a.source == self.final_boss_source), None)
-        if boss is None or max(abs(boss.x - p.x), abs(boss.y - p.y)) > 1:
-            return None
         truths = sum(getattr(self.system(n), "read", 0)
                      for n in ("marginalia", "history") if self.system(n))
         salv = self.system("salvage")
         bag = salv.inventory(self) if salv is not None else None
-        if truths >= COMMUNE_TRUTHS:
-            self.log(f"You speak what the vault has written; {boss.name} listens.")
-        elif bag is not None and bag.total() >= COMMUNE_COST:
-            cost = _spend_matter(bag, COMMUNE_COST)
-            offered = " ".join(f"{m}x{q}" for m, q in sorted(cost.items()))
-            self.log(f"You lay down your offering ({offered}); {boss.name} accepts.")
-        else:
-            self.log(f"{boss.name} does not know you yet. Read {COMMUNE_TRUTHS} of "
-                     f"the vault's truths, or gather {COMMUNE_COST} matter to offer.")
+
+        # Final boss commune: win condition
+        boss = next((a for a in self.actors if a.is_boss
+                      and a.source == self.final_boss_source), None)
+        if boss and max(abs(boss.x - p.x), abs(boss.y - p.y)) <= 1:
+            if truths >= COMMUNE_TRUTHS or (bag and bag.total() >= COMMUNE_COST):
+                if bag and bag.total() >= COMMUNE_COST:
+                    _spend_matter(bag, COMMUNE_COST)
+                self.actors.remove(boss)
+                self.won = True
+                self.log("You commune with the deepest thought in the vault. You win.")
+                return True
+            self.log(f"{boss.name} does not know you yet.")
             return False
-        self.actors.remove(boss)
-        self.won = True
-        self.emit("communed", boss=boss, pos=(boss.x, boss.y))
-        self.log("You integrate the deepest thought in the vault. "
-                 "You surface changed. You win.")
+
+        # Elite commune: any adjacent tier-3+ or boss creature
+        elite = next((a for a in self.actors
+                       if a is not p and a.hp > 0 and a.allegiance == "monster"
+                       and (getattr(a, "is_boss", False) or getattr(a, "tier", 1) >= 3)
+                       and max(abs(a.x - p.x), abs(a.y - p.y)) <= 1), None)
+        if elite is None:
+            return None
+
+        if truths < COMMUNE_TRUTHS and (bag is None or bag.total() < COMMUNE_COST):
+            return False
+
+        # Pay cost: spend 2 truths (from marginalia first, then history)
+        spent = 0
+        for sys_name in ("marginalia", "history"):
+            ms = self.system(sys_name)
+            while ms and getattr(ms, "read", 0) > 0 and spent < COMMUNE_TRUTHS:
+                ms.read -= 1
+                spent += 1
+        if spent < COMMUNE_TRUTHS and bag and bag.total() >= COMMUNE_COST:
+            _spend_matter(bag, COMMUNE_COST)
+
+        elite.allegiance = "wild"
+        elite.brain = None
+        self._join_wild(elite)
+        fcs = self.system("factions")
+        if fcs and getattr(elite, "faction", ""):
+            try:
+                fcs.standing[elite.faction] = fcs.standing.get(elite.faction, 0) + 2
+            except Exception: pass
+        know = self.system("knowledge")
+        if know and getattr(elite, "source", ""):
+            try:
+                know._reveal(self, elite.source)
+            except Exception: pass
+        from runtime.body_parts import heal_body
+        heal_body(self.player, 5)
+        self.log(f"You commune with {elite.name}. It lowers its guard. +5 HP.")
+        return True
         return True
 
     def becalm(self, target) -> bool:
