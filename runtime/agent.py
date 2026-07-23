@@ -212,14 +212,18 @@ class UniversalBrain(Brain):
             if score > 0:
                 candidates.append(("shield", score, AgentAction("shield")))
 
-        # ---- CONSUMABLE ----
+        # ---- CONSUMABLE (score higher when forge slots full) ----
         known = getattr(game.player, "_known_recipes", set())
         reachable = bool(known and s["matter"]["total"] >= 1 and len(s.get("adjacent_hostiles", [])) == 0)
         if reachable:
             from runtime.wear import RECIPE_COSTS
             affordable = [r for r in known if RECIPE_COSTS.get(r, 99) <= s["matter"]["total"]]
             if affordable:
-                score = _score(self.profile, "forge", 3, bonus, True)  # forge affinity
+                # Score higher when slots are full — agent has matter but can't forge
+                state_bonus = 3
+                if s["nav"]["free_sigil_slots"] == 0:
+                    state_bonus = 12  # matter has no other use, craft something
+                score = _score(self.profile, "forge", state_bonus, bonus, True)
                 candidates.append(("consumable", score, ("consumable", affordable[0])))
 
         # ---- FLEE ----

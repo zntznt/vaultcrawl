@@ -243,4 +243,4 @@ class ForgeSystem(System):
     @staticmethod
     def _proficiency_required(role: str) -> int:
         """How many notes of this role must be known to forge its sigil."""
-        return {"hub": 1, "bridge": 1, "cluster": 1, "leaf": 0, "orphan": 0}.get(role, 1)
+        return {"hub": 1, "bridge": 0, "cluster": 1, "leaf": 0, "orphan": 0}.get(role, 1)
