@@ -257,8 +257,10 @@ class UniversalBrain(Brain):
             ws = s.get(ws_field)
             if ws and len(ws) >= 3 and ws[2] is not None:
                 dist = ws[2]
-                if dist <= 12 and len(s.get("adjacent_hostiles", [])) == 0:
-                    score = self.profile.get(ws_key, 3) + turn_bonus + max(0, 12 - dist)
+                # Only path to workspaces when very close and area is safe
+                max_dist = 6  # conservative — don't cross floors for crafting
+                if dist <= max_dist and len(s.get("adjacent_hostiles", [])) == 0 and len(s.get("near_hostiles", [])) == 0:
+                    score = self.profile.get(ws_key, 3) + max(0, max_dist - dist)
                     candidates.append((ws_key, score, ("workspace", ws[0], ws[1])))
 
         # ---- REST: heal when safe ----
