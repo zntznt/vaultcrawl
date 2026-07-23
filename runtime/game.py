@@ -1214,6 +1214,9 @@ class Game:
         # An enemy's note-derived tier sets its *identity*; the floor caps its *power*,
         # so early floors stay gentle even when a region's anchor note is highly central.
         cap = 1 + self.floor // 3
+        # Early floors: limit quality so agents can build their economy
+        if self.floor <= 3:
+            n = max(1, n // 2)  # fewer enemies on tutorial floors
         for _ in range(n):
             if not free:
                 break
@@ -1221,6 +1224,13 @@ class Game:
             spec = {**spec, "tier": max(1, min(spec["tier"], cap))}
             en = make_enemy(spec, *self.spot_for(spec["sourceNoteId"], free))
             en.faction = self._region_faction.get(spec.get("regionId", ""), "")
+            # Early floors: cap quality so agents survive long enough to build economy
+            if self.floor <= 3:
+                q = getattr(en, 'quality', 0)
+                if q > self.floor:  # floor 1: max Normal(0), floor 2: max Uncommon(1), floor 3: max Rare(2)
+                    en.quality = self.floor
+                    if hasattr(en, 'hp'):
+                        en.hp = en.max_hp = min(en.hp, en.max_hp)
             src = spec["sourceNoteId"]
             if src in self.up.ascended:        # your note grew -> the monster grew
                 empower(en)

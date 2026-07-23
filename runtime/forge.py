@@ -192,6 +192,9 @@ class ForgeSystem(System):
 
         slots.append(sigil)
         game.emit("forge_used", ability=ability, tier=tier)
+        # The forge-fire mends the crafter — every successful forge heals
+        from runtime.body_parts import heal_body
+        heal_body(game.player, 3)
         ptracker().exercise(ability)
         return True
 

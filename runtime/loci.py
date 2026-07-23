@@ -126,6 +126,8 @@ class LocusSystem(System):
         if salv:
             salv.inventory(game).add({"essence": 2}, quality=2)
             game.log("The locus dissolves into forge matter.")
+        heal_body(game.player, 5)
+        game.log("The forge-fire mends you (+5 HP).")
         self._consume(game, locus)
 
     def _activate_parley(self, game, lx, ly, locus):
@@ -151,6 +153,8 @@ class LocusSystem(System):
                 rng = Random(hash(f"{game.seed}:{game.turn}:reveal") % (2**31))
                 know._reveal(game, rng.choice(unrevealed))
                 game.log("The locus murmurs a secret — a note reveals itself.")
+        heal_body(game.player, 5)
+        game.log("The parley restores your spirit (+5 HP).")
         self._consume(game, locus)
 
     def _activate_explore(self, game, lx, ly, locus):
@@ -167,6 +171,8 @@ class LocusSystem(System):
                         floor_seen.add((x, y))
             seen[game.floor] = floor_seen
             game.log("The locus illuminates — the map unfolds in your mind.")
+        heal_body(game.player, 3)
+        game.log("Knowledge strengthens you (+3 HP).")
         self._consume(game, locus)
 
     def _activate_fight(self, game, lx, ly, locus):
@@ -192,6 +198,8 @@ class LocusSystem(System):
         locus["glyph"] = "D"
         game.player.defense = min(5, getattr(game.player, "defense", 0) + 1)
         game.log(f"The locus hardens around you. +1 DEF (now {game.player.defense}).")
+        heal_body(game.player, 3)
+        game.log("The bastion shields your wounds (+3 HP).")
         self._consume(game, locus)
 
     def _activate_commune(self, game, lx, ly, locus):
@@ -203,6 +211,8 @@ class LocusSystem(System):
             if marg:
                 marg.read = getattr(marg, 'read', 0) + 1
                 game.log("The locus opens — a truth settles into your mind. +1 truth.")
+        heal_body(game.player, 10)
+        game.log("The truth floods through you (+10 HP).")
         self._consume(game, locus)
 
     def _activate_becalm(self, game, lx, ly, locus):
