@@ -20,8 +20,8 @@ ROOM_NOUN = {"hub": "Hall", "bridge": "Gallery", "orphan": "Sealed Alcove",
              "leaf": "Cell", "cluster": "Chamber"}
 
 # communion with the deepest thought: either path resolves the run without violence
-COMMUNE_TRUTHS = 3   # marginalia + lore fragments read
-COMMUNE_COST = 8     # total salvaged matter, any mix
+COMMUNE_TRUTHS = 2   # marginalia + lore fragments read
+COMMUNE_COST = 4     # total salvaged matter, any mix
 BECALM_COST = 2      # matter per tier to placate a lesser hostile
 LEASH = 3            # sandbox: a creature's territory (and pursuit range) around home
 FRIEND_STANDING = 4  # reputation at which a house stops fighting the one you control
@@ -1495,35 +1495,38 @@ class Game:
         return True
 
     def becalm(self, target) -> bool:
-        """Approach a hostile without violence. If you have DIRECTLY learned its
-        source note, understanding disarms it for free; otherwise an offering of
-        matter (BECALM_COST x tier) placates it. Either way it joins the wild:
-        indifferent to you, part of the ecology, and the factions hear nothing.
+        """Approach a hostile without violence. Success rate scales with faction
+        standing: allied houses always hear you, neutral ones may be swayed, and
+        hostile houses never stand down. Cost is BECALM_COST x tier matter.
         Bosses are commune()'s business."""
         if target.is_boss or target.allegiance != "monster":
             return False
-        know = self.system("knowledge")
-        if know is not None and target.source in getattr(know, "learned", set()):
+        fcs = self.system("factions")
+        faction = getattr(target, "faction", "")
+        standing = fcs.standing.get(faction, 0) if fcs else 0
+        if standing < 0:
+            self.log(f"{target.name} bristles; your houses are at war.")
+            return False
+        total = BECALM_COST * max(1, target.tier)
+        salv = self.system("salvage")
+        bag = salv.inventory(self) if salv is not None else None
+        if bag is None or bag.total() < total:
+            self.log(f"{target.name} is not moved. (Offer {total} matter.)")
+            return False
+        if standing >= 3:
             self.log(f"You speak its own thought back to it; {target.name} stills.")
-        else:
-            salv = self.system("salvage")
-            bag = salv.inventory(self) if salv is not None else None
-            faction_notes_known = 0
-            if know is not None and hasattr(know, 'learned'):
-                target_faction = getattr(target, 'faction', '')
-                if target_faction:
-                    for nid in know.learned:
-                        if know._note_faction(self, nid) == target_faction:
-                            faction_notes_known += 1
-            total = max(1, BECALM_COST * max(1, target.tier) - faction_notes_known)
-            if bag is None or bag.total() < total:
-                self.log(f"{target.name} is not moved. "
-                         f"(Know its note, or offer {total} matter.)")
+        elif standing >= 1:
+            if hash(f"{self.seed}:{self.turn}:becalm:{target.source}") % 100 >= 50:
+                self.log(f"{target.name} remains wary of you.")
                 return False
-            cost = _spend_matter(bag, total)
-            offered = " ".join(f"{m}x{q}" for m, q in sorted(cost.items()))
-            self.log(f"You share what you have gathered ({offered}); "
-                     f"{target.name} is placated.")
+        else:
+            if hash(f"{self.seed}:{self.turn}:becalm:{target.source}") % 100 >= 25:
+                self.log(f"{target.name} refuses your gesture.")
+                return False
+        cost = _spend_matter(bag, total)
+        offered = " ".join(f"{m}x{q}" for m, q in sorted(cost.items()))
+        self.log(f"You share what you have gathered ({offered}); "
+                 f"{target.name} is placated.")
         self._join_wild(target)
         self._tension = max(0, self._tension - 15)
         return True
@@ -1608,6 +1611,9 @@ class Game:
         elif choice == "parley":
             self.log(f"{target.name} regards you with recognition.")
             target.allegiance = "npc"
+            if getattr(target, 'is_boss', False) and target.source == self.final_boss_source:
+                self.won = True
+                self.log("The final boss lays down its arms. You have won through diplomacy.")
         elif choice == "flee":
             if salv and salv.inventory(self).total() >= 2:
                 self._spend_matter(salv.inventory(self), 2)
@@ -2213,6 +2219,9 @@ class Game:
         player/environment kills the factions care about."""
         if actor in self.actors:
             self.actors.remove(actor)
+        if getattr(actor, 'is_boss', False) and actor.source == self.final_boss_source and not self.won:
+            self.won = True
+            self.log("The deepest thought in the vault falls silent. You win.")
         if getattr(actor, 'is_player', False):
             try:
                 from runtime.persistence import chronicle
@@ -2555,6 +2564,10 @@ class Game:
                 chain = adj_enemies[hash(f"{self.seed}:{self.turn}:static") % len(adj_enemies)]
                 chain.hp -= 1
                 self.log(f"Static arcs from {dfn.name} to {chain.name}.")
+                if chain.hp <= 0 and getattr(chain, 'is_boss', False) and chain.source == self.final_boss_source:
+                    self.won = True
+                    self.kill(chain, "static discharge")
+                    self.log("The deepest thought in the vault falls silent. You win.")
         pname = {"head": "head", "torso": "chest", "legs": "legs"}.get(part, part)
         if dmg >= 4 and dfn.is_player:
             self._apply_onhit(dfn, dmg, part)

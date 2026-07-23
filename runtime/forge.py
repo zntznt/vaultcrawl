@@ -49,7 +49,7 @@ class ForgeSystem(System):
     name = "forge"
 
     # A craft costs this much *total* matter, drawn from the most-abundant materials.
-    _COST = 3
+    _COST = 2
     # Forged sigils come out at full durability (a found non-Echo sigil is also 2).
     _FULL_DURABILITY = 2
 
@@ -192,6 +192,7 @@ class ForgeSystem(System):
 
         slots.append(sigil)
         game.emit("forge_used", ability=ability, tier=tier)
+        ptracker().exercise(ability)
         return True
 
     # ---- auto-forge ---------------------------------------------------------
@@ -230,10 +231,10 @@ class ForgeSystem(System):
                 if count < self._proficiency_required(role):
                     return False
         # dynamic practice gate: must have exercised the ability recently.
-        # First craft of any ability is free (introduce the loop).
+        # First forge of any ability is free (introduce the loop).
         level = ptracker().level(ability)
-        if level == 0 and not any(ptracker()._buf):
-            return True   # first forge: waived
+        if level == 0:
+            return True   # first forge of this ability: waived
         return ptracker().can_craft(ability, required=1.0)
 
     @staticmethod

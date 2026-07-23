@@ -1,6 +1,5 @@
-"""ArtisanBrain — crafter and forager that breaks down worn sigils, forges new ones,
-opens caches, collects salvage and POIs, shields in downtime, and descends when done.
-"""
+"""ArtisanBrain — crafter and forager. Personality-first: forge and salvage before combat.
+Combat is a last resort. Economy wins over violence."""
 from __future__ import annotations
 
 from runtime.sense import (
@@ -36,11 +35,10 @@ class ArtisanBrain(Brain):
 
     def decide(self, game, actor):
         s = agent_state(game, actor)
-
-        # ---- UNIVERSAL PRIORITY 1: Panic flee when critically low ----
         hp_pct = s["vitals"]["hp_pct"]
+
+        # ---- PANIC: flee when critically low (survival trumps all) ----
         if hp_pct < 25:
-            # Phase blink past threats when cornered
             if s["near_hostiles"]:
                 for i, sig in enumerate(s["sigils"]):
                     if sig.get("ability") == "Phase" or sig.get("base") == "Phase":
@@ -56,6 +54,66 @@ class ArtisanBrain(Brain):
             if st:
                 step = step_toward_avoiding_elites(game, actor, st[0], st[1])
                 return AgentAction("move", dx=step[0], dy=step[1])
+
+        # ---- ARTISAN PERSONALITY (economy-first) ----
+        # 1) Breakdown worn sigils
+        for sig in s["sigils"]:
+            if sig.get("durability", 2) <= 1:
+                return AgentAction("breakdown", target=sig["ability"])
+
+        # 2) Forge — cost reduced to 2, first craft always passes proficiency
+        if s["nav"]["free_sigil_slots"] > 0 and s["matter"]["total"] >= 2:
+            slotted = {sig.get("ability") for sig in s["sigils"]}
+            for ability in ("Recall", "Ward", "Phase", "Echo", "Rally"):
+                if ability not in slotted:
+                    return AgentAction("forge", target=ability)
+
+        # 3) Shield
+        if s["vitals"]["defense"] < 3 and not s["adjacent_hostiles"] and not s["near_hostiles"]:
+            return AgentAction("shield")
+
+        # 4) Collect salvage
+        salvage_positions = []
+        salvage_sys = game.system("salvage")
+        if salvage_sys is not None:
+            ground = getattr(salvage_sys, "ground", {})
+            for (gx, gy) in ground:
+                salvage_positions.append((gx, gy))
+        if salvage_positions:
+            nearest_salvage = _nearest_xy(actor, salvage_positions)
+            if nearest_salvage is not None:
+                step = step_toward(game, actor, nearest_salvage[0], nearest_salvage[1], safe=True)
+                if step != WAIT:
+                    return AgentAction("move", dx=step[0], dy=step[1])
+
+        # 5) Open caches
+        if s["caches"]:
+            nearest_cache = _nearest_xy(actor, s["caches"])
+            if nearest_cache is not None:
+                dist = max(abs(actor.x - nearest_cache[0]), abs(actor.y - nearest_cache[1]))
+                if dist <= 1:
+                    return AgentAction("move", dx=nearest_cache[0]-actor.x, dy=nearest_cache[1]-actor.y)
+                step = step_toward(game, actor, nearest_cache[0], nearest_cache[1], safe=True)
+                if step != WAIT:
+                    return AgentAction("move", dx=step[0], dy=step[1])
+
+        # 6) Interact landmarks
+        if game.commune_landmark() is not None:
+            return AgentAction("interact")
+
+        # 7) Collect POIs
+        if s["pois"]:
+            poi_xy = _nearest_xy(actor, s["pois"])
+            if poi_xy is not None:
+                step = step_toward(game, actor, poi_xy[0], poi_xy[1], safe=True)
+                if step != WAIT:
+                    return AgentAction("move", dx=step[0], dy=step[1])
+
+        # 8) Cast Recall
+        if s["can_heal_meaningfully"] and hp_pct < 80 and s["vitals"]["hp"] < s["vitals"]["max_hp"]:
+            for i, sig in enumerate(s["sigils"]):
+                if sig.get("ability") == "Recall" or sig.get("base") == "Recall":
+                    return AgentAction("cast", index=i)
 
         # ---- FACTION DE-ESCALATION: once 4+ kills, beeline stairs ----
         if game.kills >= 4:
@@ -73,91 +131,23 @@ class ArtisanBrain(Brain):
                 step = step_toward_avoiding_elites(game, actor, st[0], st[1])
                 return AgentAction("move", dx=step[0], dy=step[1])
 
-        # ---- UNIVERSAL PRIORITY 2: Fight or flight when adjacent ----
+        # ---- COMBAT: fight only as last resort ----
         if s["adjacent_hostiles"]:
             t = s["adjacent_hostiles"][0]
             if hp_pct < 40:
                 away = step_away(game, actor, t["x"], t["y"], safe=True)
                 if away != (0, 0) and not s["has_trap_near"]:
                     return AgentAction("move", dx=away[0], dy=away[1])
-            return AgentAction("move", dx=(t["x"] > actor.x) - (t["x"] < actor.x),
-                                          dy=(t["y"] > actor.y) - (t["y"] < actor.y))
+            return AgentAction("move", dx=(t["x"]>actor.x)-(t["x"]<actor.x),
+                                          dy=(t["y"]>actor.y)-(t["y"]<actor.y))
 
-        # ---- UNIVERSAL PRIORITY 3: Rest only when effective ----
-        if (not s["adjacent_hostiles"] and not s["near_hostiles"] and
-            hp_pct < 70 and s["rest_effective"]):
+        # ---- REST ----
+        if not s["adjacent_hostiles"] and not s["near_hostiles"] and hp_pct < 70 and s["rest_effective"]:
+            return AgentAction("rest")
+        if not s["adjacent_hostiles"] and not s["near_hostiles"] and hp_pct < 50 and not s["rest_effective"] and s["weather_hazard"]:
             return AgentAction("rest")
 
-        # ---- UNIVERSAL PRIORITY 3b: Rest anyway in weather ----
-        if (not s["adjacent_hostiles"] and not s["near_hostiles"] and
-            hp_pct < 50 and not s["rest_effective"] and s["weather_hazard"]):
-            return AgentAction("rest")
-
-        # ---- ARTISAN PERSONALITY ----
-        # 1) Breakdown worn sigils at durability 1
-        for sig in s["sigils"]:
-            if sig.get("durability", 2) <= 1:
-                return AgentAction("breakdown", target=sig["ability"])
-
-        # 2) Forge when ready and there is a free slot
-        if s["matter"]["forge_ready"] and s["nav"]["free_sigil_slots"] > 0:
-            slotted = {sig.get("ability") for sig in s["sigils"]}
-            for ability in ("Recall", "Ward", "Phase", "Echo", "Rally"):
-                if ability not in slotted:
-                    return AgentAction("forge", target=ability)
-
-        # 3) Shield if defense < 3 and safe
-        if s["vitals"]["defense"] < 3 and not s["adjacent_hostiles"] and not s["near_hostiles"]:
-            return AgentAction("shield")
-
-        # 4) Collect salvage from salvage.ground
-        salvage_positions = []
-        salvage_sys = game.system("salvage")
-        if salvage_sys is not None:
-            ground = getattr(salvage_sys, "ground", {})
-            for (gx, gy) in ground:
-                salvage_positions.append((gx, gy))
-        if salvage_positions:
-            nearest_salvage = _nearest_xy(actor, salvage_positions)
-            if nearest_salvage is not None:
-                step = step_toward(game, actor, nearest_salvage[0],
-                                   nearest_salvage[1], safe=True)
-                if step != WAIT:
-                    return AgentAction("move", dx=step[0], dy=step[1])
-
-        # 5) Open caches — walk toward nearest
-        if s["caches"]:
-            nearest_cache = _nearest_xy(actor, s["caches"])
-            if nearest_cache is not None:
-                dist = max(abs(actor.x - nearest_cache[0]),
-                           abs(actor.y - nearest_cache[1]))
-                if dist <= 1:
-                    return AgentAction("move", dx=nearest_cache[0] - actor.x,
-                                       dy=nearest_cache[1] - actor.y)
-                step = step_toward(game, actor, nearest_cache[0],
-                                   nearest_cache[1], safe=True)
-                if step != WAIT:
-                    return AgentAction("move", dx=step[0], dy=step[1])
-
-        # 6) Interact with landmarks
-        if game.commune_landmark() is not None:
-            return AgentAction("interact")
-
-        # 7) Collect POIs
-        if s["pois"]:
-            poi_xy = _nearest_xy(actor, s["pois"])
-            if poi_xy is not None:
-                step = step_toward(game, actor, poi_xy[0], poi_xy[1], safe=True)
-                if step != WAIT:
-                    return AgentAction("move", dx=step[0], dy=step[1])
-
-        # 8) Cast Recall only when it would heal meaningfully
-        if s["can_heal_meaningfully"] and hp_pct < 80 and s["vitals"]["hp"] < s["vitals"]["max_hp"]:
-            for i, sig in enumerate(s["sigils"]):
-                if sig.get("ability") == "Recall" or sig.get("base") == "Recall":
-                    return AgentAction("cast", index=i)
-
-        # 9) Descend or walk to stairs
+        # ---- STAIRS ----
         if s["position"]["on_stairs"]:
             return AgentAction("descend")
         st = _stairs(game)
@@ -165,8 +155,6 @@ class ArtisanBrain(Brain):
             step = step_toward_avoiding_elites(game, actor, st[0], st[1])
             if step != WAIT:
                 return AgentAction("move", dx=step[0], dy=step[1])
-
-        # 10) Wait
         return AgentAction("wait")
 
 

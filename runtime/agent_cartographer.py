@@ -62,9 +62,9 @@ class CartographerBrain(Brain):
 
     def decide(self, game, actor):
         s = agent_state(game, actor)
-
-        # ---- UNIVERSAL PRIORITY 1: Panic flee when critically low ----
         hp_pct = s["vitals"]["hp_pct"]
+
+        # ---- PANIC: flee when critically low ----
         if hp_pct < 25:
             if s["near_hostiles"]:
                 for i, sig in enumerate(s["sigils"]):
@@ -82,6 +82,36 @@ class CartographerBrain(Brain):
                 step = step_toward_avoiding_elites(game, actor, st[0], st[1])
                 return AgentAction("move", dx=step[0], dy=step[1])
 
+        # ---- CARTOGRAPHER PERSONALITY (personality-first) ----
+        if "lantern" in s["effects"]["collected"] and s["effects"]["worn_effect"] != "lantern":
+            game.system("effects").wear("lantern")
+            return AgentAction("wait")
+
+        unseen = _nearest_unseen(game, actor, s["position"]["floor"])
+        if unseen is not None:
+            step = step_toward_safe(game, actor, unseen[0], unseen[1])
+            return AgentAction("move", dx=step[0], dy=step[1])
+
+        if s["near_hostiles"]:
+            for i, sig in enumerate(s["sigils"]):
+                if sig.get("ability") == "Phase" or sig.get("base") == "Phase":
+                    return AgentAction("cast", index=i)
+
+        if game.commune_landmark() is not None:
+            return AgentAction("interact")
+
+        if s["pois"]:
+            poi_xy = _nearest_xy(actor, s["pois"])
+            if poi_xy is not None:
+                step = step_toward(game, actor, poi_xy[0], poi_xy[1], safe=True)
+                if step != WAIT:
+                    return AgentAction("move", dx=step[0], dy=step[1])
+
+        if s["can_heal_meaningfully"] and hp_pct < 70:
+            for i, sig in enumerate(s["sigils"]):
+                if sig.get("ability") == "Recall" or sig.get("base") == "Recall":
+                    return AgentAction("cast", index=i)
+
         # ---- FACTION DE-ESCALATION: once 4+ kills, beeline stairs ----
         if game.kills >= 4:
             if s["can_becalm"] and s["adjacent_hostiles"]:
@@ -98,7 +128,7 @@ class CartographerBrain(Brain):
                 step = step_toward_avoiding_elites(game, actor, st[0], st[1])
                 return AgentAction("move", dx=step[0], dy=step[1])
 
-        # ---- UNIVERSAL PRIORITY 2: Fight or flight when adjacent ----
+        # ---- COMBAT: fight only as last resort ----
         if s["adjacent_hostiles"]:
             t = s["adjacent_hostiles"][0]
             if hp_pct < 40:
@@ -108,69 +138,16 @@ class CartographerBrain(Brain):
             return AgentAction("move", dx=(t["x"] > actor.x) - (t["x"] < actor.x),
                                           dy=(t["y"] > actor.y) - (t["y"] < actor.y))
 
-        if game.kills >= 4:
-            if s["can_becalm"] and s["adjacent_hostiles"]:
-                return AgentAction("becalm")
-            if s["position"]["on_stairs"]:
-                return AgentAction("descend")
-            # Flee any nearby hostile, not toward them
-            if s["near_hostiles"]:
-                t = s["near_hostiles"][0]
-                away = step_away(game, actor, t["x"], t["y"], safe=True)
-                if away != (0, 0):
-                    return AgentAction("move", dx=away[0], dy=away[1])
-            st = _stairs(game)
-            if st:
-                step = step_toward_avoiding_elites(game, actor, st[0], st[1])
-                return AgentAction("move", dx=step[0], dy=step[1])
-
-        # ---- UNIVERSAL PRIORITY 3: Rest only when effective ----
+        # ---- REST ----
         if (not s["adjacent_hostiles"] and not s["near_hostiles"] and
             hp_pct < 70 and s["rest_effective"]):
             return AgentAction("rest")
 
-        # ---- UNIVERSAL PRIORITY 3b: Rest anyway in weather ----
         if (not s["adjacent_hostiles"] and not s["near_hostiles"] and
             hp_pct < 50 and not s["rest_effective"] and s["weather_hazard"]):
             return AgentAction("rest")
 
-        # ---- CARTOGRAPHER PERSONALITY ----
-        # 1) Wear lantern if collected but not worn
-        if "lantern" in s["effects"]["collected"] and s["effects"]["worn_effect"] != "lantern":
-            game.system("effects").wear("lantern")
-            return AgentAction("wait")
-
-        # 2) Explore unseen tiles within 25-tile BFS
-        unseen = _nearest_unseen(game, actor, s["position"]["floor"])
-        if unseen is not None:
-            step = step_toward_safe(game, actor, unseen[0], unseen[1])
-            return AgentAction("move", dx=step[0], dy=step[1])
-
-        # 3) Cast Phase if near_hostiles
-        if s["near_hostiles"]:
-            for i, sig in enumerate(s["sigils"]):
-                if sig.get("ability") == "Phase" or sig.get("base") == "Phase":
-                    return AgentAction("cast", index=i)
-
-        # 4) Interact with landmarks
-        if game.commune_landmark() is not None:
-            return AgentAction("interact")
-
-        # 5) Collect POIs
-        if s["pois"]:
-            poi_xy = _nearest_xy(actor, s["pois"])
-            if poi_xy is not None:
-                step = step_toward(game, actor, poi_xy[0], poi_xy[1], safe=True)
-                if step != WAIT:
-                    return AgentAction("move", dx=step[0], dy=step[1])
-
-        # 6) Cast Recall only when it would heal meaningfully
-        if s["can_heal_meaningfully"] and hp_pct < 70:
-            for i, sig in enumerate(s["sigils"]):
-                if sig.get("ability") == "Recall" or sig.get("base") == "Recall":
-                    return AgentAction("cast", index=i)
-
-        # 7) Descend or walk to stairs
+        # ---- STAIRS ----
         if s["position"]["on_stairs"]:
             return AgentAction("descend")
         st = _stairs(game)
@@ -179,7 +156,6 @@ class CartographerBrain(Brain):
             if step != WAIT:
                 return AgentAction("move", dx=step[0], dy=step[1])
 
-        # 8) Wait
         return AgentAction("wait")
 
 
