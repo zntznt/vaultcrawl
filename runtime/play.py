@@ -1311,6 +1311,8 @@ def main(argv=None) -> int:
     # Store agent name on player for personality-gated mechanics
     # Store agent name for personality-gated mechanics (e.g. whisper always-parley)
     game.player._agent_name = a.brain
+    game.starting_kit(a.brain)
+    game._seed_attractors()
     if headless:
         transcript, cleared = auto_play(game, a.floors)
         print("\n\n".join(transcript))
