@@ -105,8 +105,7 @@ def build_systems():
 def register_all_brains():
     from runtime import brains, tactics, planner, instincts  # noqa: F401
     # Agent brain modules — each registers at import time
-    from runtime import (agent_artisan, agent_cartographer, agent_emergent,  # noqa: F401
-                         agent_exploiter, agent_seeker, agent_whisper)
+    from runtime import agent  # noqa: F401  — universal brain
 
 
 def auto_play(game, floors: int, max_turns: int = 500):

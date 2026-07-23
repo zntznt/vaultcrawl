@@ -1295,8 +1295,7 @@ def main(argv=None) -> int:
     # brain. Monsters get theirs lazily by tier via brain_for: tier-1 grunts charge (hunter),
     # tough foes/hunters/bosses scheme (tactician), wildlife forages.
     from . import (brains, tactics, creatures, planner, instincts)  # noqa: F401
-    from . import (agent_artisan, agent_cartographer, agent_emergent,
-                   agent_exploiter, agent_seeker, agent_whisper)  # noqa: F401
+    from . import agent  # noqa: F401 — universal brain, Berlin-compliant
     # ^ registers brain tiers (hunter…tactician/exploiter, mastermind/tracker/wary) + profiles
     from .sense import make_brain
     if a.embody:

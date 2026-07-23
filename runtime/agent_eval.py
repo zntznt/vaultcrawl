@@ -73,10 +73,7 @@ def _build_systems():
 
 def _register_brains():
     from runtime import brains, tactics, planner, instincts  # noqa: F401
-    from runtime import (  # noqa: F401
-        agent_artisan, agent_cartographer, agent_emergent,
-        agent_exploiter, agent_seeker, agent_whisper,
-    )
+    from runtime import agent  # noqa: F401 — universal brain
 
 
 AGENT_NAMES = ["artisan", "cartographer", "emergent", "exploiter", "seeker", "whisper"]
