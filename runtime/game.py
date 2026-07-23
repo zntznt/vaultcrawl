@@ -159,6 +159,12 @@ class Game:
                 hubs = [nid for nid, n in nodes.items() if n.get("role") == "hub"]
                 if hubs:
                     know._reveal(self, hubs[0])
+            # Pre-forged Recall sigil for immediate healing
+            sigs = self.system("sigils")
+            if sigs and len(sigs.slots) < sigs.max_slots(self):
+                sigs.slots.append({"ability": "Recall", "base": "Recall",
+                                   "durability": 2, "note": "forged", "role": "hub"})
+                self.log("You start with a freshly forged Recall sigil.")
 
         elif agent_name == "cartographer":
             if salv:
@@ -169,11 +175,17 @@ class Game:
                 if len(bridge) >= 2:
                     know._reveal(self, bridge[0])
                     know._reveal(self, bridge[1])
+            self.player.max_hp += 8
+            self.player.hp += 8
+            self.log("You feel the resilience of countless maps.")
 
         elif agent_name == "emergent":
             if salv:
                 salv.inventory(self).add({"iron": 1}, quality=2)
             self.player.hp = min(self.player.max_hp, self.player.hp + 4)
+            # Combat readiness: start with defense
+            self.player.defense = getattr(self.player, "defense", 0) + 2
+            self.log("You stand ready. +2 DEF.")
 
         elif agent_name == "exploiter":
             if salv:
@@ -184,6 +196,11 @@ class Game:
                     if s.get("ability") == "Ward":
                         s["durability"] = 3
                         break
+            # Pre-forged Phase sigil for escape
+            if sigs and len(sigs.slots) < sigs.max_slots(self):
+                sigs.slots.append({"ability": "Phase", "base": "Phase",
+                                   "durability": 2, "note": "forged", "role": "bridge"})
+                self.log("A Phase sigil thrums — escape awaits.")
 
         elif agent_name == "seeker":
             if salv:
@@ -194,6 +211,13 @@ class Game:
                 if non_player:
                     choice = non_player[hash(agent_name + "seed") % len(non_player)]
                     know._reveal(self, choice)
+            # Balanced survival: extra HP + Recall sigil
+            self.player.max_hp += 4
+            self.player.hp += 4
+            sigs = self.system("sigils")
+            if sigs and len(sigs.slots) < sigs.max_slots(self):
+                sigs.slots.append({"ability": "Recall", "base": "Recall",
+                                   "durability": 2, "note": "forged", "role": "hub"})
 
         elif agent_name == "whisper":
             if salv:
@@ -204,6 +228,11 @@ class Game:
                     target = factions_list[hash(agent_name) % len(factions_list)]
                     current = fcs.standing.get(target, 0)
                     fcs.standing[target] = min(4, current + 1)
+            # Phase sigil: flee when diplomacy fails
+            sigs = self.system("sigils")
+            if sigs and len(sigs.slots) < sigs.max_slots(self):
+                sigs.slots.append({"ability": "Phase", "base": "Phase",
+                                   "durability": 2, "note": "forged", "role": "bridge"})
 
     def _set_level(self, level, z: int = 0):
         self.level = level
@@ -1507,8 +1536,20 @@ class Game:
         if hp_pct >= 40:
             options.append("fight")
 
+        # Mercy: desperate agents always get a way out
+        if hp_pct < 30 and not options:
+            if matter >= 1:
+                options.append("flee")
+            else:
+                options.append("appease")
+
         if not options:
             options.append("fight")
+
+        # Weaken early-floor elites so agents survive long enough to reach emergence
+        if self.floor <= self.max_floor * 0.15 and not getattr(target, "is_boss", False):
+            target.hp = max(1, target.hp * 3 // 4)
+            target.max_hp = target.hp
 
         preferred = [o for o in options if o != "fight"]
         choice = preferred[0] if preferred else "fight"

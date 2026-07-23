@@ -65,6 +65,10 @@ class WhisperBrain(Brain):
         # ---- UNIVERSAL PRIORITY 1: Panic flee when critically low ----
         hp_pct = s["vitals"]["hp_pct"]
         if hp_pct < 25:
+            if s["near_hostiles"]:
+                for i, sig in enumerate(s["sigils"]):
+                    if sig.get("ability") == "Phase" or sig.get("base") == "Phase":
+                        return AgentAction("cast", index=i)
             if s["position"]["on_stairs"]:
                 return AgentAction("descend")
             st = _stairs(game)
