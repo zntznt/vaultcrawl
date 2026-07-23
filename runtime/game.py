@@ -262,7 +262,18 @@ class Game:
         echo.allegiance = "wild"
         echo.brain = None
         self.actors.append(echo)
-        self.log("A fading echo drifts through the room — something of what was lingers here.")
+        self.log("A fading echo drifts through the room. It murmurs of things hidden beneath the stones.")
+        # Seed room profiles: baseline trap awareness for all agents
+        try:
+            from runtime.memory_profile import RoomProfiles
+            if not hasattr(self.player, "_room_profiles"):
+                self.player._room_profiles = RoomProfiles()
+            # Common knowledge: leaf and orphan rooms may have traps near center
+            self.player._room_profiles.profiles.setdefault("leaf", []).append((2, 0))
+            self.player._room_profiles.profiles.setdefault("leaf", []).append((-2, 0))
+            self.player._room_profiles.profiles.setdefault("orphan", []).append((0, 1))
+        except Exception:
+            pass
         # Companion: guaranteed tameable grazer nearby on floor 2+
         if not hasattr(self, '_attractor_companion_seeded'):
             self._attractor_companion_seeded = True
@@ -1542,13 +1553,26 @@ class Game:
                 self._rooms_seen.add(idx)
                 label = self.room_label(idx)
                 if label:
-                    # a quiet arrival: the place, and its one truest feature. The
-                    # rest (rules, full motif list) waits for `x`. No log dump.
                     motifs = getattr(self, "_motifs", {}).get(idx, [])
                     tag = f", where {motifs[0]}" if motifs else ""
                     kept = " (settled)" if (idx in self._town_rooms
                                             and self._on_surface()) else ""
                     self.log(f"You enter {label}{tag}{kept}.")
+                # Room profile learning: record trap positions for this room role
+                try:
+                    structures = self.system("structures")
+                    note_id = self.room_notes.get(idx)
+                    if structures and note_id and hasattr(structures, 'hazard_tiles'):
+                        traps = structures.hazard_tiles(self)  # returns list of (x,y)
+                        if traps:
+                            if not hasattr(self.player, "_room_profiles"):
+                                from runtime.memory_profile import RoomProfiles
+                                self.player._room_profiles = RoomProfiles()
+                            role = self.player._room_profiles.role_for(self.m, note_id)
+                            room_center = self.room_center(idx) if hasattr(self, 'room_center') else (nx, ny)
+                            self.player._room_profiles.record(role, traps, room_center)
+                except Exception:
+                    pass
             if self.sandbox:
                 r = self.region_for(self.floor)
                 if r["name"] != self.region_name:

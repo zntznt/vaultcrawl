@@ -309,6 +309,19 @@ def agent_state(game, actor) -> dict:
                 traps_visible = list(structures.hazard_tiles(game))
     except Exception:
         pass
+    # Room profile learning: predict traps based on past rooms of same role
+    predicted_traps = []
+    try:
+        profiles = getattr(game.player, "_room_profiles", None)
+        if profiles is not None:
+            idx = game.room_at(px, py)
+            note_id = getattr(game, "room_notes", {}).get(idx)
+            if note_id:
+                role = profiles.role_for(game.m, note_id)
+                center = (px, py)  # approximate — player is in the room
+                predicted_traps = profiles.predict(role, center)
+    except Exception:
+        pass
 
     # -- faction kills ---------------------------------------------------------
     faction_kills = {}
@@ -548,6 +561,7 @@ def agent_state(game, actor) -> dict:
         "nearest_portal": nearest_portal,
         "has_trap_near": has_trap_near,
         "traps_visible": traps_visible,
+        "predicted_traps": predicted_traps,
         "faction_kills": faction_kills,
         "kills_on": kills_on,
         "recent_kill_count": recent_kill_count,

@@ -357,8 +357,10 @@ class UniversalBrain(Brain):
                 for y in range(max(0, pk_y-20), min(game.level.h, pk_y+21)):
                     for x in range(max(0, pk-20), min(game.level.w, pk+21)):
                         if game.level.walkable(x, y) and (x, y) not in sn:
-                            # Skip visible traps when scholarship tier 2+
+                            # Skip visible AND predicted traps (room profile learning)
                             if any((x, y) == t for t in s.get("traps_visible", [])):
+                                continue
+                            if any((x, y) == t for t in s.get("predicted_traps", [])):
                                 continue
                             d = max(abs(x-pk), abs(y-pk_y))
                             if d < bd:
