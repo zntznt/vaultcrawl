@@ -42,9 +42,9 @@ def bfs_step(level, start, goal, avoid=None):
 
 
 def auto_play(game: Game, floors: int, max_turns: int = 500):
-    """Drive the descent through the PLAYER'S BRAIN. The brain handles fight/flee/lure/loot;
-    this loop only descends when the brain has nothing left to do on the floor, and nudges
-    toward the stairs to avoid a stall."""
+    """Drive the descent through the PLAYER'S BRAIN. Supports AgentAction and legacy (dx, dy)."""
+    from .agent_action import AgentAction, dispatch as _dispatch
+
     transcript = [game.render()]
     cleared = 0
     while game.alive and not game.won and cleared < floors:
@@ -56,15 +56,18 @@ def auto_play(game: Game, floors: int, max_turns: int = 500):
             has_poi = bool(game.items) or any(s.points_of_interest(game) for s in game.systems)
             if game.on_stairs() and not adj_threat and not has_poi:
                 break
-            dx, dy = game.player.brain.decide(game, game.player)
-            if dx == 0 and dy == 0:
+            result = game.player.brain.decide(game, game.player)
+            # Legacy compatibility: wrap (dx, dy) tuples
+            if isinstance(result, tuple) and len(result) == 2:
+                result = AgentAction("move", dx=result[0], dy=result[1])
+            ok = _dispatch(game, result)
+            if not ok:
                 if game.on_stairs():
                     break
                 step = bfs_step(game.level, ppos, game.level.stairs)   # anti-stall
                 if not step or step == (0, 0):
                     break
-                dx, dy = step
-            game.try_move(dx, dy)
+                _dispatch(game, AgentAction("move", dx=step[0], dy=step[1]))
             turns += 1
             if turns > max_turns:
                 game.log("(no progress — abandoning floor)")
@@ -1217,7 +1220,7 @@ def main(argv=None) -> int:
                     help="world-scale factor for the sandbox: bigger places, longer "
                          "ways between them (default 2.0; 1.0 = the old compact world)")
     ap.add_argument("--brain", default="exploiter",
-                    help="player brain: exploiter (default), survivor, hunter/dumb")
+                    help="player brain: artisan, cartographer, emergent, exploiter (default), seeker, whisper, survivor, hunter")
     a = ap.parse_args(argv)
 
     manifest = load_manifest(a.world)
@@ -1292,6 +1295,8 @@ def main(argv=None) -> int:
     # brain. Monsters get theirs lazily by tier via brain_for: tier-1 grunts charge (hunter),
     # tough foes/hunters/bosses scheme (tactician), wildlife forages.
     from . import (brains, tactics, creatures, planner, instincts)  # noqa: F401
+    from . import (agent_artisan, agent_cartographer, agent_emergent,
+                   agent_exploiter, agent_seeker, agent_whisper)  # noqa: F401
     # ^ registers brain tiers (hunter…tactician/exploiter, mastermind/tracker/wary) + profiles
     from .sense import make_brain
     if a.embody:

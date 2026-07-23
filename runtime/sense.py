@@ -25,7 +25,8 @@ class Brain:
     name = "brain"
 
     def decide(self, game, actor):
-        """Return a step direction (dx, dy) in {-1,0,1}. (0,0) waits."""
+        """Return an AgentAction or legacy (dx, dy) tuple in {-1,0,1}. (0,0) waits.
+        The auto_play dispatch loop auto-wraps legacy tuples for backward compat."""
         return (0, 0)
 
 
@@ -153,6 +154,27 @@ def step_toward(game, actor, tx, ty, safe=True):
     return s or (0, 0)
 
 
+def step_toward_safe(game, actor, tx, ty):
+    """Step toward (tx,ty) avoiding hazards AND unrevealed tiles (potential traps)."""
+    danger = danger_tiles(game)
+    know = game.system("knowledge") if hasattr(game, "system") else None
+    if know is not None:
+        seen = know.seen.get(game.floor, set())
+        px, py = actor.x, actor.y
+        for y in range(max(0, py-10), min(game.level.h, py+11)):
+            for x in range(max(0, px-10), min(game.level.w, px+11)):
+                if game.level.walkable(x, y) and (x, y) not in seen:
+                    danger.add((x, y))
+    s = bfs_step(game, actor, (tx, ty), danger)
+    if s is not None:
+        return s
+    s = bfs_step(game, actor, (tx, ty), danger_tiles(game))
+    if s is not None:
+        return s
+    s = bfs_step(game, actor, (tx, ty))
+    return s or (0, 0)
+
+
 def greedy_dir(fx, fy, tx, ty):
     """Old-style single step: larger axis first (no pathfinding)."""
     sx = (tx > fx) - (tx < fx)
@@ -270,6 +292,8 @@ _FALLBACK = {
     "exploiter": "tactician", "tactician": "opportunist", "opportunist": "survivor",
     "survivor": "hunter", "forager": "survivor", "scavenger": "survivor",
     "hunter": "wander",
+    "artisan": "exploiter", "cartographer": "exploiter", "emergent": "exploiter",
+    "seeker": "exploiter", "whisper": "exploiter",
 }
 
 

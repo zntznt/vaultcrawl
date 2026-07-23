@@ -384,6 +384,10 @@ class Game:
 
         px, py = self.level.player_start
         self.player = make_player(px, py)
+        self.player._base_max_hp = self.player.max_hp
+        penalty = self._companion_penalty()
+        self.player.max_hp = max(4, self.player._base_max_hp - penalty)
+        self.player.hp = min(self.player.hp, self.player.max_hp)
         self.actors, self.items = [], []
         self.region_name = self.region_for(1)["name"]
         self._build_tint()
@@ -1032,6 +1036,40 @@ class Game:
         """Broadcast a semantic event to every system's on_event hook."""
         for s in self.systems:
             s.on_event(self, etype, data)
+        if etype == "forge_used":
+            pos = data.get("pos", (self.player.x, self.player.y))
+            self.emit("noise", pos=pos, volume=6)
+            # Chronicle: forge activity persists between runs (Upheaval sanctums)
+            try:
+                from runtime.persistence import chronicle
+                r = self.region_for(self.floor)
+                if r:
+                    chronicle().record_forge(r["id"])
+            except Exception:
+                pass
+        elif etype == "corpse_spawned":
+            pos = data.get("pos")
+            if pos:
+                self.emit("noise", pos=pos, volume=4)
+        elif etype == "lore_read":
+            note_id = data.get("note", "")
+            # Chronicle: lore-reading creates ghosts in future runs
+            try:
+                from runtime.persistence import chronicle
+                chronicle().record_lore(note_id)
+            except Exception:
+                pass
+            if note_id and hash(f"{self.seed}:{self.turn}:lore_chain") % 100 < 30:
+                know = self.system("knowledge")
+                if know:
+                    nodes = self.m.get("graph", {}).get("nodes", {})
+                    if note_id in nodes:
+                        neighbors = nodes[note_id].get("neighbors", [])
+                        unrevealed = [n for n in neighbors if not know.is_known(n)]
+                        if unrevealed:
+                            choice_idx = hash(f"{self.seed}:{self.turn}:lore_chain:{note_id}") % len(unrevealed)
+                            choice = unrevealed[choice_idx]
+                            know.reveal(choice)
 
     # ---- floor lifecycle ----
     def descend(self):
@@ -1056,10 +1094,14 @@ class Game:
         px, py = self.level.player_start
         if self.player is None:
             self.player = make_player(px, py)
+            self.player._base_max_hp = self.player.max_hp
         else:
             self.player.x, self.player.y = px, py
             # rest between floors: a fixed fraction, not a stat gain (no power creep)
             self.player.hp = min(self.player.max_hp, self.player.hp + self.player.max_hp // 5)
+        penalty = self._companion_penalty()
+        self.player.max_hp = max(4, self.player._base_max_hp - penalty)
+        self.player.hp = min(self.player.hp, self.player.max_hp)
         self.actors, self.items = [], []
         free = free_floor_tiles(self.level, {(px, py), self.level.stairs})
         rng.shuffle(free)
@@ -1335,7 +1377,14 @@ class Game:
         else:
             salv = self.system("salvage")
             bag = salv.inventory(self) if salv is not None else None
-            total = BECALM_COST * max(1, target.tier)
+            faction_notes_known = 0
+            if know is not None and hasattr(know, 'learned'):
+                target_faction = getattr(target, 'faction', '')
+                if target_faction:
+                    for nid in know.learned:
+                        if know._note_faction(self, nid) == target_faction:
+                            faction_notes_known += 1
+            total = max(1, BECALM_COST * max(1, target.tier) - faction_notes_known)
             if bag is None or bag.total() < total:
                 self.log(f"{target.name} is not moved. "
                          f"(Know its note, or offer {total} matter.)")
@@ -1345,6 +1394,7 @@ class Game:
             self.log(f"You share what you have gathered ({offered}); "
                      f"{target.name} is placated.")
         self._join_wild(target)
+        self._tension = max(0, self._tension - 15)
         return True
 
     def _join_wild(self, target):
@@ -1362,6 +1412,24 @@ class Game:
         from .sense import make_brain
         target.brain = make_brain(self, target, name="companion")
         self.emit("recruited", actor=target, pos=(target.x, target.y))
+        fcs = self.system("factions")
+        faction = getattr(target, "faction", "")
+        if fcs and faction:
+            try:
+                current = getattr(fcs, "standing", {}).get(faction, 0)
+                fcs.standing[faction] = current + 2
+                self.emit("standing_changed", faction=faction, standing=current + 2, cause="recruited")
+            except Exception:
+                pass
+        try:
+            from runtime.persistence import chronicle
+            chronicle().record_companion_recruited()
+        except Exception:
+            pass
+        if hasattr(self.player, '_base_max_hp'):
+            penalty = self._companion_penalty()
+            self.player.max_hp = max(4, self.player._base_max_hp - penalty)
+            self.player.hp = min(self.player.hp, self.player.max_hp)
         self.log(f"{target.name} falls in beside you.")
 
     def confide(self, target) -> bool:
@@ -1416,7 +1484,8 @@ class Game:
 
     def wait(self):
         """Pass the turn in place. On settled ground, waiting is REST.
-        Three consecutive waits enter camp mode: faster healing, status recovery."""
+        Three consecutive waits enter camp mode: faster healing, status recovery.
+        Outside towns, resting still provides a small heal if no hostiles are near."""
         if not self.alive or self.won:
             return
         on_town = (self._on_surface()
@@ -1430,24 +1499,30 @@ class Game:
             on_town = False
             self._resting = False
             self._consecutive_rest = 0
-        if on_town and self.player.hp < self.player.max_hp:
-            self._consecutive_rest += 1
-            if self._consecutive_rest >= 3 and not self._resting:
-                self._resting = True
-                self.log("You settle in to rest...")
-                if getattr(self.player, "_bleeding", 0) > 0:
-                    self.player._bleeding = 0
-                    self.log("Your bleeding stops.")
-                if getattr(self.player, "_slowed", 0) > 0:
-                    self.player._slowed = 0
-                    self.player.speed = getattr(self.player, "_base_speed", 1.0)
+        # non-town resting: small heal if safe and no hostiles nearby
+        can_rest = on_town or (not near_hostile and self.player.hp < self.player.max_hp)
+        if can_rest:
+            if on_town:
+                self._consecutive_rest += 1
+                if self._consecutive_rest >= 3 and not self._resting:
+                    self._resting = True
+                    self.log("You settle in to rest...")
+                    if getattr(self.player, "_bleeding", 0) > 0:
+                        self.player._bleeding = 0
+                        self.log("Your bleeding stops.")
+                    if getattr(self.player, "_slowed", 0) > 0:
+                        self.player._slowed = 0
+                        self.player.speed = getattr(self.player, "_base_speed", 1.0)
             from .body_parts import heal_body
-            heal = 3 if self._resting else 2
-            if self._aspect and "Hallowed" in self._aspect:
-                heal *= 2  # sacred region: double camp healing
+            # town rest: 2-3 HP. safe non-town rest: 1 HP
+            heal = 1
+            if on_town:
+                heal = 3 if self._resting else 2
+                if self._aspect and "Hallowed" in self._aspect:
+                    heal *= 2
             heal_body(self.player, heal)
-            tag = "+" + str(heal) + " HP" if self._resting else "+2 HP"
-            self.log(f"You rest on settled ground ({tag}).")
+            tag = f"+{heal} HP" if on_town else "+1 HP"
+            self.log(f"You rest ({tag}).")
         self.turn += 1
         self._tick_effects()
         self.enemies_act()
@@ -1460,6 +1535,12 @@ class Game:
         Iterates all systems, collects handlers, and consumes the turn if any fire."""
         if not self.alive or self.won:
             return
+        decay = self.system("decay")
+        if decay and hasattr(decay, 'corpses') and (self.player.x, self.player.y) in decay.corpses:
+            if (hasattr(self.player, 'body') and self.player.body and
+                any(p['hp'] < p['max'] for p in self.player.body.values())):
+                self.repair_part()
+                return
         handled = False
         for s in self.systems:
             try:
@@ -1476,6 +1557,47 @@ class Game:
                 s.on_player_act(self)
         else:
             self.log("Nothing here to interact with.")
+
+    def repair_part(self):
+        """Cogmind-style: salvage a corpse at your feet to repair your worst body part.
+        Costs 1 matter from inventory. Heals the most-damaged part by 2 HP."""
+        if not self.alive or self.won:
+            return
+        corpse = None
+        decay = self.system("decay")
+        if decay and hasattr(decay, 'corpses'):
+            corpse = decay.corpses.get((self.player.x, self.player.y))
+        if corpse is None:
+            self.log("Nothing to salvage here.")
+            return
+        if not hasattr(self.player, 'body') or not self.player.body:
+            self.log("You have nothing to mend.")
+            return
+        parts = self.player.body
+        worst_name = min(parts.keys(), key=lambda p: parts[p]['hp'] / max(1, parts[p]['max']))
+        worst_part = parts[worst_name]
+        if worst_part['hp'] >= worst_part['max']:
+            self.log("Your body is whole.")
+            return
+        salv = self.system("salvage")
+        if salv is None:
+            return
+        inv = salv.inventory(self)
+        if inv.total() < 1:
+            self.log("You need matter to salvage.")
+            return
+        _spend_matter(inv, 1)
+        from .body_parts import heal_body
+        heal_body(self.player, 2)
+        self.log(f"You salvage the corpse, mending your {worst_name} (+2 HP).")
+        if hasattr(decay, 'corpses'):
+            decay.corpses.pop((self.player.x, self.player.y), None)
+        self.turn += 1
+        self._tick_effects()
+        self.enemies_act()
+        self._restore_winded()
+        for s in self.systems:
+            s.on_player_act(self)
 
     def shield(self):
         """Raise your guard: +1 defense (capped) or a small self-heal once capped.
@@ -1516,6 +1638,11 @@ class Game:
         self._restore_winded()
         for s in self.systems:
             s.on_player_act(self)
+
+    def _companion_penalty(self) -> int:
+        comps = [a for a in self.actors if getattr(a, 'allegiance', '') == 'companion']
+        extra = max(0, len(comps) - 1)
+        return extra * 4
 
     def _fixture_here(self):
         """The fixture tile the player stands on or beside, and its room idx, or None."""
@@ -1828,7 +1955,35 @@ class Game:
         player/environment kills the factions care about."""
         if actor in self.actors:
             self.actors.remove(actor)
+        if getattr(actor, 'allegiance', '') == 'companion':
+            fcs = self.system("factions")
+            faction = getattr(actor, 'faction', '')
+            if fcs and faction:
+                try:
+                    current = getattr(fcs, 'standing', {}).get(faction, 0)
+                    fcs.standing[faction] = current - 2
+                    self.emit("standing_changed", faction=faction, standing=current - 2, cause="companion_died")
+                except Exception:
+                    pass
+            try:
+                from runtime.persistence import chronicle
+                chronicle().record_companion_death(actor.name, cause)
+            except Exception:
+                pass
+        if hasattr(self.player, '_base_max_hp'):
+            penalty = self._companion_penalty()
+            self.player.max_hp = max(4, self.player._base_max_hp - penalty)
+            self.player.hp = min(self.player.hp, self.player.max_hp)
         self.emit("actor_died", actor=actor, cause=cause, pos=(actor.x, actor.y))
+        decay = self.system("decay")
+        if decay and hasattr(decay, 'corpses'):
+            pos = (actor.x, actor.y)
+            if pos in decay.corpses:
+                aspect = getattr(self, '_aspect', '')
+                if 'acid' in aspect.lower() or 'corrosive' in aspect.lower():
+                    decay.corpses[pos] = 2
+                elif 'hallowed' in aspect.lower() or 'sacred' in aspect.lower():
+                    decay.corpses[pos] = 20
 
     @staticmethod
     def _hostile(a: str, b: str) -> bool:
@@ -2122,6 +2277,15 @@ class Game:
                 and max(abs(self.player.x - a.x),
                         abs(self.player.y - a.y)) > 40):
             return   # beyond earshot: brains sleep; mill/idle keeps it drifting
+        if getattr(a, 'allegiance', '') == 'companion':
+            max_hp = getattr(a, 'max_hp', a.hp)
+            if a.hp * 100 < max_hp * 25:
+                st = getattr(self.level, 'stairs', None)
+                if st:
+                    from runtime.sense import step_toward
+                    dx, dy = step_toward(self, a, st[0], st[1], safe=True)
+                    self._npc_step(a, dx, dy)
+                    return
         if getattr(a, "brain", None) is None:
             a.brain = make_brain(self, a)
         dx, dy = a.brain.decide(self, a)
@@ -2149,6 +2313,10 @@ class Game:
             return   # settled ground: nothing hostile crosses the threshold
         if self.level.walkable(tx, ty):
             a.x, a.y = tx, ty
+            if getattr(a, 'allegiance', '') == 'companion':
+                structures = self.system("structures")
+                if structures and hasattr(structures, 'trigger_trap'):
+                    structures.trigger_trap(self, a.x, a.y)
 
     # ---- rendering ----
     def _add_pulse(self, x: int, y: int):
@@ -2180,6 +2348,15 @@ class Game:
                 pool = self.m.get("enemies", [])
                 if pool:
                     spec = rng.choice(pool)
+                    fcs = self.system("factions")
+                    if fcs:
+                        for _ in range(10):
+                            fid = self._region_faction.get(spec.get("regionId", ""), "")
+                            standing = fcs.standing.get(fid, 0)
+                            if standing >= 3:
+                                spec = rng.choice(pool)
+                                continue
+                            break
                     free = [(x, y) for y in range(4, self.level.h - 4)
                             for x in range(4, self.level.w - 4)
                             if self.level.walkable(x, y) and self.actor_at(x, y) is None
@@ -2187,6 +2364,7 @@ class Game:
                     if free:
                         fx, fy = rng.choice(free)
                         e = make_enemy(spec, fx, fy)
+                        e.faction = self._region_faction.get(spec.get("regionId", ""), "")
                         self.actors.append(e)
                         self.log("Something stirs in the wild, drawn by your lingering.", ambient=True)
 

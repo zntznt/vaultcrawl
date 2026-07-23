@@ -137,12 +137,72 @@ register_brain("scavenger", ScavengerBrain)
 # Companion — walks with whoever you control, fights what you fight
 # --------------------------------------------------------------------------- #
 
+def _panic_flee(game, actor):
+    """Flee toward stairs or the player, whichever is closer."""
+    stairs = getattr(game.level, "stairs", None) if getattr(game, "level", None) else None
+    p = game.player
+    to_stairs = (
+        max(abs(actor.x - stairs[0]), abs(actor.y - stairs[1])) if stairs else None
+    )
+    to_player = max(abs(actor.x - p.x), abs(actor.y - p.y))
+    if to_stairs is not None and to_stairs < to_player:
+        return step_toward(game, actor, stairs[0], stairs[1], safe=True)
+    return step_away(game, actor, p.x, p.y, safe=True)
+
+
 class CompanionBrain(SurvivorBrain):
-    """A recruited creature: engages your enemies like a survivor (routes around
-    hazards, flees when hurt), and when nothing threatens, keeps to your side."""
+    """A recruited creature: reads its command from game._companions and obeys,
+    fighting like a survivor. Panics below 25% hp, fleeing toward safety."""
     name = "companion"
 
     def decide(self, game, actor):
+        name = getattr(actor, "name", "")
+        comps = getattr(game, "_companions", {}) or {}
+        state = comps.get(name, {})
+        command = state.get("state", "follow")
+
+        # panic overrides everything
+        max_hp = getattr(actor, "max_hp", 0) or 0
+        if max_hp and actor.hp * 100 < max_hp * 25:
+            return _panic_flee(game, actor)
+
+        if command == "stay":
+            adj = [h for h in hostiles(game, actor)
+                   if adjacent(actor.x, actor.y, h.x, h.y)]
+            if adj:
+                victim = min(adj, key=lambda h: (h.x, h.y))
+                return attack_dir(actor, victim)
+            return (0, 0)
+
+        if command == "guard":
+            guard_pos = state.get("pos")
+            if guard_pos is None:
+                return (0, 0)
+            gx, gy = guard_pos
+            nearby = [h for h in hostiles(game, actor)
+                      if max(abs(gx - h.x), abs(gy - h.y)) <= 3]
+            if nearby:
+                target = min(nearby, key=lambda h: max(abs(actor.x - h.x), abs(actor.y - h.y)))
+                if adjacent(actor.x, actor.y, target.x, target.y):
+                    return attack_dir(actor, target)
+                return step_toward(game, actor, target.x, target.y, safe=True)
+            if max(abs(actor.x - gx), abs(actor.y - gy)) > 3:
+                return step_toward(game, actor, gx, gy, safe=True)
+            return (0, 0)
+
+        if command == "scout":
+            scout_pos = state.get("pos")
+            if scout_pos is None:
+                return (0, 0)
+            nearby = [h for h in hostiles(game, actor)
+                      if max(abs(actor.x - h.x), abs(actor.y - h.y)) <= 5]
+            if nearby:
+                p = game.player
+                return step_toward(game, actor, p.x, p.y, safe=True)
+            sx, sy = scout_pos
+            return step_toward(game, actor, sx, sy, safe=True)
+
+        # follow (default)
         step = super().decide(game, actor)
         if step != (0, 0):
             return step

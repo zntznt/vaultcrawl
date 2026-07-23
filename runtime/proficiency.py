@@ -38,7 +38,7 @@ class ProficiencyTracker:
         elif total <= _FULL_CREDIT + _HALF_CREDIT:
             weight = 0.5
         else:
-            weight = 0.0
+            weight = 0.25   # soft cap: mastered but still craftable with recent practice
         return recent * weight
 
     def can_craft(self, ability: str, required: float = 2.0) -> bool:

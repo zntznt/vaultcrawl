@@ -49,7 +49,7 @@ class ForgeSystem(System):
     name = "forge"
 
     # A craft costs this much *total* matter, drawn from the most-abundant materials.
-    _COST = 4
+    _COST = 3
     # Forged sigils come out at full durability (a found non-Echo sigil is also 2).
     _FULL_DURABILITY = 2
 
@@ -229,10 +229,14 @@ class ForgeSystem(System):
                             if nodes.get(nid, {}).get("role") == role)
                 if count < self._proficiency_required(role):
                     return False
-        # dynamic practice gate: must have exercised the ability recently
+        # dynamic practice gate: must have exercised the ability recently.
+        # First craft of any ability is free (introduce the loop).
+        level = ptracker().level(ability)
+        if level == 0 and not any(ptracker()._buf):
+            return True   # first forge: waived
         return ptracker().can_craft(ability, required=1.0)
 
     @staticmethod
     def _proficiency_required(role: str) -> int:
         """How many notes of this role must be known to forge its sigil."""
-        return {"hub": 2, "bridge": 2, "cluster": 2, "leaf": 1, "orphan": 1}.get(role, 1)
+        return {"hub": 1, "bridge": 1, "cluster": 1, "leaf": 0, "orphan": 0}.get(role, 1)
