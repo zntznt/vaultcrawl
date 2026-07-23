@@ -57,6 +57,13 @@ ingest  -> analyze -> mapping -> generate -> validate -> bake
 
 | File | Role |
 |------|------|
+| `CLAUDE.md` | Developer onboarding: commands, process routing table (which spec to read for which task), core invariants, known issues. **Read first.** |
+| `AGENT_SPEC.md`, `CRAFT_SPEC.md`, `LOCI_SPEC.md`, `DEEPEN_SPEC.md` | Architecture specs for agents, crafting, loci, and quests/NPCs/machines. |
+| `ARCHITECTURE_SPEC.md` | Pattern-language level-generation compiler (Christopher Alexander). |
+| `SYSTEMS_SPEC.md`, `INTERACTIONS_SPEC.md` | The base system contract + the cross-system event-bus contract. |
+| `ECOLOGY_SPEC.md`, `BRAINS_SPEC.md`, `SENSES_SPEC.md`, `MIND_SPEC.md`, `SALVAGE_SPEC.md`, `QUALITY_SPEC.md` | Per-domain specification documents (see CLAUDE.md process table for routing). |
+| `DESIGN_PLACE_PANEL.md` | Sense-of-place: room fixtures, scenery, examinable voice. |
+| `SYSTEMS_GAP.md` | 28-system player-reachability audit. What verbs the player has and what's still missing. |
 | `vaultcrawl/ingest.py` | Parse markdown → `Note`s + a directed link graph. Hash the vault into a content seed. |
 | `vaultcrawl/analyze.py` | Pure-Python graph metrics: PageRank, Louvain communities, bridges, orphans. |
 | `vaultcrawl/mapping.py` | **Deterministic** metrics → mechanical slots (tiers, depths, biomes, power). |
@@ -79,7 +86,10 @@ ingest  -> analyze -> mapping -> generate -> validate -> bake
 | `runtime/scenario.py` | Narrated showcase of the six cross-system interactions. |
 | `runtime/ecology_scenario.py` | Narrated showcase of the seven autonomous-ecology set-pieces. |
 | `runtime/sense.py` | Perception toolkit + `Brain` interface + the `brain_for` capability policy. |
-| `runtime/{brains,tactics}.py` | The brain ladder (hunter → survivor → opportunist → tactician → exploiter). |
+| `runtime/{brains,tactics,planner,instincts}.py` | The brain ladder (18 tiers: wander→hunter→survivor→opportunist→forager/scavenger→companion→tactician→exploiter→tracker→wary→mastermind→strategist + 6 player profiles). |
+| `runtime/agent.py`, `AGENT_SPEC.md` | UniversalBrain: one decision tree, 6 profiles (artisan/cartographer/emergent/exploiter/seeker/whisper). Berlin-compliant — scores as identity floors, not class-locks. |
+| `runtime/agent_action.py`, `runtime/agent_perception.py` | 14-verb AgentAction vocabulary + 40-field agent_state() perception snapshot. |
+| `runtime/agent_eval.py` | Evaluation harness: per-agent win rate, floor depth, kill stats, survival curves, attractor metrics. |
 | `BRAINS_SPEC.md`, `runtime/brain_scenario.py` | The brain contract + the capability-ladder showcase. |
 | `runtime/senses.py` | Perception layer: stimuli, sense profiles, two-layer detect/identify. |
 | `runtime/creatures.py` | Sense-profile archetypes (echolocator, scent-hound, life-wraith, mind-seer). |
@@ -93,7 +103,19 @@ ingest  -> analyze -> mapping -> generate -> validate -> bake
 | `runtime/quests.py` | Your `- [ ]` TODOs become tracked dungeon objectives with rewards. |
 | `runtime/dialogue.py` | Note-derived neutral NPCs you parley with (quest / offering / gossip). |
 | `runtime/machines.py` | Hub-note Fabricators + bridge-note Terminals (forge · hack-to-reveal). |
-| `DEEPEN_SPEC.md`, `runtime/deepen_scenario.py` | The social/objective/machine contract + showcase. |
+| `DEEPEN_SPEC.md`, `runtime/deepen_scenario.py` | The social/objective/machine contract (quests, Keepers, Fabricators, Terminals) + showcase. |
+| `runtime/caches.py` | Place-based caches: note-signature materials, perils (wards), aged variants. |
+| `runtime/body_parts.py` | Locational damage: head/torso/legs, elite targeting, immobilisation. |
+| `runtime/portals.py` | Timed realm gates: collapsing portals with LOS-accelerated timer. |
+| `runtime/loci.py`, `LOCI_SPEC.md` | Polymorphic encounter nodes: 6 activation types by agent profile, beacon variant. |
+| `runtime/craft.py`, `CRAFT_SPEC.md` | Site-based ritual crafting: 4 workspace types, sacrifice→system-wire model. |
+| `runtime/wear.py` | 5-tier item degradation: quality-scaled wear, maintain action. |
+| `runtime/recipes.py` | 25 consumable recipes + deterministic discovery from 6 sources. |
+| `runtime/proficiency.py` | 5 skill trees (Tinkering, Foraging, Husbandry, Scholarship, Diplomacy). |
+| `runtime/sacrifice.py` | Renunciation Shrines: permanent trade-off rituals in deep z-levels. |
+| `runtime/terrain_mod.py` | Dynamic terrain: boss-kill sanctums, faction threshold doors, kill-scarred ground. |
+| `runtime/effects.py` | Yume-Nikki effects: 6 archetypes (lantern/drift/hush/eyeless/small/echo). |
+| `runtime/scent.py` | Scent diffusion/decay: trail-laying, stealth (wait = silent), creature tracking. |
 | `runtime/quality.py` | Factorio-style quality grades: the rare cascading roll, creature scaling, the QualitySystem hub. |
 | `runtime/abilities.py` | Invariant-safe creature special actions granted by quality (lunge/summon/blink/spit/…). |
 | `QUALITY_SPEC.md`, `runtime/quality_scenario.py` | The quality contract + the grade showcase. |
@@ -151,15 +173,14 @@ invent structure or set a tier. See `prompts.BIBLE_SCHEMA` and `prompts.CONTENT_
   copying your vault to another machine bakes the **identical** world.
 - The offline stub (`llm.OfflineStubLLM`) is seeded per-slot, so even the "creative"
   layer is reproducible. Regenerating `sample_vault` is byte-identical across runs.
-- To get real prose, implement the one-method `LLM` interface. `llm.py` includes a
-  ready-to-uncomment `AnthropicLLM` that forces structured output via a single tool
-  call. Nothing else in the pipeline changes — the world is still baked, the runtime
-  still pure.
+- To get real prose, implement the one-method `LLM` interface. `llm.py` includes an
+  `OfflineStubLLM` and the `LLM` protocol — drop in an Anthropic-backed implementation
+  by implementing `complete_json(schema, prompt)`. Nothing else in the pipeline changes.
 
 ```python
 from vaultcrawl.bake import bake
-from vaultcrawl.llm import AnthropicLLM        # after uncommenting + pip install anthropic
-bake("my_vault", "world.json", llm=AnthropicLLM(model="claude-opus-4-8"))
+from vaultcrawl.llm import OfflineStubLLM
+bake("my_vault", "world.json", llm=OfflineStubLLM())  # deterministic offline default
 ```
 
 ---
@@ -571,9 +592,12 @@ SET-PIECE 5: Right brain per entity            ✓ tier1→hunter, tier5/boss→
 Pick the player's brain live to watch the difference:
 
 ```bash
-python -m runtime.play examples/world.json --auto --brain dumb        # legacy pathfinder
-python -m runtime.play examples/world.json --auto --brain exploiter   # interaction-aware (default)
+python -m runtime.play examples/world.json --auto --brain hunter     # legacy chaser
+python -m runtime.play examples/world.json --auto --brain artisan    # forge economy
+python -m runtime.play examples/world.json --auto --brain whisper    # stealth diplomat
 ```
+Six player profiles: artisan, cartographer, emergent, exploiter, seeker, whisper.
+All share one `UniversalBrain` class (see `AGENT_SPEC.md`).
 
 The world got smarter too: tier-4+ monsters and faction hunters now lure *you* onto the
 acid, the traps, and the crystals you meant to use on them — so a dumb descent dies faster

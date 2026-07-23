@@ -6,62 +6,87 @@ Two codebases under one roof:
 
 - **`vaultcrawl/`** — the bake pipeline. Markdown vault → graph metrics → mechanical slots
   (deterministic) → LLM names/lore (the "skin", can never move a number) → `world.json`.
-  Entry: `python3 -m vaultcrawl.bake <vault> -o world.json`. Zero deps, runs on stock Python.
-- **`runtime/`** — a terminal roguelike that renders a baked `world.json`, with an 18-system
-  stack (sigils, reactions, senses, brains, factions, ecology).
-  Entry: `python3 -m runtime.play world.json` (interactive) or `--auto` (headless AI demo).
+  Entry: `python3 -m vaultcrawl.bake <vault> -o world.json`. Zero deps, stock Python.
+- **`runtime/`** — a terminal roguelike rendering a baked `world.json`, with a 28-system
+  stack, 6 AI agent profiles, and 25 consumable recipes.
+  Entry: `python3 -m runtime.play world.json` (interactive) or `--auto` (headless).
 
 Run both from the repo root so the packages import.
 
-## The core invariant
+## Commands
 
-Deterministic mechanical skeleton vs. LLM semantic skin. The LLM gets only `_`-prefixed flavor
-inputs and returns only `name`/`flavor`/`title`/`objective` — it is structurally unable to move a
-tier, depth, or power number (`generate.py:69-81`, schemas in `prompts.py:115-152`). **Do not
-break this seam.** If you add a generated field, keep mechanics out of the LLM's output schema.
+```bash
+python3 -m vaultcrawl.bake sample_vault -o examples/world.json   # bake a world
+python3 -m runtime.play examples/world.json                       # interactive play
+python3 -m runtime.play examples/world.json --auto --brain seeker # headless agent
+python3 -m runtime.agent_eval examples/world.json --runs 20       # evaluation harness
+python3 run_agents.py                                             # multi-agent runner
+python3 -m pytest tests/ -q                                       # 64 test modules
+```
 
-## Known issues (verified)
+## Process — read this before touching anything
 
-- **Bake determinism, half-fixed.** Edge ordering is now sorted (`mapping.py`), so re-baking
-  on the same machine is byte-identical. Still open: `activity` derives from file **mtimes**
-  (`ingest.py:115`) and is baked in, so "identical world on any machine" is false after a vault copy.
-- **Privacy is enforced.** `#nogame`/`#private` tags exclude a note entirely at ingest, and
-  excluded titles are scrubbed from kept bodies (tested in `tests/test_privacy.py`). Sandbox
-  growth on large vaults (~20s at 120 notes) is cached per seed in `<world>.site.json`
-  (`Game(site_cache=...)`); stale caches regrow automatically.
-- **Real-LLM path is unproven.** No Anthropic-backed `complete_json` exists; `generate_world`
-  indexes `out["name"]`/`out["flavor"]` with no fallback, so a missing key crashes the bake.
-- **`runtime/arch/` is LIVE.** The Christopher-Alexander compiler (grow/carve/wholeness +
-  interiors.py room-scale patterns: colonnade/sanctum/alcoves/stones/overgrowth/ruin) now
-  powers the default interactive game: `Game(sandbox=True)` builds one grown semilattice world
-  (no floors; walk inward, periphery to greatest center). The classic descent remains for
-  `--descent`, `--auto`, and the floor-based tests. Still unwired from the spec: §10 word-level
-  flow, the `siteplan` bake block, and the "continuous megastructure sliced into floors" mode.
+**Every domain has a spec. Find your task below, read the spec first, then work.**
 
-## The systems gap (read `SYSTEMS_GAP.md`)
+| If your task is... | Read this first | What it covers |
+|---|---|---|
+| Understanding systems, the event bus, or System base class | `SYSTEMS_SPEC.md`, `INTERACTIONS_SPEC.md` | System hooks, canonical events, query API, contracts |
+| Working on enemy/monster AI or NPC behavior | `BRAINS_SPEC.md`, `MIND_SPEC.md` | Brain interface, capability ladder, memory/planning tiers |
+| Working on player-agent AI or agent profiles | `AGENT_SPEC.md` | UniversalBrain, 6 profiles, scoring formula, perception |
+| Working on ecology (flora, fauna, weather, structures, decay) | `ECOLOGY_SPEC.md` | Autonomous world-layer, allegiance model, terrain write-API |
+| Working on sigils, forge, salvage, or the matter economy | `SALVAGE_SPEC.md`, `QUALITY_SPEC.md` | Shatter→salvage→forge loop, quality grades, proficiency |
+| Working on senses, perception, or creature detection | `SENSES_SPEC.md` | Two-layer perception (detection/identification), sense profiles |
+| Working on quests, dialogue, Keepers, or machines | `DEEPEN_SPEC.md` | Quest lifecycle, NPC parley, Fabricator/Terminal placement |
+| Working on loci, crafting, wear, recipes, or skills | `CRAFT_SPEC.md`, `LOCI_SPEC.md` | LocusSystem type-casting, 4 workspace rituals, 25 consumables, 5 skill trees |
+| Working on level gen, architecture compiler, or sandbox mode | `ARCHITECTURE_SPEC.md` | Pattern-language compiler, semilattice world, wholeness scoring |
+| Working on room fixtures, scenery, or sense-of-place | `DESIGN_PLACE_PANEL.md` | Fixture placement, examinable voice, ambient narrator |
+| Working on cross-run persistence or Upheaval | `runtime/persistence.py` (docstring) | RunChronicle, terraforming events, death artifacts |
+| Working on knowledge, fog-of-war, or map mechanics | `runtime/knowledge.py` (docstring) | Known/learned notes, region mapping, faction insight |
+| Understanding what player verbs exist and what's missing | `SYSTEMS_GAP.md` | 28-system reachability audit, verb binding gaps |
 
-Mostly closed. The interactive UI now binds 9 verbs: move, descend, wait (`.`), examine (`x`),
-cast (`c`, `SigilSystem.cast`), forge (`f`, autopilot off in interactive), breakdown (`b`),
-bump-attack, quit. Baked flavor surfaces in play (floor entry, first blood, examine); rooms
-carry note identities with contextual placement; marginalia weave the corpus. Still open per
-`SYSTEMS_GAP.md`: a direct quest accept/turn-in verb, and explicit talk (optional).
+**Rule:** Before touching any file in a domain, read the spec for that domain. Specs contain contracts, test recipes, and cross-system interaction rules. Skipping the spec produces work that breaks invariants.
 
-## Relations & embodiment
+## Agent architecture
 
-Hostility is faction-aware, not player-special: `Game.hostile(a, b)` (actors) layers kin /
-rival-house / reputation (`FRIEND_STANDING`) rules over the legacy `_hostile` string table,
-and every spawn carries `actor.faction` (its region's factionId). All engine paths
-(try_move, _npc_step, sense.hostiles, senses.Perception) route through it. `--embody WHO`
-(runtime/play.py `embody()`) transfers control to any actor; nothing else changes, so its
-faction relations simply become yours.
+Six agent profiles (artisan, cartographer, emergent, exploiter, seeker, whisper) share one
+`UniversalBrain` class in `runtime/agent.py`. Profiles are scoring weight dicts. The identity
+formula is: `score = max(profile_weight, state_urgency) + turn_bonus`. Berlin-compliant:
+every agent CAN do everything. Starting state determines which branches are reachable.
 
-## Conventions
+The agent communicates with the game via a 14-verb `AgentAction` vocabulary
+(`runtime/agent_action.py`) and reads the world through `agent_state()` in
+`runtime/agent_perception.py`. See `AGENT_SPEC.md` for the full architecture.
 
-- **No em dashes** in anything user-facing (prose, comments, copy). Rephrase.
-- Determinism first: no `random.seed()`/global state, no `hash()`-seeded ordering, no wall-clock in
-  the bake path. Seed RNG from SHA-256 of stable keys (see `_shash`/`_rng`). Sort before iterating
-  sets/dicts whose order reaches output.
-- Tests are pytest-style but **pytest is not a declared dep** — `pip install pytest` then
-  `python3 -m pytest tests/ -q` (30 tests, ~0.3s). `unittest discover` finds nothing.
-- `ponytail:` comments mark deliberate shortcuts; there's a history of over-engineering audits.
-  Prefer deleting over adding.
+## Core invariants
+
+1. **Berlin Interpretation compliance — mandatory, project-wide.** Per the Berlin
+   Interpretation of roguelikes: the game must have no class-locked features. Every
+   agent must be able to do everything. Every system must be reachable by anyone.
+   No ability gates. No personality-gated code paths. No hardcoded character differences.
+   Differentiation comes exclusively from *starting state* (HP, DEF, matter, sigils,
+   knowledge, standing, recipes) and *preference biases* (scoring weights, never locks).
+   If you add a system, every profile must be able to interact with it. If you add an
+   item, every profile must be able to craft or acquire it. If you add a locus activation
+   type, it must be reachable through the universal tree. The six profiles are starting
+   states + preference biases — never character classes. See `AGENT_SPEC.md`
+   §Berlin Interpretation for the architectural contract. **Violating this is a design
+   regression of the highest order.**
+2. **Deterministic skeleton vs. LLM skin.** The LLM gets only `_`-prefixed flavor inputs
+   and returns only `name`/`flavor`/`title`/`objective`. It cannot move a tier, depth, or
+   power number. Do not break this seam.
+3. **No em dashes** — ever, in anything (code, comments, docs, UI, commit messages). Rephrase.
+4. **Determinism first.** No `random.seed()`, no `hash()`-seeded ordering, no wall-clock
+   in the bake path. Seed RNG from SHA-256 of stable keys.
+5. **Tests are pytest-style.** `pip install pytest && python3 -m pytest tests/ -q`
+   (64 test modules). `unittest discover` finds nothing.
+6. `ponytail:` comments mark deliberate shortcuts. Prefer deleting over adding.
+
+## Known issues
+
+- **Bake determinism, half-fixed.** Edge ordering is sorted, so re-baking on the same
+  machine is byte-identical. Still open: `activity` derives from file mtimes and is baked in.
+- **Privacy is enforced.** `#nogame`/`#private` tags exclude notes at ingest.
+- **Real-LLM path is unproven.** No Anthropic-backed `complete_json` exists. The offline
+  stub is the default. A `_named()` fallback prevents crashes when LLM output is missing keys.
+- **`runtime/arch/` is LIVE.** The Alexander compiler powers the default interactive game.
+  Still unwired: §10 word-level flow, the `siteplan` bake block, continuous-megastructure mode.
