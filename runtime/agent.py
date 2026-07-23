@@ -272,16 +272,18 @@ class UniversalBrain(Brain):
             score = _score(self.profile, "explore", 3, bonus, True)
             candidates.append(("poi", score, ("poi", ppx, ppy)))
 
-        # ---- WORKSPACES ----
+        # ---- WORKSPACES + PORTALS ----
         for ws_key, ws_field in [("workspace_fabricator", "nearest_fabricator"),
                                   ("workspace_terminal", "nearest_terminal"),
                                   ("workspace_depleted", "nearest_depleted"),
-                                  ("workspace_camp", "nearest_camp")]:
+                                  ("workspace_camp", "nearest_camp"),
+                                  ("stairs", "nearest_portal")]:  # portals = floor skips
             ws = s.get(ws_field)
             if ws and len(ws) >= 3 and ws[2] is not None:
                 dist = ws[2]
-                if dist <= 6 and len(s.get("adjacent_hostiles", [])) == 0 and len(s.get("near_hostiles", [])) == 0:
-                    score = _score(self.profile, ws_key, max(0, 6 - dist), bonus, True)
+                if dist <= 8 and len(s.get("adjacent_hostiles", [])) == 0 and len(s.get("near_hostiles", [])) == 0:
+                    score = _score(self.profile, ws_key if ws_key != "stairs" else "stairs",
+                                   max(0, 12 - dist), bonus, True)  # portals get bonus for skip value
                     candidates.append((ws_key, score, ("workspace", ws[0], ws[1])))
 
         # ---- REST ----

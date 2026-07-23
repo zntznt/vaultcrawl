@@ -1347,6 +1347,22 @@ class Game:
                     self.log(f"♛ {boss.name} has newly claimed the throne.")
                 self.actors.append(boss)
                 self.log(f"!! {boss.name} — {b.get('title', '')} — guards this depth.")
+                # Boss room hazards — enables environmental kill victory path
+                if self.floor == self.max_floor and hasattr(self, 'level'):
+                    react = self.system("reactions")
+                    if react and hasattr(react, 'props'):
+                        bx, by = boss.x, boss.y
+                        for dy in range(-2, 3):
+                            for dx in range(-2, 3):
+                                if abs(dx) + abs(dy) >= 2:  # don't cover the boss tile
+                                    tx, ty = bx + dx, by + dy
+                                    if self.level.walkable(tx, ty):
+                                        # alternate acid/crystal hazards around boss
+                                        if (dx + dy) % 2 == 0:
+                                            react.props[(tx, ty)] = {"acid"}
+                                        else:
+                                            react.props[(tx, ty)] = {"charged"}
+                        self.log("The chamber thrums with volatile energy — the terrain is a weapon.")
                 if boss.flavor:
                     self.log(boss.flavor)
                     self._flavored.add(boss.source)

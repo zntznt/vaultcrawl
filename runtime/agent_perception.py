@@ -493,6 +493,15 @@ def agent_state(game, actor) -> dict:
         if nearest_camp is None or d < nearest_camp[2]:
             nearest_camp = (tx, ty, d)
 
+    # Portal proximity — floor-skipping shortcuts
+    nearest_portal = None
+    portals = getattr(game, "_gates", {})
+    if portals:
+        for (gx, gy), _ in portals.items():
+            d = max(abs(gx - px), abs(gy - py))
+            if nearest_portal is None or d < nearest_portal[2]:
+                nearest_portal = (gx, gy, d)
+
     # Commune gradient: agent senses the boss when truths >= 2 or matter >= 4
     position["commune_ready"] = (truths_read >= 2 or matter_total >= 4)
 
@@ -526,6 +535,7 @@ def agent_state(game, actor) -> dict:
         "nearest_terminal": nearest_terminal,
         "nearest_depleted": nearest_depleted,
         "nearest_camp": nearest_camp,
+        "nearest_portal": nearest_portal,
         "has_trap_near": has_trap_near,
         "faction_kills": faction_kills,
         "kills_on": kills_on,
