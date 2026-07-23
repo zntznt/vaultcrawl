@@ -1,7 +1,8 @@
-# Systems gap: 18 systems, 9 player verbs (mostly closed)
+<!-- Status: Legacy (pre-Berlin) | Written: 2026-06-29 | Berlin compliance not yet applied to this domain -->
+# Systems gap: 28-system stack, 22 player keybindings (mostly closed)
 
-The engine runs an 18-system stack (`runtime/play.py` wires them into `Game`). The
-**interactive human UI** (`runtime/play.py` `interactive()`) binds nine inputs:
+The engine runs a 28-system stack (`runtime/play.py` wires them into `Game`). The
+**interactive human UI** (`runtime/play.py` `interactive()`) binds 22 keys:
 
 | Key | Action | Calls |
 |-----|--------|-------|

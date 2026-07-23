@@ -1,3 +1,4 @@
+<!-- Status: Phase 5 done, Phase 6 (full integration) pending | Written: 2026-07-03 | Compiler works in sandbox mode only; not yet the default level generator -->
 # ARCHITECTURE_SPEC — Pattern-language generation for vaultcrawl
 
 > *"When you build a thing you cannot merely build that thing in isolation, but must repair

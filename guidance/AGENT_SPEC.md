@@ -1,3 +1,4 @@
+<!-- Status: Current (post-Berlin) | Written: 2026-07-23 -->
 # Agent contract — player-agent AI architecture
 
 One brain class (`UniversalBrain`), six profiles, one scoring formula. Every agent

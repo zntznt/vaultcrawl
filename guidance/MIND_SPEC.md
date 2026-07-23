@@ -1,3 +1,4 @@
+<!-- Status: Legacy (pre-Berlin) | Written: 2026-06-29 | Berlin compliance not yet applied to this domain -->
 # Mind contract — deliberate planning + memory-driven behaviour
 
 Brains so far are *reactive* (one step from current perception). This layer adds creatures

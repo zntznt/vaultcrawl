@@ -1,3 +1,4 @@
+<!-- Status: Current (post-Berlin) | Written: 2026-07-23 -->
 # Sense-of-Place Design Panel — Build Plan
 
 _Convened 2026-07-02 after the verdict: "the feeling of place is garbage and absent."_

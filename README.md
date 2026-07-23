@@ -1,5 +1,7 @@
 # vaultcrawl
 
+<!-- Status: Current | Last updated: 2026-07-23 -->
+
 Generate a traditional roguelike world from a folder of markdown notes (an Obsidian
 vault, or any `.md` directory). A personal knowledge graph *is* a world model — notes
 are rooms, links are corridors, your most-linked obsession is the final boss.
@@ -62,7 +64,7 @@ ingest  -> analyze -> mapping -> generate -> validate -> bake
 | `guidance/ARCHITECTURE_SPEC.md` | Pattern-language level-generation compiler (Christopher Alexander). |
 | `guidance/SYSTEMS_SPEC.md`, `guidance/INTERACTIONS_SPEC.md` | The base system contract + the cross-system event-bus contract. |
 | `guidance/ECOLOGY_SPEC.md`, `guidance/BRAINS_SPEC.md`, `guidance/SENSES_SPEC.md`, `guidance/MIND_SPEC.md`, `guidance/SALVAGE_SPEC.md`, `guidance/QUALITY_SPEC.md` | Per-domain specification documents (see CLAUDE.md process table for routing). |
-| `guidance/DESIGN_PLACE_PANEL.md` | Sense-of-place: room fixtures, scenery, examinable voice. |
+| `guidance/DESIGN_PLACE_PANEL.md` | Sense-of-place: room fixtures, scenery, examinable voice. Note: the panel's fixture-first approach augments (not replaces) the color/palette system described below. |
 | `guidance/SYSTEMS_GAP.md` | 28-system player-reachability audit. What verbs the player has and what's still missing. |
 | `vaultcrawl/ingest.py` | Parse markdown → `Note`s + a directed link graph. Hash the vault into a content seed. |
 | `vaultcrawl/analyze.py` | Pure-Python graph metrics: PageRank, Louvain communities, bridges, orphans. |

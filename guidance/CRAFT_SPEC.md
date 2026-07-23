@@ -1,3 +1,4 @@
+<!-- Status: Current (post-Berlin) | Written: 2026-07-23 -->
 # Crafting / wear / recipes / skills contract
 
 The agent sacrifices something permanent at a workspace to gain a system wire.

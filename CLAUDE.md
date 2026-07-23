@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+<!-- Status: Current | Last updated: 2026-07-23 -->
+
 ## What this is
 
 Two codebases under one roof:
@@ -88,5 +90,7 @@ The agent communicates with the game via a 14-verb `AgentAction` vocabulary
 - **Privacy is enforced.** `#nogame`/`#private` tags exclude notes at ingest.
 - **Real-LLM path is unproven.** No Anthropic-backed `complete_json` exists. The offline
   stub is the default. A `_named()` fallback prevents crashes when LLM output is missing keys.
-- **`runtime/arch/` is LIVE.** The Alexander compiler powers the default interactive game.
-  Still unwired: §10 word-level flow, the `siteplan` bake block, continuous-megastructure mode.
+- **`runtime/arch/` is LIVE.** The Alexander compiler powers sandbox mode
+  (`Game(sandbox=True)`, the default interactive mode). Classic descent (`--descent`,
+  `--auto`) still uses the original dungeon generator. Still unwired: §10 word-level
+  flow, the `siteplan` bake block, continuous-megastructure mode.

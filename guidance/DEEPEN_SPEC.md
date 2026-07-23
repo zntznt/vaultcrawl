@@ -1,3 +1,4 @@
+<!-- Status: Current (post-Berlin) | Written: 2026-07-23 -->
 # Deepen contract — social, objective, and machine layer
 
 Turns vault `- [ ]` TODOs into quests, note-anchored Keepers into NPCs, and

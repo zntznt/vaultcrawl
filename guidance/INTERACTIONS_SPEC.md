@@ -1,3 +1,4 @@
+<!-- Status: Legacy (pre-Berlin) | Written: 2026-06-29 | Berlin compliance not yet applied to this domain -->
 # Interactions contract (deep cross-system play)
 
 The five systems already run side by side. This phase makes them **interact** — the

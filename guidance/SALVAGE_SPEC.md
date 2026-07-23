@@ -1,3 +1,4 @@
+<!-- Status: Legacy (pre-Berlin) | Written: 2026-06-29 | Berlin compliance not yet applied to this domain -->
 # Salvage / inventory contract — everything breaks into the world's materials
 
 The matter of the world is its bible `aesthetic` vocabulary. `runtime/components.py` already

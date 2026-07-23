@@ -1,3 +1,4 @@
+<!-- Status: Legacy (pre-Berlin) | Written: 2026-06-29 | Berlin compliance not yet applied to this domain -->
 # Ecology contract — an autonomous world (player/faction-independent)
 
 This layer adds world entities that live, react, and die on their OWN logic — flora,

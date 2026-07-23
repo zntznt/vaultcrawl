@@ -1,3 +1,4 @@
+<!-- Status: Current (post-Berlin) | Written: 2026-07-23 -->
 # Loci contract -- polymorphic encounter nodes
 
 Neutral until an agent approaches. The agent's profile type-casts the locus: a

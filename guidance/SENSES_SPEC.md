@@ -1,3 +1,4 @@
+<!-- Status: Legacy (pre-Berlin) | Written: 2026-06-29 | Berlin compliance not yet applied to this domain -->
 # Senses contract — perception by capacity 
 
 The perception core lives in `runtime/senses.py`. Read it first. Two layers:
