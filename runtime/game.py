@@ -1439,6 +1439,23 @@ class Game:
         if region.get("flavor") and ("fl:" + region["id"]) not in self.announced:
             self.announced.add("fl:" + region["id"])
             self.log(region["flavor"])
+        # Wild landmarks for effects discovery (every 3rd floor, up to 2 orphans)
+        if not self.sandbox and self.floor % 3 == 0:
+            orphans = [nid for nid, n in self.m["graph"]["nodes"].items()
+                       if n.get("degree", 1) == 0]
+            if orphans:
+                if not hasattr(self, "_wild_structs"):
+                    self._wild_structs = {}
+                for _ in range(min(2, len(orphans))):
+                    for _ in range(20):
+                        tx = rng.randint(2, self.level.w - 3)
+                        ty = rng.randint(2, self.level.h - 3)
+                        if self.level.walkable(tx, ty) and self.actor_at(tx, ty) is None \
+                           and (tx, ty) not in self._wild_structs \
+                           and max(abs(tx - px), abs(ty - py)) > 4:
+                            nid = rng.choice(orphans)
+                            self._wild_structs[(tx, ty)] = nid
+                            break
         for s in self.systems:
             s.on_floor_enter(self)
         if self._graves:

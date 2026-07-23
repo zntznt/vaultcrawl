@@ -357,6 +357,9 @@ class UniversalBrain(Brain):
                 for y in range(max(0, pk_y-20), min(game.level.h, pk_y+21)):
                     for x in range(max(0, pk-20), min(game.level.w, pk+21)):
                         if game.level.walkable(x, y) and (x, y) not in sn:
+                            # Skip visible traps when scholarship tier 2+
+                            if any((x, y) == t for t in s.get("traps_visible", [])):
+                                continue
                             d = max(abs(x-pk), abs(y-pk_y))
                             if d < bd:
                                 best, bd, bt = (x, y), d, step_toward(game, actor, x, y, safe=True)

@@ -287,6 +287,7 @@ def agent_state(game, actor) -> dict:
 
     # -- traps -----------------------------------------------------------------
     has_trap_near = False
+    traps_visible = []  # scholarship tier 2+: see exact trap positions
     if know_sys is not None:
         seen = know_sys.seen.get(game.floor, set())
         for dy in (-1, 0, 1):
@@ -299,6 +300,15 @@ def agent_state(game, actor) -> dict:
                     break
             if has_trap_near:
                 break
+    # Scholarship tier 2+: see armed traps within sight radius
+    try:
+        from runtime.proficiency import skills as _skills
+        if _skills().tier("scholarship") >= 2:
+            structures = game.system("structures")
+            if structures and hasattr(structures, 'hazard_tiles'):
+                traps_visible = list(structures.hazard_tiles(game))
+    except Exception:
+        pass
 
     # -- faction kills ---------------------------------------------------------
     faction_kills = {}
@@ -537,6 +547,7 @@ def agent_state(game, actor) -> dict:
         "nearest_camp": nearest_camp,
         "nearest_portal": nearest_portal,
         "has_trap_near": has_trap_near,
+        "traps_visible": traps_visible,
         "faction_kills": faction_kills,
         "kills_on": kills_on,
         "recent_kill_count": recent_kill_count,
