@@ -1806,7 +1806,9 @@ class Game:
         weather = self.system("weather")
         if weather:
             props = getattr(weather, 'props_at', None)
-            if props and props(self.player.x, self.player.y):
+            weather_active = (props and props(self.player.x, self.player.y)) or \
+                            getattr(weather, 'weather', '') == 'acrid haze'
+            if weather_active:
                 self.clear_weather()
                 return
         decay = self.system("decay")

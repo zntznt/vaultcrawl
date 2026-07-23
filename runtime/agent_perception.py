@@ -446,13 +446,19 @@ def agent_state(game, actor) -> dict:
     loci_sys = game.system("loci")
     loci_count = 0
     nearest_locus = None
+    beacon_on_floor = False
+    nearest_beacon = None
     if loci_sys:
         for (lx, ly), loc in loci_sys.loci.items():
             if not loc.get("depleted"):
                 loci_count += 1
                 d = max(abs(lx - px), abs(ly - py))
                 if nearest_locus is None or d < nearest_locus[2]:
-                     nearest_locus = (lx, ly, d)
+                    nearest_locus = (lx, ly, d)
+                if loc.get("beacon"):
+                    beacon_on_floor = True
+                    if nearest_beacon is None or d < nearest_beacon[2]:
+                        nearest_beacon = (lx, ly, d)
 
     # Workspaces for crafting (Fabricator, Terminal, Camp, Depleted Locus)
     nearest_fabricator = None
@@ -507,6 +513,8 @@ def agent_state(game, actor) -> dict:
         "nearby_landmark": nearby_landmark,
         "loci_count": loci_count,
         "nearest_locus": nearest_locus,
+        "beacon_on_floor": beacon_on_floor,
+        "nearest_beacon": nearest_beacon,
         "nearest_fabricator": nearest_fabricator,
         "nearest_terminal": nearest_terminal,
         "nearest_depleted": nearest_depleted,

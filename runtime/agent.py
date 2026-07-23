@@ -128,11 +128,20 @@ class UniversalBrain(Brain):
                 step = step_toward_avoiding_elites(game, actor, st[0], st[1])
                 return AgentAction("move", dx=step[0], dy=step[1])
 
-        # ---- COMMUNE: alternate win condition ----
-        if s["knowledge"]["truths_read"] >= 2 or s["matter"]["total"] >= 4:
-            if s["nav"]["any_boss_near"]:
-                score = self.profile.get("commune", 0) + turn_bonus + 25
-                candidates.append(("commune", score, AgentAction("commune")))
+        # ---- COMMUNE: alternate win, boosted by beacon proximity ----
+        can_commune = s["knowledge"]["truths_read"] >= 2 or s["matter"]["total"] >= 4
+        if can_commune and s["nav"]["any_boss_near"]:
+            score = self.profile.get("commune", 0) + turn_bonus + 25
+            candidates.append(("commune", score, AgentAction("commune")))
+        # Beacon pull: if a commune beacon is on this floor, path toward it
+        if s.get("beacon_on_floor") and s.get("nearest_beacon"):
+            bx, by, bd = s["nearest_beacon"]
+            if bd > 2:  # not already on it
+                truths = s["knowledge"]["truths_read"]
+                matter = s["matter"]["total"]
+                urgency = 15 if (truths >= 2 or matter >= 4) else 5  # stronger if ready
+                score = self.profile.get("commune", 3) + turn_bonus + urgency
+                candidates.append(("beacon", score, ("workspace", bx, by)))
 
         # ---- HEAL: cast Recall ----
         if hp_pct < 60 and s["can_heal_meaningfully"] and s["vitals"]["hp"] < s["vitals"]["max_hp"]:
@@ -240,7 +249,7 @@ class UniversalBrain(Brain):
             score = self.profile.get("explore", 0) + turn_bonus + 3
             candidates.append(("poi", score, ("poi", px, py)))
 
-        # ---- WORKSPACES: path to crafting sites (only very close ones) ----
+        # ---- WORKSPACES: path to crafting sites ----
         for ws_key, ws_field in [("workspace_fabricator", "nearest_fabricator"),
                                   ("workspace_terminal", "nearest_terminal"),
                                   ("workspace_depleted", "nearest_depleted"),
@@ -248,9 +257,8 @@ class UniversalBrain(Brain):
             ws = s.get(ws_field)
             if ws and len(ws) >= 3 and ws[2] is not None:
                 dist = ws[2]
-                if dist <= 8 and len(s.get("adjacent_hostiles", [])) == 0:
-                    score = self.profile.get(ws_key, 3) + turn_bonus // 2
-                    score += max(0, 8 - dist)
+                if dist <= 12 and len(s.get("adjacent_hostiles", [])) == 0:
+                    score = self.profile.get(ws_key, 3) + turn_bonus + max(0, 12 - dist)
                     candidates.append((ws_key, score, ("workspace", ws[0], ws[1])))
 
         # ---- REST: heal when safe ----
@@ -258,6 +266,11 @@ class UniversalBrain(Brain):
             score = self.profile.get("rest", 0) + turn_bonus
             score += (100 - hp_pct) // 5
             candidates.append(("rest", score, AgentAction("rest")))
+
+        # ---- WEATHER CLEAR: interact to clear hazardous weather ----
+        if s["weather_hazard"] and s["matter"]["total"] >= 1 and not s["adjacent_hostiles"]:
+            score = self.profile.get("rest", 3) + turn_bonus + 3
+            candidates.append(("clear_weather", score, AgentAction("interact")))
 
         # ---- FIGHT: combat as option (not last resort — scored alongside others) ----
         if s["adjacent_hostiles"]:
