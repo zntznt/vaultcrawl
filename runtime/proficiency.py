@@ -81,11 +81,11 @@ class SkillTracker:
 
     def _recalc_tier(self):
         total = self._total
-        if total >= 100:     self._tier = 5
-        elif total >= 60:    self._tier = 4
-        elif total >= 30:    self._tier = 3
-        elif total >= 15:    self._tier = 2
-        elif total >= 5:     self._tier = 1
+        if total >= 50:     self._tier = 5
+        elif total >= 25:    self._tier = 4
+        elif total >= 12:    self._tier = 3
+        elif total >= 6:     self._tier = 2
+        elif total >= 3:     self._tier = 1
         else:                self._tier = 0
 
     def tier(self) -> int:

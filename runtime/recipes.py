@@ -645,7 +645,7 @@ def _scholar_bonus(game) -> float:
 # ── discovery sources ────────────────────────────────────────────────────────
 
 def discover_from_lore(game) -> str | None:
-    if _rng(f"{game.seed}:{game.turn}:lore_recipe") < 0.10:
+    if _rng(f"{game.seed}:{game.turn}:lore_recipe") < 0.20:
         return _pick_undiscovered(game, "lore")
     return None
 

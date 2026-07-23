@@ -244,6 +244,36 @@ class Game:
             self.player._known_recipes.add("faction_token")
             self.log("You start with a Phase sigil and a Faction Token recipe.")
 
+    def _seed_attractors(self):
+        """Give every dormant attractor an on-ramp so agents discover the mechanic."""
+        px, py = self.player.x, self.player.y
+        # Haunted: one harmless echo-ghost in the starting room
+        from runtime.entities import make_enemy
+        echo = make_enemy({
+            "name": "Fading Echo",
+            "archetype": "echo",
+            "tier": 1,
+            "sourceNoteId": list(self.m.get("graph", {}).get("nodes", {}).keys())[0]
+                        if self.m.get("graph", {}).get("nodes") else "",
+            "regionId": list(self.m.get("regions", [{"id": "region_0"}]))[0].get("id", "region_0"),
+        }, px + 3, py)
+        echo.hp = 1
+        echo.max_hp = 1
+        echo.allegiance = "wild"
+        echo.brain = None
+        self.actors.append(echo)
+        self.log("A fading echo drifts through the room — something of what was lingers here.")
+        # Companion: guaranteed tameable grazer nearby on floor 2+
+        if not hasattr(self, '_attractor_companion_seeded'):
+            self._attractor_companion_seeded = True
+        # Echo cascade: boost starting Ward durability so Echo can fire
+        sigs = self.system("sigils")
+        if sigs:
+            for s in sigs.slots:
+                if s.get("ability") == "Ward":
+                    s["durability"] = max(s.get("durability", 2), 5)
+                    break
+
     def _set_level(self, level, z: int = 0):
         self.level = level
         level.z = getattr(level, "z", z)
@@ -1549,6 +1579,8 @@ class Game:
                  f"{target.name} is placated.")
         self._join_wild(target)
         self._tension = max(0, self._tension - 15)
+        from runtime.proficiency import exercise_skill
+        exercise_skill("diplomacy")
         return True
 
     def _join_wild(self, target):
@@ -1591,8 +1623,10 @@ class Game:
 
         if standing >= 1:
             options.append("coerce")
-        # Whisper always gets parley — personality, not a resource gate
-        if source_known or getattr(self.player, "_agent_name", "") == "whisper":
+        # Any agent with sufficient truths can parley — earned through lore, not identity
+        truths = (getattr(self.system("marginalia"), "read", 0) or 0) + \
+                 (getattr(self.system("history"), "read", 0) or 0)
+        if source_known or truths >= 2:
             options.append("parley")
         if matter >= 1:
             options.append("flee")
@@ -1678,6 +1712,8 @@ class Game:
             self.player.max_hp = max(4, self.player._base_max_hp - penalty)
             self.player.hp = min(self.player.hp, self.player.max_hp)
         self.log(f"{target.name} falls in beside you.")
+        from runtime.proficiency import exercise_skill
+        exercise_skill("diplomacy")
 
     def confide(self, target) -> bool:
         """Trade a read truth with a friendly creature (becalmed or companion):

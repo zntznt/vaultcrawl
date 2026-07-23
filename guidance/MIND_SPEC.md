@@ -1,4 +1,4 @@
-<!-- Status: Legacy (pre-Berlin) | Written: 2026-06-29 | Berlin compliance not yet applied to this domain -->
+<!-- Status: Valid (pre-Berlin, creature domain) | Written: 2026-06-29 | Berlin-audited 2026-07-23: describes NPC/enemy systems, no player-class locks -->
 # Mind contract — deliberate planning + memory-driven behaviour
 
 Brains so far are *reactive* (one step from current perception). This layer adds creatures

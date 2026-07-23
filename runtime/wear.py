@@ -54,6 +54,8 @@ def maintain(game, item: dict, quality_name: str = "Normal") -> bool:
         restore = 1 + (hash(f"{item.get('ability','')}:{game.turn}") % 2)  # 1 or 2
     new_tier = max(0, current - restore)
     item["wear"] = WEAR_TIERS[new_tier]
+    from runtime.proficiency import exercise_skill
+    exercise_skill("tinkering")
     return True
 
 

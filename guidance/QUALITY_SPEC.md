@@ -1,4 +1,4 @@
-<!-- Status: Legacy (pre-Berlin) | Written: 2026-06-29 | Berlin compliance not yet applied to this domain -->
+<!-- Status: Valid (pre-Berlin, creature domain) | Written: 2026-06-29 | Berlin-audited 2026-07-23: describes NPC/enemy systems, no player-class locks -->
 # Quality contract — Factorio-style grades on everything
 
 `runtime/quality.py` is the hub. Tiers: `NORMAL(0) UNCOMMON(1) RARE(2) EPIC(3) LEGENDARY(4)`,

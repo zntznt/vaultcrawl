@@ -65,9 +65,18 @@ Each system is one of:
 | 16 | Quality (`quality.py`) | AMBIENT | Rolls quality on spawns; drives elite special actions on a cadence. Grades the world, not the player. `quality.py:136` |
 | 17 | History (`history.py`) | PLAYER-REACHABLE | Stepping onto a `?` reveals a lore fragment / boss / secret. `history.py:192` |
 | 18 | Knowledge (`knowledge.py`) | AMBIENT | Paints the fog radius each turn; `reveal()` called only by other systems. `knowledge.py:108` |
-| + | `abilities.py` | PLAYER-REACHABLE | Registers enrage/shield/rally/spit/blink/summon/split for elite creatures via Quality — AND for the player: `player_cast` exposes the controlled body's actions in the `c` menu (targeted symmetrically; spawners ally offspring to you). The body is the build. |
+| 19 | EffectSystem (`effects.py`) | PLAYER-REACHABLE | Collect effects from wild landmarks; wear one at a time. Switch freely. `effects.py:64,77` |
+| 20 | CacheSystem (`caches.py`) | PLAYER-REACHABLE | Step on `□` to search cache; yields note-signature materials. Warded variants deal damage. `caches.py:95` |
+| 21 | BodySystem (`body_parts.py`) | AMBIENT | Locational damage on all actors; heals route through `heal_body()`. `body_parts.py:86` |
+| 22 | PortalSystem (`portals.py`) | PLAYER-REACHABLE | Step on portal glyph to traverse; timed collapse with LOS-accelerated timer. `portals.py:51` |
+| 23 | SacrificeSystem (`sacrifice.py`) | PLAYER-REACHABLE | Interact with shrines on deep floors; permanent trade-off rituals. `sacrifice.py:60` |
+| 24 | TerrainModSystem (`terrain_mod.py`) | AMBIENT | Boss-kill sanctums, faction thresholds, forge-sanctums, knowledge-revealed rooms. Event-driven. `terrain_mod.py:70` |
+| 25 | ScentSystem (`scent.py`) | AMBIENT | Deposits scent trails on movement; decays each turn; creature tracking. `scent.py:47` |
+| 26 | CraftSystem (`craft.py`) | PLAYER-REACHABLE | 4 workspace rituals: Fabricator, Terminal, Depleted Locus, Camp. Sacrifice→system-wire. `craft.py:25` |
+| 27 | LocusSystem (`loci.py`) | PLAYER-REACHABLE | Walk near `?` loci; type-cast by agent profile. 5-8 per floor, healing on activation. `loci.py:62` |
+| 28 | `abilities.py` | PLAYER-REACHABLE | Registers enrage/shield/rally/spit/blink/summon/split for elite creatures via Quality — AND for the player: `player_cast` exposes the controlled body's actions in the `c` menu. |
 
-**Counts:** PLAYER-REACHABLE 6 · AMBIENT-ONLY 9 · AUTO-AI-ONLY 3 (+ enemy-only abilities). = 18.
+**Counts:** PLAYER-REACHABLE 14 · AMBIENT-ONLY 11 · AUTO-AI-ONLY 3. = 28 systems.
 
 \* Sigils are listed reachable because you pick them up and position into their effects — but
 the *firing* is automatic. See gap #3, the biggest design hole.

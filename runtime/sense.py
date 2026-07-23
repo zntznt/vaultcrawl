@@ -212,10 +212,10 @@ def _has_non_fight_options(game, actor, target) -> bool:
     salv = game.system("salvage")
     matter = salv.inventory(game).total() if salv else 0
     # Whisper always has parley
-    if getattr(getattr(game, "player", None), "_agent_name", "") == "whisper":
-        return True
-    # Any non-fight gate accessible?
-    return standing >= 1 or source_known or matter >= 1
+    # Any agent with sufficient truths can negotiate — whisper earns them faster through parley affinity
+    truths = (getattr(game.system("marginalia"), "read", 0) or 0) + \
+             (getattr(game.system("history"), "read", 0) or 0)
+    return standing >= 1 or source_known or matter >= 1 or truths >= 2
 
 
 def greedy_dir(fx, fy, tx, ty):

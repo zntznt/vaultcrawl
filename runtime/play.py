@@ -1220,7 +1220,7 @@ def main(argv=None) -> int:
                     help="world-scale factor for the sandbox: bigger places, longer "
                          "ways between them (default 2.0; 1.0 = the old compact world)")
     ap.add_argument("--brain", default="exploiter",
-                    help="player brain: artisan, cartographer, emergent, exploiter (default), seeker, whisper, survivor, hunter")
+                    help="player brain: artisan, cartographer, emergent, exploiter (default), seeker, whisper")
     a = ap.parse_args(argv)
 
     manifest = load_manifest(a.world)
