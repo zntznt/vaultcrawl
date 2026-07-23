@@ -25,7 +25,8 @@ class CraftSystem(System):
         pass
 
     def on_player_act(self, game):
-        """Check if the player is on a craftable workspace."""
+        """Check if the player is on a craftable workspace.
+        When resting in a cleared room with a nearby workspace, announce it."""
         if not game.alive or game.won:
             return
         px, py = game.player.x, game.player.y

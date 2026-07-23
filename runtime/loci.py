@@ -27,6 +27,13 @@ class LocusSystem(System):
         self.depleted = set()
 
         count = 5 + (hash(seed + "count") % 4)  # 5-8
+        # Phase 1: more loci on early floors for sustain, tapering at depth
+        if game.floor <= 8:
+            count += 3  # 8-11 loci on floors 1-8
+        elif game.floor <= 15:
+            count -= 1  # 4-7 loci on floors 9-15
+        else:
+            count -= 3  # 2-5 loci on floors 16+
         placed = 0
         attempts = 0
         px, py = game.player.x, game.player.y
@@ -52,6 +59,20 @@ class LocusSystem(System):
             self.loci[(x, y)] = {"type": None}
             placed += 1
 
+        # Phase 2: Commune beacon — guaranteed locus near stairs on boss region entry
+        boss_floors = [b["depth"] for b in game.m.get("bosses", [])]
+        region_entry = min(boss_floors) if boss_floors else 99
+        if game.floor == region_entry and stairs and not self.loci:
+            # Place a beacon within 6 tiles of stairs
+            for _ in range(50):
+                bx = stairs[0] + (hash(f"{seed}:beacon:x") % 13 - 6)
+                by = stairs[1] + (hash(f"{seed}:beacon:y") % 7 - 3)
+                bx = max(0, min(game.level.w - 1, bx))
+                by = max(0, min(game.level.h - 1, by))
+                if game.level.walkable(bx, by) and (bx, by) not in self.loci:
+                    self.loci[(bx, by)] = {"type": None, "beacon": True}
+                    break
+
     def on_player_act(self, game):
         """Check proximity: if player within range 2 of an untyped locus, type-cast it."""
         if not game.alive or game.won:
@@ -65,10 +86,22 @@ class LocusSystem(System):
                 self._activate(game, lx, ly, locus)
 
     def _activate(self, game, lx, ly, locus):
-        """Type-cast this locus based on the agent's top-scored profile action."""
+        """Type-cast this locus based on the agent's top-scored profile action.
+        Beacon loci prioritize commune if the agent has resources."""
         if not hasattr(game.player, 'brain') or not hasattr(game.player.brain, 'profile'):
             locus["type"] = "depleted"
             return
+
+        # Beacon: commune first if agent has truths or matter
+        if locus.get("beacon"):
+            truths = (getattr(game.system("marginalia"), "read", 0) or 0) + \
+                     (getattr(game.system("history"), "read", 0) or 0)
+            salv = game.system("salvage")
+            matter = salv.inventory(game).total() if salv else 0
+            if truths >= 2 or matter >= 4:
+                self._activate_commune(game, lx, ly, locus)
+                return
+            # Fall through to profile type-casting if commune not available
 
         profile = game.player.brain.profile
         # Find the highest-scored action that translates to a locus activation

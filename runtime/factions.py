@@ -204,6 +204,20 @@ class FactionSystem(System):
         for fac in list(self.disturbance.keys()):
             if self.disturbance.get(fac, 0) < 4:
                 continue
+            # Phase 3: Standing favor — call off hunters if a faction trusts you
+            caller = None
+            for fid, standing in list(self.standing.items()):
+                if standing >= 4 and fid != fac:
+                    caller = fid
+                    break
+            if caller:
+                self.standing[caller] -= 2
+                fname = self.faction_name(fac)
+                cname = self.faction_name(caller)
+                game.log(f"{cname} intervenes — the hunters of {fname} stand down. "
+                         f"({cname} standing: {self.standing[caller]}).")
+                self.disturbance[fac] = max(0, self.disturbance[fac] - 4)
+                continue
             fname = self.faction_name(fac)
             count = rng.randint(1, 2)
             free = free_floor_tiles(
