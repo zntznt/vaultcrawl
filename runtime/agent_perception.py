@@ -452,7 +452,36 @@ def agent_state(game, actor) -> dict:
                 loci_count += 1
                 d = max(abs(lx - px), abs(ly - py))
                 if nearest_locus is None or d < nearest_locus[2]:
-                    nearest_locus = (lx, ly, d)
+                     nearest_locus = (lx, ly, d)
+
+    # Workspaces for crafting (Fabricator, Terminal, Camp, Depleted Locus)
+    nearest_fabricator = None
+    nearest_terminal = None
+    nearest_camp = None
+    machines = game.system("machines")
+    if machines:
+        for (fx, fy) in getattr(machines, "fabricators", set()):
+            d = max(abs(fx - px), abs(fy - py))
+            if nearest_fabricator is None or d < nearest_fabricator[2]:
+                nearest_fabricator = (fx, fy, d)
+        for (tx, ty) in getattr(machines, "terminals", set()):
+            d = max(abs(tx - px), abs(ty - py))
+            if nearest_terminal is None or d < nearest_terminal[2]:
+                nearest_terminal = (tx, ty, d)
+    # Nearest depleted locus
+    nearest_depleted = None
+    if loci_sys:
+        for (lx, ly), loc in loci_sys.loci.items():
+            if loc.get("depleted"):
+                d = max(abs(lx - px), abs(ly - py))
+                if nearest_depleted is None or d < nearest_depleted[2]:
+                    nearest_depleted = (lx, ly, d)
+    # Nearest camp/town tile
+    town_tiles = getattr(game, "_town_tiles", set())
+    for (tx, ty) in town_tiles:
+        d = max(abs(tx - px), abs(ty - py))
+        if nearest_camp is None or d < nearest_camp[2]:
+            nearest_camp = (tx, ty, d)
 
     return {
         "vitals": vitals,
@@ -478,6 +507,10 @@ def agent_state(game, actor) -> dict:
         "nearby_landmark": nearby_landmark,
         "loci_count": loci_count,
         "nearest_locus": nearest_locus,
+        "nearest_fabricator": nearest_fabricator,
+        "nearest_terminal": nearest_terminal,
+        "nearest_depleted": nearest_depleted,
+        "nearest_camp": nearest_camp,
         "has_trap_near": has_trap_near,
         "faction_kills": faction_kills,
         "kills_on": kills_on,

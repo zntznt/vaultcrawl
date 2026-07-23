@@ -20,35 +20,59 @@ PROFILES = {
         "shield": 4, "recall": 4, "rest": 3,
         "fight": 1, "flee": 2, "commune": 1,
         "parley": 1, "becalm": 2, "stairs": 2,
+        "workspace_fabricator": 12,
+        "workspace_terminal": 3,
+        "workspace_depleted": 4,
+        "workspace_camp": 2,
     },
     "cartographer": {
         "explore": 15, "shield": 5, "recall": 6, "rest": 5,
         "forge": 2, "breakdown": 2,
         "fight": -5, "flee": 3, "commune": 2,
         "parley": 2, "becalm": 1, "stairs": 2,
+        "workspace_fabricator": 3,
+        "workspace_terminal": 12,
+        "workspace_depleted": 4,
+        "workspace_camp": 3,
     },
     "emergent": {
         "fight": 15, "shield": 10, "recall": 5, "flee": 4,
         "forge": 3, "breakdown": 2, "explore": 1,
         "rest": 2, "commune": 0,
         "parley": 0, "becalm": 0, "stairs": 1,
+        "workspace_fabricator": 10,
+        "workspace_terminal": 2,
+        "workspace_depleted": 3,
+        "workspace_camp": 3,
     },
     "exploiter": {
         "shield": 15, "fight": 10, "forge": 6, "flee": 5,
         "recall": 4, "rest": 3, "explore": 3,
         "breakdown": 2, "commune": 0,
         "parley": 1, "becalm": 1, "stairs": 2,
+        "workspace_fabricator": 6,
+        "workspace_terminal": 3,
+        "workspace_depleted": 3,
+        "workspace_camp": 10,
     },
     "seeker": {
         "forge": 8, "explore": 8, "fight": 8, "shield": 8,
         "recall": 6, "rest": 5, "flee": 5, "breakdown": 5,
         "commune": 3, "parley": 3, "becalm": 3, "stairs": 3,
+        "workspace_fabricator": 6,
+        "workspace_terminal": 6,
+        "workspace_depleted": 6,
+        "workspace_camp": 6,
     },
     "whisper": {
         "parley": 15, "commune": 10, "becalm": 10, "flee": 6,
         "rest": 5, "explore": 3, "recall": 3,
         "forge": 1, "breakdown": 1, "shield": 1,
         "fight": -5, "stairs": 2,
+        "workspace_fabricator": 2,
+        "workspace_terminal": 4,
+        "workspace_depleted": 12,
+        "workspace_camp": 5,
     },
 }
 
@@ -216,6 +240,19 @@ class UniversalBrain(Brain):
             score = self.profile.get("explore", 0) + turn_bonus + 3
             candidates.append(("poi", score, ("poi", px, py)))
 
+        # ---- WORKSPACES: path to crafting sites (only very close ones) ----
+        for ws_key, ws_field in [("workspace_fabricator", "nearest_fabricator"),
+                                  ("workspace_terminal", "nearest_terminal"),
+                                  ("workspace_depleted", "nearest_depleted"),
+                                  ("workspace_camp", "nearest_camp")]:
+            ws = s.get(ws_field)
+            if ws and len(ws) >= 3 and ws[2] is not None:
+                dist = ws[2]
+                if dist <= 8 and len(s.get("adjacent_hostiles", [])) == 0:
+                    score = self.profile.get(ws_key, 3) + turn_bonus // 2
+                    score += max(0, 8 - dist)
+                    candidates.append((ws_key, score, ("workspace", ws[0], ws[1])))
+
         # ---- REST: heal when safe ----
         if not s["adjacent_hostiles"] and not s["near_hostiles"] and hp_pct < 70:
             score = self.profile.get("rest", 0) + turn_bonus
@@ -277,7 +314,7 @@ class UniversalBrain(Brain):
                     if step != (0, 0):
                         return AgentAction("move", dx=step[0], dy=step[1])
                 return AgentAction("wait")
-            elif kind in ("salvage", "cache", "poi"):
+            elif kind in ("salvage", "cache", "poi", "workspace"):
                 tx, ty = winner[1], winner[2]
                 step = step_toward(game, actor, tx, ty, safe=True)
                 if step != (0, 0):
