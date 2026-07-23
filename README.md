@@ -58,12 +58,12 @@ ingest  -> analyze -> mapping -> generate -> validate -> bake
 | File | Role |
 |------|------|
 | `CLAUDE.md` | Developer onboarding: commands, process routing table (which spec to read for which task), core invariants, known issues. **Read first.** |
-| `AGENT_SPEC.md`, `CRAFT_SPEC.md`, `LOCI_SPEC.md`, `DEEPEN_SPEC.md` | Architecture specs for agents, crafting, loci, and quests/NPCs/machines. |
-| `ARCHITECTURE_SPEC.md` | Pattern-language level-generation compiler (Christopher Alexander). |
-| `SYSTEMS_SPEC.md`, `INTERACTIONS_SPEC.md` | The base system contract + the cross-system event-bus contract. |
-| `ECOLOGY_SPEC.md`, `BRAINS_SPEC.md`, `SENSES_SPEC.md`, `MIND_SPEC.md`, `SALVAGE_SPEC.md`, `QUALITY_SPEC.md` | Per-domain specification documents (see CLAUDE.md process table for routing). |
-| `DESIGN_PLACE_PANEL.md` | Sense-of-place: room fixtures, scenery, examinable voice. |
-| `SYSTEMS_GAP.md` | 28-system player-reachability audit. What verbs the player has and what's still missing. |
+| `guidance/AGENT_SPEC.md`, `guidance/CRAFT_SPEC.md`, `guidance/LOCI_SPEC.md`, `guidance/DEEPEN_SPEC.md` | Architecture specs for agents, crafting, loci, and quests/NPCs/machines. |
+| `guidance/ARCHITECTURE_SPEC.md` | Pattern-language level-generation compiler (Christopher Alexander). |
+| `guidance/SYSTEMS_SPEC.md`, `guidance/INTERACTIONS_SPEC.md` | The base system contract + the cross-system event-bus contract. |
+| `guidance/ECOLOGY_SPEC.md`, `guidance/BRAINS_SPEC.md`, `guidance/SENSES_SPEC.md`, `guidance/MIND_SPEC.md`, `guidance/SALVAGE_SPEC.md`, `guidance/QUALITY_SPEC.md` | Per-domain specification documents (see CLAUDE.md process table for routing). |
+| `guidance/DESIGN_PLACE_PANEL.md` | Sense-of-place: room fixtures, scenery, examinable voice. |
+| `guidance/SYSTEMS_GAP.md` | 28-system player-reachability audit. What verbs the player has and what's still missing. |
 | `vaultcrawl/ingest.py` | Parse markdown → `Note`s + a directed link graph. Hash the vault into a content seed. |
 | `vaultcrawl/analyze.py` | Pure-Python graph metrics: PageRank, Louvain communities, bridges, orphans. |
 | `vaultcrawl/mapping.py` | **Deterministic** metrics → mechanical slots (tiers, depths, biomes, power). |
@@ -82,33 +82,33 @@ ingest  -> analyze -> mapping -> generate -> validate -> bake
 | `runtime/systems.py` | Hook interface for the pluggable systems layer. |
 | `runtime/{sigils,reactions,knowledge,factions,history}.py` | The five Qud/Cogmind player-facing systems. |
 | `runtime/{flora,fauna,weather,structures,decay}.py` | The autonomous ecology (player/faction-independent). |
-| `SYSTEMS_SPEC.md`, `INTERACTIONS_SPEC.md`, `ECOLOGY_SPEC.md`, `tests/` | The authoring contracts + per-system unit tests. |
+| `guidance/SYSTEMS_SPEC.md`, `guidance/INTERACTIONS_SPEC.md`, `guidance/ECOLOGY_SPEC.md`, `tests/` | The authoring contracts + per-system unit tests. |
 | `runtime/scenario.py` | Narrated showcase of the six cross-system interactions. |
 | `runtime/ecology_scenario.py` | Narrated showcase of the seven autonomous-ecology set-pieces. |
 | `runtime/sense.py` | Perception toolkit + `Brain` interface + the `brain_for` capability policy. |
 | `runtime/{brains,tactics,planner,instincts}.py` | The brain ladder (18 tiers: wander→hunter→survivor→opportunist→forager/scavenger→companion→tactician→exploiter→tracker→wary→mastermind→strategist + 6 player profiles). |
-| `runtime/agent.py`, `AGENT_SPEC.md` | UniversalBrain: one decision tree, 6 profiles (artisan/cartographer/emergent/exploiter/seeker/whisper). Berlin-compliant — scores as identity floors, not class-locks. |
+| `runtime/agent.py`, `guidance/AGENT_SPEC.md` | UniversalBrain: one decision tree, 6 profiles (artisan/cartographer/emergent/exploiter/seeker/whisper). Berlin-compliant — scores as identity floors, not class-locks. |
 | `runtime/agent_action.py`, `runtime/agent_perception.py` | 14-verb AgentAction vocabulary + 40-field agent_state() perception snapshot. |
 | `runtime/agent_eval.py` | Evaluation harness: per-agent win rate, floor depth, kill stats, survival curves, attractor metrics. |
-| `BRAINS_SPEC.md`, `runtime/brain_scenario.py` | The brain contract + the capability-ladder showcase. |
+| `guidance/BRAINS_SPEC.md`, `runtime/brain_scenario.py` | The brain contract + the capability-ladder showcase. |
 | `runtime/senses.py` | Perception layer: stimuli, sense profiles, two-layer detect/identify. |
 | `runtime/creatures.py` | Sense-profile archetypes (echolocator, scent-hound, life-wraith, mind-seer). |
-| `SENSES_SPEC.md`, `runtime/sense_scenario.py` | The senses contract + the perception showcase. |
+| `guidance/SENSES_SPEC.md`, `runtime/sense_scenario.py` | The senses contract + the perception showcase. |
 | `runtime/memory.py` | Per-entity memory: beliefs (confidence decay), learned aversion, grudge. |
 | `runtime/{planner,instincts}.py` | Deliberate planner (mastermind) + memory-reactive brains (tracker/wary). |
-| `MIND_SPEC.md`, `runtime/mind_scenario.py` | The mind contract + the memory/planning showcase. |
+| `guidance/MIND_SPEC.md`, `runtime/mind_scenario.py` | The mind contract + the memory/planning showcase. |
 | `runtime/components.py` | Materials (the bible's aesthetic) + `components_of` breakdown + `Inventory`. |
 | `runtime/{salvage,forge}.py` | Salvage/inventory (drop · pickup · breakdown) + the forge (re-craft sigils). |
-| `SALVAGE_SPEC.md`, `runtime/salvage_scenario.py` | The salvage contract + the matter/forge showcase. |
+| `guidance/SALVAGE_SPEC.md`, `runtime/salvage_scenario.py` | The salvage contract + the matter/forge showcase. |
 | `runtime/quests.py` | Your `- [ ]` TODOs become tracked dungeon objectives with rewards. |
 | `runtime/dialogue.py` | Note-derived neutral NPCs you parley with (quest / offering / gossip). |
 | `runtime/machines.py` | Hub-note Fabricators + bridge-note Terminals (forge · hack-to-reveal). |
-| `DEEPEN_SPEC.md`, `runtime/deepen_scenario.py` | The social/objective/machine contract (quests, Keepers, Fabricators, Terminals) + showcase. |
+| `guidance/DEEPEN_SPEC.md`, `runtime/deepen_scenario.py` | The social/objective/machine contract (quests, Keepers, Fabricators, Terminals) + showcase. |
 | `runtime/caches.py` | Place-based caches: note-signature materials, perils (wards), aged variants. |
 | `runtime/body_parts.py` | Locational damage: head/torso/legs, elite targeting, immobilisation. |
 | `runtime/portals.py` | Timed realm gates: collapsing portals with LOS-accelerated timer. |
-| `runtime/loci.py`, `LOCI_SPEC.md` | Polymorphic encounter nodes: 6 activation types by agent profile, beacon variant. |
-| `runtime/craft.py`, `CRAFT_SPEC.md` | Site-based ritual crafting: 4 workspace types, sacrifice→system-wire model. |
+| `runtime/loci.py`, `guidance/LOCI_SPEC.md` | Polymorphic encounter nodes: 6 activation types by agent profile, beacon variant. |
+| `runtime/craft.py`, `guidance/CRAFT_SPEC.md` | Site-based ritual crafting: 4 workspace types, sacrifice→system-wire model. |
 | `runtime/wear.py` | 5-tier item degradation: quality-scaled wear, maintain action. |
 | `runtime/recipes.py` | 25 consumable recipes + deterministic discovery from 6 sources. |
 | `runtime/proficiency.py` | 5 skill trees (Tinkering, Foraging, Husbandry, Scholarship, Diplomacy). |
@@ -118,7 +118,7 @@ ingest  -> analyze -> mapping -> generate -> validate -> bake
 | `runtime/scent.py` | Scent diffusion/decay: trail-laying, stealth (wait = silent), creature tracking. |
 | `runtime/quality.py` | Factorio-style quality grades: the rare cascading roll, creature scaling, the QualitySystem hub. |
 | `runtime/abilities.py` | Invariant-safe creature special actions granted by quality (lunge/summon/blink/spit/…). |
-| `QUALITY_SPEC.md`, `runtime/quality_scenario.py` | The quality contract + the grade showcase. |
+| `guidance/QUALITY_SPEC.md`, `runtime/quality_scenario.py` | The quality contract + the grade showcase. |
 | `vaultcrawl/evolve.py` | Diff two baked worlds into a chronicle of events. |
 | `sample_vault_v2/`, `examples/world_v2.json`, `examples/evolution.md` | A later snapshot + its baked chronicle. |
 
@@ -270,7 +270,7 @@ map-graph has loops no tree contains: down one door, across beneath the border, 
 another. **Realms persist**: what you kill stays dead, what you search stays searched.
 
 **The interactive game is a sandbox.** Instead of floors, the whole vault is grown into ONE
-structure by the pattern-architecture compiler (`runtime/arch/`, per `ARCHITECTURE_SPEC.md`):
+structure by the pattern-architecture compiler (`runtime/arch/`, per `guidance/ARCHITECTURE_SPEC.md`):
 organic districts, semilattice ways (loops and shared courts, never an MST), each center
 literally being one of your notes. The surface is rasterized **figure-ground**
 (`runtime/arch/settle.py`), not cave-carved: buildings stand in OPEN LAND — each note's
@@ -428,7 +428,7 @@ Inspired by Caves of Qud and Cogmind: instead of bigger numbers, five composable
 change your *relationship to the world*. The player **never gains stats during a run** —
 progression is which sigils you've slotted, how you use the terrain, and what you know.
 Every system is generated from the vault graph. Built in parallel as self-contained
-modules against `SYSTEMS_SPEC.md`, wired through one ordered hook list.
+modules against `guidance/SYSTEMS_SPEC.md`, wired through one ordered hook list.
 
 | System (`runtime/…`) | Inspiration | What it does | Vault source |
 |---|---|---|---|
@@ -502,7 +502,7 @@ How it stays clean: **systems never import each other.** They talk only through
 `game.emit(event)` (canonical events: `enemy_killed{cause}`, `lore_read{region_id}`) and
 `game.system(name)` queries — every cross-call is None-guarded, so any system degrades
 gracefully when a partner is absent (`--no-systems`, or any subset). The contract lives in
-`INTERACTIONS_SPEC.md`; the five were deepened **in parallel**, each owning exactly one file,
+`guidance/INTERACTIONS_SPEC.md`; the five were deepened **in parallel**, each owning exactly one file,
 composing only through the bus.
 
 Honest limit: the sample vault has just two regions and their elements aren't opposites, so
@@ -597,7 +597,7 @@ python -m runtime.play examples/world.json --auto --brain artisan    # forge eco
 python -m runtime.play examples/world.json --auto --brain whisper    # stealth diplomat
 ```
 Six player profiles: artisan, cartographer, emergent, exploiter, seeker, whisper.
-All share one `UniversalBrain` class (see `AGENT_SPEC.md`).
+All share one `UniversalBrain` class (see `guidance/AGENT_SPEC.md`).
 
 The world got smarter too: tier-4+ monsters and faction hunters now lure *you* onto the
 acid, the traps, and the crystals you meant to use on them — so a dumb descent dies faster

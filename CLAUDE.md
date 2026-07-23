@@ -30,19 +30,19 @@ python3 -m pytest tests/ -q                                       # 64 test modu
 
 | If your task is... | Read this first | What it covers |
 |---|---|---|
-| Understanding systems, the event bus, or System base class | `SYSTEMS_SPEC.md`, `INTERACTIONS_SPEC.md` | System hooks, canonical events, query API, contracts |
-| Working on enemy/monster AI or NPC behavior | `BRAINS_SPEC.md`, `MIND_SPEC.md` | Brain interface, capability ladder, memory/planning tiers |
-| Working on player-agent AI or agent profiles | `AGENT_SPEC.md` | UniversalBrain, 6 profiles, scoring formula, perception |
-| Working on ecology (flora, fauna, weather, structures, decay) | `ECOLOGY_SPEC.md` | Autonomous world-layer, allegiance model, terrain write-API |
-| Working on sigils, forge, salvage, or the matter economy | `SALVAGE_SPEC.md`, `QUALITY_SPEC.md` | Shatter→salvage→forge loop, quality grades, proficiency |
-| Working on senses, perception, or creature detection | `SENSES_SPEC.md` | Two-layer perception (detection/identification), sense profiles |
-| Working on quests, dialogue, Keepers, or machines | `DEEPEN_SPEC.md` | Quest lifecycle, NPC parley, Fabricator/Terminal placement |
-| Working on loci, crafting, wear, recipes, or skills | `CRAFT_SPEC.md`, `LOCI_SPEC.md` | LocusSystem type-casting, 4 workspace rituals, 25 consumables, 5 skill trees |
-| Working on level gen, architecture compiler, or sandbox mode | `ARCHITECTURE_SPEC.md` | Pattern-language compiler, semilattice world, wholeness scoring |
-| Working on room fixtures, scenery, or sense-of-place | `DESIGN_PLACE_PANEL.md` | Fixture placement, examinable voice, ambient narrator |
+| Understanding systems, the event bus, or System base class | `guidance/SYSTEMS_SPEC.md`, `guidance/INTERACTIONS_SPEC.md` | System hooks, canonical events, query API, contracts |
+| Working on enemy/monster AI or NPC behavior | `guidance/BRAINS_SPEC.md`, `guidance/MIND_SPEC.md` | Brain interface, capability ladder, memory/planning tiers |
+| Working on player-agent AI or agent profiles | `guidance/AGENT_SPEC.md` | UniversalBrain, 6 profiles, scoring formula, perception |
+| Working on ecology (flora, fauna, weather, structures, decay) | `guidance/ECOLOGY_SPEC.md` | Autonomous world-layer, allegiance model, terrain write-API |
+| Working on sigils, forge, salvage, or the matter economy | `guidance/SALVAGE_SPEC.md`, `guidance/QUALITY_SPEC.md` | Shatter→salvage→forge loop, quality grades, proficiency |
+| Working on senses, perception, or creature detection | `guidance/SENSES_SPEC.md` | Two-layer perception (detection/identification), sense profiles |
+| Working on quests, dialogue, Keepers, or machines | `guidance/DEEPEN_SPEC.md` | Quest lifecycle, NPC parley, Fabricator/Terminal placement |
+| Working on loci, crafting, wear, recipes, or skills | `guidance/CRAFT_SPEC.md`, `guidance/LOCI_SPEC.md` | LocusSystem type-casting, 4 workspace rituals, 25 consumables, 5 skill trees |
+| Working on level gen, architecture compiler, or sandbox mode | `guidance/ARCHITECTURE_SPEC.md` | Pattern-language compiler, semilattice world, wholeness scoring |
+| Working on room fixtures, scenery, or sense-of-place | `guidance/DESIGN_PLACE_PANEL.md` | Fixture placement, examinable voice, ambient narrator |
 | Working on cross-run persistence or Upheaval | `runtime/persistence.py` (docstring) | RunChronicle, terraforming events, death artifacts |
 | Working on knowledge, fog-of-war, or map mechanics | `runtime/knowledge.py` (docstring) | Known/learned notes, region mapping, faction insight |
-| Understanding what player verbs exist and what's missing | `SYSTEMS_GAP.md` | 28-system reachability audit, verb binding gaps |
+| Understanding what player verbs exist and what's missing | `guidance/SYSTEMS_GAP.md` | 28-system reachability audit, verb binding gaps |
 
 **Rule:** Before touching any file in a domain, read the spec for that domain. Specs contain contracts, test recipes, and cross-system interaction rules. Skipping the spec produces work that breaks invariants.
 
@@ -55,7 +55,7 @@ every agent CAN do everything. Starting state determines which branches are reac
 
 The agent communicates with the game via a 14-verb `AgentAction` vocabulary
 (`runtime/agent_action.py`) and reads the world through `agent_state()` in
-`runtime/agent_perception.py`. See `AGENT_SPEC.md` for the full architecture.
+`runtime/agent_perception.py`. See `guidance/AGENT_SPEC.md` for the full architecture.
 
 ## Core invariants
 
@@ -68,7 +68,7 @@ The agent communicates with the game via a 14-verb `AgentAction` vocabulary
    If you add a system, every profile must be able to interact with it. If you add an
    item, every profile must be able to craft or acquire it. If you add a locus activation
    type, it must be reachable through the universal tree. The six profiles are starting
-   states + preference biases — never character classes. See `AGENT_SPEC.md`
+   states + preference biases — never character classes. See `guidance/AGENT_SPEC.md`
    §Berlin Interpretation for the architectural contract. **Violating this is a design
    regression of the highest order.**
 2. **Deterministic skeleton vs. LLM skin.** The LLM gets only `_`-prefixed flavor inputs

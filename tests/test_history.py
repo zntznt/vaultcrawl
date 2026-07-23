@@ -8,7 +8,7 @@ from runtime.systems import System
 
 
 class Spy(System):
-    """A bus spy: records every event other systems emit (INTERACTIONS_SPEC.md)."""
+    """A bus spy: records every event other systems emit (guidance/INTERACTIONS_SPEC.md)."""
     name = "spy"
 
     def __init__(self):
