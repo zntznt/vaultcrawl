@@ -82,6 +82,7 @@ def build_systems():
     from runtime.history import HistorySystem
     from runtime.marginalia import MarginaliaSystem
     from runtime.loci import LocusSystem
+    from runtime.craft import CraftSystem
     from runtime.knowledge import KnowledgeSystem
     from runtime.effects import EffectSystem
     from runtime.quality import QualitySystem
@@ -98,7 +99,7 @@ def build_systems():
         PortalSystem(),
         SacrificeSystem(),
         FactionSystem(), BodySystem(), QualitySystem(),
-        HistorySystem(), MarginaliaSystem(), LocusSystem(), KnowledgeSystem(),
+        HistorySystem(), MarginaliaSystem(), LocusSystem(), CraftSystem(), KnowledgeSystem(),
         EffectSystem(),
     ]
 

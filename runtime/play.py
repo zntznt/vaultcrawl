@@ -1260,6 +1260,7 @@ def main(argv=None) -> int:
         from .caches import CacheSystem
         from .factions import FactionSystem
         from .loci import LocusSystem
+        from .craft import CraftSystem
         from .history import HistorySystem
         from .marginalia import MarginaliaSystem
         from .knowledge import KnowledgeSystem
@@ -1280,7 +1281,7 @@ def main(argv=None) -> int:
                    PortalSystem(),       # timed realm gates
                    SacrificeSystem(),    # renunciation shrines
                     FactionSystem(), BodySystem(), QualitySystem(),   # factions, body parts, then quality grades all spawned foes
-                    HistorySystem(), MarginaliaSystem(), LocusSystem(), KnowledgeSystem(),
+                    HistorySystem(), MarginaliaSystem(), LocusSystem(), CraftSystem(), KnowledgeSystem(),
                    EffectSystem()]   # Yume-Nikki ways-of-being (exploration, not power)
 
     headless = a.auto or not sys.stdin.isatty() or not sys.stdout.isatty()

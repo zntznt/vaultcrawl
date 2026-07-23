@@ -1827,8 +1827,17 @@ class Game:
             self._tick_effects()
             self.enemies_act()
             self._restore_winded()
-            for s in self.systems:
-                s.on_player_act(self)
+        for s in self.systems:
+            s.on_player_act(self)
+        # Craft wires: auto-cast and condition triggers
+        try:
+            hp = self.player.hp
+            mx = getattr(self.player, "max_hp", hp)
+            hp_pct = hp * 100 // mx if mx > 0 else 100
+            from runtime.craft import CraftSystem
+            CraftSystem.apply_wires(self, "player_hp_check", hp_pct=hp_pct)
+        except Exception:
+            pass
         else:
             self.log("Nothing here to interact with.")
 
@@ -2624,6 +2633,12 @@ class Game:
             for s in self.systems:
                 s.on_enemy_killed(self, dfn)
             self.emit("enemy_killed", enemy=dfn, cause="melee")
+            # Craft wire: kill→heal condition trigger
+            try:
+                from runtime.craft import CraftSystem
+                CraftSystem.apply_wires(self, "enemy_killed")
+            except Exception:
+                pass
             self.kill(dfn, "melee")
         else:
             # critter vs monster (or the reverse): a world event, never a player kill,

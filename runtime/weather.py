@@ -119,6 +119,10 @@ class WeatherSystem(System):
         """Weather directly impacts the player: haze deals damage, cold slows, ember adds fire."""
         p = game.player
         if self.weather == "acrid haze":
+            # Craft: hazard immunity blocks weather damage
+            crafts = getattr(p, "_crafts", {})
+            if crafts.get("hazard_walk"):
+                return
             p.hp = max(1, p.hp - 1)
             if self._turn % (_CADENCE * 5) == 0:
                 game.log("The acrid haze burns your lungs (-1 HP).", ambient=True)
