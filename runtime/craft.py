@@ -44,17 +44,16 @@ class CraftSystem(System):
         # ---- Locus: sacrifice effect for condition trigger ----
         loci = game.system("loci")
         if loci and (px, py) in loci.loci:
-            # Loci are handled by LocusSystem for type-casting.
-            # Craft loci are a separate interaction: stepping on a DEPLETED locus
             if loci.loci.get((px, py), {}).get("depleted"):
                 if (px, py) not in self._done:
                     self._craft_locus(game, px, py)
 
         # ---- Camp/town: sacrifice body HP for environmental wire ----
-        if (game._on_surface() and (px, py) in getattr(game, "_town_tiles", set())) or \
-           (hasattr(game, "_resting") and game._resting):
-            if (px, py) not in self._done and getattr(game, "_consecutive_rest", 0) >= 4:
-                self._craft_camp(game, px, py)
+        in_town = (getattr(game, "_on_surface", lambda: False)()
+                   and (px, py) in getattr(game, "_town_tiles", set()))
+        resting = getattr(game, "_consecutive_rest", 0) >= 4
+        if in_town and resting and (px, py) not in self._done:
+            self._craft_camp(game, px, py)
 
     # ------------------------------------------------------------------
     # Craft rituals
@@ -91,9 +90,6 @@ class CraftSystem(System):
         self._done.add((x, y))
         game.log(f"The Fabricator weaves {ability} into your being. "
                  f"It will cast itself when you are wounded.")
-        # Burn turn
-        game.turn += 1
-        game.enemies_act()
 
     def _craft_terminal(self, game, x, y):
         """Terminal: sacrifice 2 known notes, gain 1 passive reveal wire."""
@@ -126,8 +122,6 @@ class CraftSystem(System):
             machines.terminals.discard((x, y))
         self._done.add((x, y))
         game.log(f"The Terminal rewires your perception. You can now sense enemy vitality.")
-        game.turn += 1
-        game.enemies_act()
 
     def _craft_locus(self, game, x, y):
         """Depleted locus: sacrifice 1 collected effect, gain 1 condition trigger wire."""
@@ -155,8 +149,6 @@ class CraftSystem(System):
         self._done.add((x, y))
         game.log(f"The depleted locus drinks your {sacrificed} effect. "
                  f"Now, every kill mends you.")
-        game.turn += 1
-        game.enemies_act()
 
     def _craft_camp(self, game, x, y):
         """Camp: sacrifice 10 max HP (distributed), gain 1 environmental wire."""
@@ -181,8 +173,6 @@ class CraftSystem(System):
         game.log(f"The camp ritual scars your body. "
                  f"You can now walk through hazards unharmed. "
                  f"Max HP reduced to {game.player.max_hp}.")
-        game.turn += 1
-        game.enemies_act()
 
     # ------------------------------------------------------------------
     # Wire application — called by game.py on relevant events

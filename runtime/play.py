@@ -1275,13 +1275,13 @@ def main(argv=None) -> int:
                    FloraSystem(), StructureSystem(), DecaySystem(), FaunaSystem(),
                    SalvageSystem(), ForgeSystem(),   # salvage pools matter, then forge spends it
                    ScentSystem(),   # scent trails for tracking and stealth
-                   QuestSystem(), DialogueSystem(), MachineSystem(),   # objectives · NPCs · machines
+                    QuestSystem(), DialogueSystem(), CraftSystem(), MachineSystem(),   # quests · NPCs · craft rituals · machines
                    CacheSystem(),   # each place is a distinct opportunity
                    TerrainModSystem(),   # dynamic terrain: sanctums, scars, thresholds
                    PortalSystem(),       # timed realm gates
                    SacrificeSystem(),    # renunciation shrines
                     FactionSystem(), BodySystem(), QualitySystem(),   # factions, body parts, then quality grades all spawned foes
-                    HistorySystem(), MarginaliaSystem(), LocusSystem(), CraftSystem(), KnowledgeSystem(),
+                    HistorySystem(), MarginaliaSystem(), LocusSystem(), KnowledgeSystem(),
                    EffectSystem()]   # Yume-Nikki ways-of-being (exploration, not power)
 
     headless = a.auto or not sys.stdin.isatty() or not sys.stdout.isatty()

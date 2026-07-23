@@ -93,13 +93,13 @@ def build_systems():
         FloraSystem(), StructureSystem(), DecaySystem(), FaunaSystem(),
         SalvageSystem(), ForgeSystem(),
         ScentSystem(),
-        QuestSystem(), DialogueSystem(), MachineSystem(),
+        QuestSystem(), DialogueSystem(), CraftSystem(), MachineSystem(),
         CacheSystem(),
         TerrainModSystem(),
         PortalSystem(),
         SacrificeSystem(),
         FactionSystem(), BodySystem(), QualitySystem(),
-        HistorySystem(), MarginaliaSystem(), LocusSystem(), CraftSystem(), KnowledgeSystem(),
+        HistorySystem(), MarginaliaSystem(), LocusSystem(), KnowledgeSystem(),
         EffectSystem(),
     ]
 
