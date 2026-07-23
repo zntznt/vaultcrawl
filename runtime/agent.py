@@ -132,9 +132,10 @@ class UniversalBrain(Brain):
                 step = step_toward_avoiding_elites(game, actor, st[0], st[1])
                 return AgentAction("move", dx=step[0], dy=step[1])
 
-        # ---- COMMUNE ----
+        # ---- COMMUNE (any elite, not just final boss) ----
         can_commune = s["knowledge"]["truths_read"] >= 2 or s["matter"]["total"] >= 4
-        reachable = can_commune and s["nav"]["any_boss_near"]
+        elite_near = any(h.get("tier", 1) >= 3 or h.get("is_boss") for h in s.get("near_hostiles", []))
+        reachable = can_commune and elite_near
         score = _score(self.profile, "commune", 25, bonus, reachable)
         if score > 0:
             candidates.append(("commune", score, AgentAction("commune")))
@@ -243,7 +244,7 @@ class UniversalBrain(Brain):
             if unseen_count > 0:
                 state = min(unseen_count // 5, 5)
                 score = _score(self.profile, "explore", state, bonus, True)
-                candidates.append(("explore_unseen", score, "unseen"))
+                candidates.append(("explore_unseen", score, ("explore_unseen",)))
 
         if game.commune_landmark() is not None:
             score = _score(self.profile, "explore", 8, bonus, True)
@@ -341,7 +342,7 @@ class UniversalBrain(Brain):
             kind = winner[0]
             if kind == "consumable":
                 return AgentAction("craft_consumable", target=winner[1])
-            elif kind == "unseen":
+            elif kind == "explore_unseen":
                 best, bd, bt = None, 999, None
                 pk = actor.x
                 pk_y = actor.y
