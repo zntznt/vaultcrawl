@@ -440,6 +440,20 @@ def agent_state(game, actor) -> dict:
                 danger_ahead = True
                 break
 
+    nearby_landmark = game.commune_landmark() is not None
+
+    # Loci: polymorphic encounter nodes
+    loci_sys = game.system("loci")
+    loci_count = 0
+    nearest_locus = None
+    if loci_sys:
+        for (lx, ly), loc in loci_sys.loci.items():
+            if not loc.get("depleted"):
+                loci_count += 1
+                d = max(abs(lx - px), abs(ly - py))
+                if nearest_locus is None or d < nearest_locus[2]:
+                    nearest_locus = (lx, ly, d)
+
     return {
         "vitals": vitals,
         "status": status,
@@ -461,7 +475,9 @@ def agent_state(game, actor) -> dict:
         "standing_critical": standing_critical,
         "knowledge": knowledge,
         "nav": nav,
-        "nearby_landmark": game.commune_landmark() is not None,
+        "nearby_landmark": nearby_landmark,
+        "loci_count": loci_count,
+        "nearest_locus": nearest_locus,
         "has_trap_near": has_trap_near,
         "faction_kills": faction_kills,
         "kills_on": kills_on,

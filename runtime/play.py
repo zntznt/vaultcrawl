@@ -1259,6 +1259,7 @@ def main(argv=None) -> int:
         from .machines import MachineSystem
         from .caches import CacheSystem
         from .factions import FactionSystem
+        from .loci import LocusSystem
         from .history import HistorySystem
         from .marginalia import MarginaliaSystem
         from .knowledge import KnowledgeSystem
@@ -1278,8 +1279,8 @@ def main(argv=None) -> int:
                    TerrainModSystem(),   # dynamic terrain: sanctums, scars, thresholds
                    PortalSystem(),       # timed realm gates
                    SacrificeSystem(),    # renunciation shrines
-                   FactionSystem(), BodySystem(), QualitySystem(),   # factions, body parts, then quality grades all spawned foes
-                   HistorySystem(), MarginaliaSystem(), KnowledgeSystem(),
+                    FactionSystem(), BodySystem(), QualitySystem(),   # factions, body parts, then quality grades all spawned foes
+                    HistorySystem(), MarginaliaSystem(), LocusSystem(), KnowledgeSystem(),
                    EffectSystem()]   # Yume-Nikki ways-of-being (exploration, not power)
 
     headless = a.auto or not sys.stdin.isatty() or not sys.stdout.isatty()
