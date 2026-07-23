@@ -179,6 +179,7 @@ def run_one(world_path: str, agent_name: str, floors: int = 99) -> RunStats:
 
     game = Game(manifest, systems=systems, sandbox=False)
     game.player.brain = make_brain(game, game.player, name=agent_name)
+    game.player.brain.name = agent_name
 
     auto_play(game, floors)
 

@@ -1304,6 +1304,9 @@ def main(argv=None) -> int:
             return 2
     game.player.brain = make_brain(game, game.player,
                                    name="hunter" if a.brain == "dumb" else a.brain)
+    # Wire the agent name into the brain for scoring profile lookup
+    game.player.brain.name = a.brain
+    # Store agent name on player for personality-gated mechanics
     # Store agent name for personality-gated mechanics (e.g. whisper always-parley)
     game.player._agent_name = a.brain
     if headless:

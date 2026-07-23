@@ -122,6 +122,7 @@ def run_agent(world_json: str, agent_name: str,
     manifest = load_manifest(world_json)
     game = Game(manifest, systems=list(ALL_SYSTEMS), sandbox=False)
     game.player.brain = make_brain(game, game.player, name=agent_name)
+    game.player.brain.name = agent_name
 
     sigils_forged = 0
     caches_opened = 0
