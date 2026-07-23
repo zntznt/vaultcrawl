@@ -1200,6 +1200,54 @@ class Game:
                             choice = unrevealed[choice_idx]
                             know.reveal(choice)
 
+        # ---- Orphaned event listeners (Phase 1d: wire dormant hooks) ----
+        elif etype == "communed":
+            # Faction celebration: all factions note the communion
+            fcs = self.system("factions")
+            if fcs:
+                for fac in list(getattr(fcs, "standing", {}).keys()):
+                    try:
+                        fcs.standing[fac] = fcs.standing.get(fac, 0) + 1
+                    except Exception:
+                        pass
+            self.log("The world stills. Every faction felt that.")
+        elif etype == "becalmed":
+            # Creatures nearby flee from the pacified one
+            for a in list(self.actors):
+                if a.allegiance == "monster" and max(abs(a.x - self.player.x), abs(a.y - self.player.y)) <= 8:
+                    a.allegiance = "wild"
+                    a.brain = None
+            self.log("The violence subsides. Nearby creatures lose their taste for blood.")
+        elif etype == "recruited":
+            # Room becomes settled ground when a companion joins
+            idx = self.room_at(self.player.x, self.player.y)
+            if idx is not None:
+                self._town_rooms.add(idx)
+                for tile in self.room_tiles(idx) if hasattr(self, 'room_tiles') else []:
+                    self._town_tiles.add(tile)
+            self.log("The room settles around your new bond.")
+        elif etype == "aspect_absorbed":
+            # Weather clears in a radius around the absorption
+            if hasattr(self, '_weather_suppressed'):
+                px, py = self.player.x, self.player.y
+                for y in range(max(0, py - 3), min(self.level.h, py + 4)):
+                    for x in range(max(0, px - 3), min(self.level.w, px + 4)):
+                        self._weather_suppressed[(x, y)] = 30
+            self.log("The weather recoils from what you have become.")
+        elif etype == "weather_cleared":
+            # Flora regrows when weather clears
+            flora = self.system("flora")
+            if flora and hasattr(flora, 'plants'):
+                px, py = self.player.x, self.player.y
+                for y in range(max(0, py - 3), min(self.level.h, py + 4)):
+                    for x in range(max(0, px - 3), min(self.level.w, px + 4)):
+                        if self.level.walkable(x, y):
+                            try:
+                                flora.plants.add((x, y))
+                            except Exception:
+                                pass
+            self.log("The clearing air invites life back.")
+
     # ---- floor lifecycle ----
     def descend(self):
         if self.sandbox:
@@ -1233,6 +1281,15 @@ class Game:
         self.player.hp = min(self.player.hp, self.player.max_hp)
         self.actors, self.items = [], []
         free = free_floor_tiles(self.level, {(px, py), self.level.stairs})
+
+        # Phase 2a: Stairs room becomes town safe zone in classic descent
+        stairs_idx = self.room_at(*self.level.stairs)
+        if stairs_idx is not None:
+            self._town_rooms.add(stairs_idx)
+            if hasattr(self, 'room_tiles'):
+                for tile in self.room_tiles(stairs_idx):
+                    self._town_tiles.add(tile)
+
         rng.shuffle(free)
 
         region = self.region_for(self.floor)
@@ -1264,6 +1321,9 @@ class Game:
             spec = {**spec, "tier": max(1, min(spec["tier"], cap))}
             en = make_enemy(spec, *self.spot_for(spec["sourceNoteId"], free))
             en.faction = self._region_faction.get(spec.get("regionId", ""), "")
+            # Phase 2b: territorial creatures on floors 1-10
+            if self.floor <= 10:
+                en._home = (en.x, en.y)  # leashed to spawn room
             # Early floors: cap quality so agents survive long enough to build economy
             if self.floor <= 3:
                 q = getattr(en, 'quality', 0)

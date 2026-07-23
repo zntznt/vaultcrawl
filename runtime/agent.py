@@ -157,7 +157,7 @@ class UniversalBrain(Brain):
                     candidates.append(("recall", score, AgentAction("cast", index=i)))
                     break
 
-        # ---- PARLEY ----
+        # ---- PARLEY (boosted when standing >= 1 + elite nearby) ----
         if s.get("encounter_options"):
             for h in s["hostiles"]:
                 if h.get("tier", 1) >= 3 or h.get("is_boss"):
@@ -165,17 +165,23 @@ class UniversalBrain(Brain):
                         state = s.get("faction_standings", {}).get(h.get("faction", ""), 0) * 3
                         if s.get("danger_ahead"):
                             state += 10
+                        # Gradient: when standing >= 1 and elite within 10 tiles, strongly prefer parley
+                        standing = s.get("faction_standings", {}).get(h.get("faction", ""), 0)
+                        if standing >= 1 and h.get("dist", 99) <= 10:
+                            state += 15
                         score = _score(self.profile, "parley", state, bonus, True)
                         candidates.append(("parley", score, AgentAction("negotiate", target=h["name"])))
                     break
 
-        # ---- BECALM ----
+        # ---- BECALM (score higher than fight when resources available) ----
         reachable = bool(s["adjacent_hostiles"] and s["matter"]["total"] >= 2)
         if reachable:
             state = 0
             if s["can_becalm"]:
                 state += 10
             state += s.get("reputation_summary", 0) * 2
+            # Becalm should outscore fight when agent has the resources
+            state += 8  # base preference for non-violence
             score = _score(self.profile, "becalm", state, bonus, True)
             candidates.append(("becalm", score, AgentAction("becalm")))
 
@@ -308,13 +314,20 @@ class UniversalBrain(Brain):
                 step = step_toward_avoiding_elites(game, actor, st[0], st[1])
                 candidates.append(("deesc_stairs", 40, AgentAction("move", dx=step[0], dy=step[1])))
 
-        # ---- STAIRS ----
+        # ---- STAIRS (boosted by commune readiness) ----
+        commune_pull = 0
+        if s["position"].get("commune_ready"):
+            boss_floor = s["position"].get("boss_floor", 99)
+            distance = boss_floor - s["position"]["floor"]
+            if distance > 0 and distance <= 10:
+                commune_pull = 20 + (10 - distance) * 2  # stronger pull when closer
         if s["position"]["on_stairs"]:
-            candidates.append(("descend", _score(self.profile, "stairs", 2, bonus, True), AgentAction("descend")))
+            candidates.append(("descend", _score(self.profile, "stairs", 2 + commune_pull, bonus, True),
+                               AgentAction("descend")))
         elif st:
             step = step_toward_avoiding_elites(game, actor, st[0], st[1])
             if step != (0, 0):
-                candidates.append(("stairs", _score(self.profile, "stairs", 0, bonus, True),
+                candidates.append(("stairs", _score(self.profile, "stairs", commune_pull, bonus, True),
                                    AgentAction("move", dx=step[0], dy=step[1])))
 
         # ---- Pick highest ----

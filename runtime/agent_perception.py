@@ -82,6 +82,8 @@ def agent_state(game, actor) -> dict:
         "region": getattr(game, "region_name", ""),
         "floor": getattr(game, "floor", 0),
         "max_floor": getattr(game, "max_floor", 1),
+        "boss_floor": getattr(game, "max_floor", 1),
+        "commune_ready": False,
     }
 
     weather_sys = game.system("weather")
@@ -490,6 +492,9 @@ def agent_state(game, actor) -> dict:
         d = max(abs(tx - px), abs(ty - py))
         if nearest_camp is None or d < nearest_camp[2]:
             nearest_camp = (tx, ty, d)
+
+    # Commune gradient: agent senses the boss when truths >= 2 or matter >= 4
+    position["commune_ready"] = (truths_read >= 2 or matter_total >= 4)
 
     return {
         "vitals": vitals,
