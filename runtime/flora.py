@@ -168,7 +168,8 @@ class FloraSystem(System):
         self.consume(p.x, p.y)
         salv = game.system("salvage")
         if salv is not None:
-            salv.inventory(game).add({"growth": 1})
+            yield_amt = self.rng.randint(1, 2) if self.rng is not None else 1
+            salv.inventory(game).add({"growth": yield_amt})
         game.log("You harvest the plant. A rustle carries on the air.")
         game.emit("noise", pos=(p.x, p.y), volume=5)
         return True

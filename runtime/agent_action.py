@@ -177,6 +177,14 @@ def dispatch(game, action: AgentAction) -> bool:
                 return True
             return False
 
+        # -- craft_consumable --------------------------------------------------
+        if kind == "craft_consumable":
+            try:
+                from runtime.wear import craft_consumable
+                return craft_consumable(game, action.target)
+            except Exception:
+                return False
+
         # -- commune ------------------------------------------------------------
         if kind == "commune":
             result = game.commune()

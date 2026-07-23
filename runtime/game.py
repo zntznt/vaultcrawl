@@ -146,10 +146,15 @@ class Game:
             self.descend()
 
     def starting_kit(self, agent_name: str):
-        """Provide each agent a personality-matched starting economic seed."""
+        """Provide each agent a Berlin-compliant starting package.
+        Includes one known recipe matching their playstyle."""
         know = self.system("knowledge")
         salv = self.system("salvage")
         fcs = self.system("factions")
+
+        # Known recipes storage
+        if not hasattr(self.player, "_known_recipes"):
+            self.player._known_recipes = set()
 
         if agent_name == "artisan":
             if salv:
@@ -159,12 +164,12 @@ class Game:
                 hubs = [nid for nid, n in nodes.items() if n.get("role") == "hub"]
                 if hubs:
                     know._reveal(self, hubs[0])
-            # Pre-forged Recall sigil for immediate healing
             sigs = self.system("sigils")
             if sigs and len(sigs.slots) < sigs.max_slots(self):
                 sigs.slots.append({"ability": "Recall", "base": "Recall",
                                    "durability": 2, "note": "forged", "role": "hub"})
-                self.log("You start with a freshly forged Recall sigil.")
+            self.player._known_recipes.add("blight_salve")
+            self.log("You start with a freshly forged Recall sigil and a Blight Salve recipe.")
 
         elif agent_name == "cartographer":
             if salv:
@@ -177,7 +182,8 @@ class Game:
                     know._reveal(self, bridge[1])
             self.player.max_hp += 8
             self.player.hp += 8
-            self.log("You feel the resilience of countless maps.")
+            self.player._known_recipes.add("prophecy_ink")
+            self.log("You feel the resilience of countless maps and a Prophecy Ink recipe.")
 
         elif agent_name == "emergent":
             if salv:
@@ -185,7 +191,8 @@ class Game:
             self.player.hp = min(self.player.max_hp, self.player.hp + 4)
             # Combat readiness: start with defense
             self.player.defense = getattr(self.player, "defense", 0) + 2
-            self.log("You stand ready. +2 DEF.")
+            self.player._known_recipes.add("trap_kit")
+            self.log("You stand ready. +2 DEF. Trap Kit recipe known.")
 
         elif agent_name == "exploiter":
             if salv:
@@ -200,7 +207,8 @@ class Game:
             if sigs and len(sigs.slots) < sigs.max_slots(self):
                 sigs.slots.append({"ability": "Phase", "base": "Phase",
                                    "durability": 2, "note": "forged", "role": "bridge"})
-                self.log("A Phase sigil thrums — escape awaits.")
+            self.player._known_recipes.add("noise_lure")
+            self.log("A Phase sigil thrums — escape awaits. Noise Lure recipe known.")
 
         elif agent_name == "seeker":
             if salv:
@@ -211,13 +219,14 @@ class Game:
                 if non_player:
                     choice = non_player[hash(agent_name + "seed") % len(non_player)]
                     know._reveal(self, choice)
-            # Balanced survival: extra HP + Recall sigil
             self.player.max_hp += 4
             self.player.hp += 4
             sigs = self.system("sigils")
             if sigs and len(sigs.slots) < sigs.max_slots(self):
                 sigs.slots.append({"ability": "Recall", "base": "Recall",
                                    "durability": 2, "note": "forged", "role": "hub"})
+            self.player._known_recipes.add("brewers_yeast")
+            self.log("You start with a forged Recall sigil and a Brewer's Yeast recipe.")
 
         elif agent_name == "whisper":
             if salv:
@@ -228,11 +237,12 @@ class Game:
                     target = factions_list[hash(agent_name) % len(factions_list)]
                     current = fcs.standing.get(target, 0)
                     fcs.standing[target] = min(4, current + 1)
-            # Phase sigil: flee when diplomacy fails
             sigs = self.system("sigils")
             if sigs and len(sigs.slots) < sigs.max_slots(self):
                 sigs.slots.append({"ability": "Phase", "base": "Phase",
                                    "durability": 2, "note": "forged", "role": "bridge"})
+            self.player._known_recipes.add("faction_token")
+            self.log("You start with a Phase sigil and a Faction Token recipe.")
 
     def _set_level(self, level, z: int = 0):
         self.level = level

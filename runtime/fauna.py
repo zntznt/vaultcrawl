@@ -166,7 +166,11 @@ class FaunaSystem(System):
         if best is None:
             return False
         if dist <= 1:
-            _call(decay, "consume", best[0], best[1])
+            if _call(decay, "consume", best[0], best[1]):
+                if self.rng.random() < 0.3:
+                    salv = game.system("salvage")
+                    if salv is not None:
+                        salv._drop(best, {"scrap": 1})
         else:
             self._step_toward(game, a, best[0], best[1])
         return True

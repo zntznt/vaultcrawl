@@ -63,3 +63,70 @@ def ptracker() -> ProficiencyTracker:
 
 def exercise(ability: str):
     ptracker().exercise(ability)
+
+
+class SkillTracker:
+    """Tracks proficiency for one skill. Same mechanics as ProficiencyTracker."""
+    def __init__(self):
+        self._buf: list[str] = []       # ring buffer of recent actions
+        self._total: int = 0            # lifetime count
+        self._tier: int = 0             # 0-5 mastery tier
+
+    def exercise(self):
+        self._buf.append("x")
+        if len(self._buf) > 20:
+            self._buf.pop(0)
+        self._total += 1
+        self._recalc_tier()
+
+    def _recalc_tier(self):
+        total = self._total
+        if total >= 100:     self._tier = 5
+        elif total >= 60:    self._tier = 4
+        elif total >= 30:    self._tier = 3
+        elif total >= 15:    self._tier = 2
+        elif total >= 5:     self._tier = 1
+        else:                self._tier = 0
+
+    def tier(self) -> int:
+        return self._tier
+
+    def recent(self) -> int:
+        return len(self._buf)
+
+
+class Skills:
+    """Five skill trees for the universal agent."""
+    def __init__(self):
+        self.tinkering = SkillTracker()
+        self.foraging = SkillTracker()
+        self.husbandry = SkillTracker()
+        self.scholarship = SkillTracker()
+        self.diplomacy = SkillTracker()
+
+    def exercise(self, skill_name: str):
+        tracker = getattr(self, skill_name, None)
+        if tracker:
+            tracker.exercise()
+
+    def tier(self, skill_name: str) -> int:
+        tracker = getattr(self, skill_name, None)
+        return tracker.tier() if tracker else 0
+
+    def recent(self, skill_name: str) -> int:
+        tracker = getattr(self, skill_name, None)
+        return tracker.recent() if tracker else 0
+
+
+_skills: Skills | None = None
+
+
+def skills() -> Skills:
+    global _skills
+    if _skills is None:
+        _skills = Skills()
+    return _skills
+
+
+def exercise_skill(name: str):
+    skills().exercise(name)

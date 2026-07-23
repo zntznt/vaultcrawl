@@ -15,10 +15,13 @@ Self-contained: reads game state, mutates only through the public Game API + the
 """
 from __future__ import annotations
 
+import random
+
 from runtime.components import Inventory, components_of, inv, world_materials
 from runtime.systems import System
 
 SALVAGE_GLYPH = "*"   # vanilla relic glyph, free because stat-loot is suppressed under systems
+HEAP_GLYPH = "%"      # trash heaps — non-combat matter sources
 
 
 def _summary(comps: dict) -> str:
@@ -37,6 +40,9 @@ class SalvageSystem(System):
         self.ground: dict = {}
         self.ground_q: dict = {}   # (x, y) -> quality tier of that salvage (from its source)
         self.game = None   # stashed so the query API works param-less if needed
+        self.heaps: dict = {}         # (x, y) -> {"matter": int, "depleted": bool}
+        self._heap_timers: dict = {}  # (x, y) -> turn when heap respawns
+        self._scrapped: set = set()   # (x, y) ruin tiles already scraped this floor
 
     # ---- lifecycle ----------------------------------------------------------
     def on_world_start(self, game):
@@ -49,10 +55,25 @@ class SalvageSystem(System):
         # object via inv()) persists across floors and is deliberately left untouched.
         self.game = game
         self.ground = {}
+        self.heaps = {}
+        self._heap_timers = {}
+        self._scrapped = set()
+        rng = random.Random(f"{game.seed}:{game.floor}:heaps")
+        count = rng.randint(1, 2)  # 1-2 heaps per floor
+        for _ in range(count):
+            for _ in range(50):
+                x = rng.randint(2, game.level.w - 3)
+                y = rng.randint(2, game.level.h - 3)
+                if game.level.walkable(x, y) and game.actor_at(x, y) is None:
+                    self.heaps[(x, y)] = {"matter": rng.randint(1, 3), "depleted": False}
+                    break
 
     def on_player_act(self, game):
         self.game = game
         self._collect(game)
+        self._collect_heaps(game)
+        self._respawn_heaps(game)
+        self._scrap_ruins(game)
 
     # ---- event bus ----------------------------------------------------------
     def on_event(self, game, etype, data):
@@ -107,6 +128,51 @@ class SalvageSystem(System):
         inv(player).add(tile, quality=q)       # banks the matter's grade for the forge floor
         game.log(f"Salvaged {_summary(tile)}.")
 
+    # ---- trash heaps --------------------------------------------------------
+    def _collect_heaps(self, game):
+        player = getattr(game, "player", None)
+        if player is None:
+            return
+        pos = (player.x, player.y)
+        heap = self.heaps.get(pos)
+        if heap is None or heap["depleted"]:
+            return
+        heap["depleted"] = True
+        inv(player).add({"scrap": heap["matter"]})
+        rng = random.Random(f"{game.seed}:{game.floor}:heaps:{pos}")
+        self._heap_timers[pos] = game.turn + rng.randint(80, 120)
+        game.log(f"You pick through the trash ({heap['matter']} scrap).")
+
+    def _respawn_heaps(self, game):
+        for pos, timer in list(self._heap_timers.items()):
+            if game.turn >= timer:
+                del self._heap_timers[pos]
+                heap = self.heaps.get(pos)
+                if heap is not None:
+                    heap["depleted"] = False
+
+    # ---- environmental scrap ------------------------------------------------
+    def _scrap_ruins(self, game):
+        player = getattr(game, "player", None)
+        if player is None:
+            return
+        px, py = player.x, player.y
+        pos = (px, py)
+        if pos in self._scrapped:
+            return
+        try:
+            glyph = game.level.tiles[py][px]
+        except (IndexError, AttributeError, TypeError):
+            return
+        if glyph != "░":
+            return
+        rng = random.Random(f"{game.seed}:{game.floor}:scrap:{pos}")
+        if rng.random() >= 0.10:
+            return
+        self._scrapped.add(pos)
+        inv(player).add({"scrap": 1})
+        game.log("You find usable scrap in the rubble.")
+
     # ---- player command: melt a slotted sigil back into matter --------------
     def breakdown_sigil(self, game, ability=None):
         """Pull a slotted sigil (the chosen `ability`, else the first) from the sigil
@@ -159,11 +225,23 @@ class SalvageSystem(System):
         for (x, y) in self.ground:
             if 0 <= y < h and 0 <= x < w and grid[y][x] == ".":
                 grid[y][x] = SALVAGE_GLYPH
+        for (x, y), heap in self.heaps.items():
+            if not heap["depleted"]:
+                if 0 <= y < h and 0 <= x < w and grid[y][x] == ".":
+                    grid[y][x] = HEAP_GLYPH
 
     def points_of_interest(self, game):
         # expose salvage tiles so the exploiter auto-agent walks over and grabs them
-        return list(self.ground)
+        pts = list(self.ground)
+        for pos, heap in self.heaps.items():
+            if not heap["depleted"]:
+                pts.append(pos)
+        return pts
 
     def status_line(self, game):
         i = inv(game.player)
-        return f"Matter: {i.total()} ({i.summary()})"
+        heap_count = sum(1 for h in self.heaps.values() if not h["depleted"])
+        parts = [f"Matter: {i.total()} ({i.summary()})"]
+        if heap_count > 0:
+            parts.append(f"Heaps: {heap_count}")
+        return "  ".join(parts)

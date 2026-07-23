@@ -200,6 +200,16 @@ class UniversalBrain(Brain):
                 score -= 10  # don't shield at cap
             candidates.append(("shield", score, AgentAction("shield")))
 
+        # ---- CONSUMABLE CRAFT: spend matter for one-shot items ----
+        known_recipes = getattr(game.player, "_known_recipes", set())
+        if known_recipes and s["matter"]["total"] >= 1 and not s["adjacent_hostiles"]:
+            # Pick cheapest known recipe
+            from runtime.wear import RECIPE_COSTS
+            cheapest = min(known_recipes, key=lambda r: RECIPE_COSTS.get(r, 99), default=None)
+            if cheapest and RECIPE_COSTS.get(cheapest, 99) <= s["matter"]["total"]:
+                score = self.profile.get("forge", 3) + turn_bonus + 3  # lean on forge affinity
+                candidates.append(("consumable", score, ("consumable", cheapest)))
+
         # ---- FLEE: escape adjacent hostiles ----
         if s["adjacent_hostiles"] and hp_pct < 40:
             t = s["adjacent_hostiles"][0]
@@ -329,6 +339,10 @@ class UniversalBrain(Brain):
                     if step != (0, 0):
                         return AgentAction("move", dx=step[0], dy=step[1])
                 return AgentAction("wait")
+            elif kind == "consumable":
+                # winner[1] is the recipe name
+                recipe = winner[1]
+                return AgentAction("craft_consumable", target=recipe)
             elif kind in ("salvage", "cache", "poi", "workspace"):
                 tx, ty = winner[1], winner[2]
                 step = step_toward(game, actor, tx, ty, safe=True)
