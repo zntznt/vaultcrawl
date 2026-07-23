@@ -68,7 +68,7 @@ def boss_stats(tier: int):
 def make_player(x: int, y: int) -> Actor:
     # A fixed baseline -- the player never gains stats during a run (no power creep);
     # progression is configuration (sigils), positioning (reactions), and knowledge.
-    return Actor(x=x, y=y, glyph="@", name="you", hp=32, max_hp=32, atk=4,
+    return Actor(x=x, y=y, glyph="@", name="you", hp=100, max_hp=100, atk=4,
                  defense=0, is_player=True, allegiance="player")
 
 

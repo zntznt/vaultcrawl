@@ -1,6 +1,6 @@
-"""Universal agent brain — dynamic priority scoring. Berlin Convention compliant.
-Every agent can do everything. Starting state + scoring profile produce
-behavioral divergence. One tree, six scoring profiles, zero personality gates."""
+"""Universal agent brain — identity-driven scoring. Profile weights act as FLOORS:
+identity actions always score at least their profile weight when reachable.
+State urgency can exceed the floor for survival. Turn bonus biases initial divergence."""
 from __future__ import annotations
 
 from runtime.sense import (
@@ -13,7 +13,6 @@ from runtime.agent_perception import agent_state
 from runtime.tactics import _stairs
 
 
-# ---- Scoring profiles (starting bonuses decay over first 5 turns) ----
 PROFILES = {
     "artisan": {
         "forge": 15, "breakdown": 10, "explore": 6,
@@ -78,7 +77,6 @@ PROFILES = {
 
 
 def _starting_bonus(turn: int) -> int:
-    """Scores get an extra push in the first few turns to bias initial divergence."""
     if turn <= 1:
         return 12
     elif turn <= 3:
@@ -88,10 +86,16 @@ def _starting_bonus(turn: int) -> int:
     return 0
 
 
-class UniversalBrain(Brain):
-    """One decision function. Six scoring profiles. Behavioral divergence
-    emerges from starting-state + scoring-preference interaction."""
+# Formula: score = max(profile_weight, state_bonus) + turn_bonus
+# Profile = floor (identity), state = ceiling (urgency), turn = initial push
+def _score(profile, key, state_bonus, turn_bonus, reachable: bool = True) -> float:
+    if not reachable:
+        return 0
+    floor = profile.get(key, 0)
+    return max(floor, state_bonus) + turn_bonus
 
+
+class UniversalBrain(Brain):
     def __init__(self, name: str = "seeker"):
         self._name = name
         self._profile = PROFILES.get(name, PROFILES["seeker"])
@@ -113,10 +117,10 @@ class UniversalBrain(Brain):
         s = agent_state(game, actor)
         hp_pct = s["vitals"]["hp_pct"]
         st = _stairs(game)
-        turn_bonus = _starting_bonus(game.turn)
+        bonus = _starting_bonus(game.turn)
         candidates = []
 
-        # ---- PANIC OVERRIDE: survival above all ----
+        # ---- PANIC: survival above all ----
         if hp_pct < 25:
             if s["near_hostiles"]:
                 for i, sig in enumerate(s["sigils"]):
@@ -128,98 +132,99 @@ class UniversalBrain(Brain):
                 step = step_toward_avoiding_elites(game, actor, st[0], st[1])
                 return AgentAction("move", dx=step[0], dy=step[1])
 
-        # ---- COMMUNE: alternate win, boosted by beacon proximity ----
+        # ---- COMMUNE ----
         can_commune = s["knowledge"]["truths_read"] >= 2 or s["matter"]["total"] >= 4
-        if can_commune and s["nav"]["any_boss_near"]:
-            score = self.profile.get("commune", 0) + turn_bonus + 25
+        reachable = can_commune and s["nav"]["any_boss_near"]
+        score = _score(self.profile, "commune", 25, bonus, reachable)
+        if score > 0:
             candidates.append(("commune", score, AgentAction("commune")))
-        # Beacon pull: if a commune beacon is on this floor, path toward it
+
+        # ---- BEACON ----
         if s.get("beacon_on_floor") and s.get("nearest_beacon"):
             bx, by, bd = s["nearest_beacon"]
-            if bd > 2:  # not already on it
-                truths = s["knowledge"]["truths_read"]
-                matter = s["matter"]["total"]
-                urgency = 15 if (truths >= 2 or matter >= 4) else 5  # stronger if ready
-                score = self.profile.get("commune", 3) + turn_bonus + urgency
+            if bd > 2:
+                urgency = 15 if (s["knowledge"]["truths_read"] >= 2 or s["matter"]["total"] >= 4) else 5
+                score = _score(self.profile, "commune", urgency, bonus, True)
                 candidates.append(("beacon", score, ("workspace", bx, by)))
 
-        # ---- HEAL: cast Recall ----
-        if hp_pct < 60 and s["can_heal_meaningfully"] and s["vitals"]["hp"] < s["vitals"]["max_hp"]:
+        # ---- HEAL ----
+        reachable = (hp_pct < 60 and s["can_heal_meaningfully"] and s["vitals"]["hp"] < s["vitals"]["max_hp"])
+        if reachable:
             for i, sig in enumerate(s["sigils"]):
                 if sig.get("ability") == "Recall" or sig.get("base") == "Recall":
-                    score = self.profile.get("recall", 0) + turn_bonus + (100 - hp_pct) // 4
+                    urgency = (100 - hp_pct) // 4
+                    score = _score(self.profile, "recall", urgency, bonus, True)
                     candidates.append(("recall", score, AgentAction("cast", index=i)))
                     break
 
-        # ---- PARLEY: negotiate with elites ----
+        # ---- PARLEY ----
         if s.get("encounter_options"):
-            opts = s["encounter_options"]
             for h in s["hostiles"]:
                 if h.get("tier", 1) >= 3 or h.get("is_boss"):
-                    if "parley" in opts:
-                        score = self.profile.get("parley", 0) + turn_bonus
-                        score += s.get("faction_standings", {}).get(h.get("faction", ""), 0) * 3
+                    if "parley" in s["encounter_options"]:
+                        state = s.get("faction_standings", {}).get(h.get("faction", ""), 0) * 3
                         if s.get("danger_ahead"):
-                            score += 10
+                            state += 10
+                        score = _score(self.profile, "parley", state, bonus, True)
                         candidates.append(("parley", score, AgentAction("negotiate", target=h["name"])))
                     break
 
-        # ---- BECALM: pacify adjacent hostiles ----
-        if s["adjacent_hostiles"] and s["matter"]["total"] >= 2:
-            score = self.profile.get("becalm", 0) + turn_bonus
+        # ---- BECALM ----
+        reachable = bool(s["adjacent_hostiles"] and s["matter"]["total"] >= 2)
+        if reachable:
+            state = 0
             if s["can_becalm"]:
-                score += 10
-            score += s.get("reputation_summary", 0) * 2
+                state += 10
+            state += s.get("reputation_summary", 0) * 2
+            score = _score(self.profile, "becalm", state, bonus, True)
             candidates.append(("becalm", score, AgentAction("becalm")))
 
-        # ---- FORGE: craft sigils ----
-        if s["matter"]["total"] >= 2 and s["nav"]["free_sigil_slots"] > 0:
+        # ---- FORGE ----
+        reachable = bool(s["matter"]["total"] >= 2 and s["nav"]["free_sigil_slots"] > 0)
+        if reachable:
             slotted = {sig.get("ability") for sig in s["sigils"]}
             for ability in ("Recall", "Ward", "Phase", "Echo", "Rally"):
                 if ability not in slotted:
-                    score = self.profile.get("forge", 0) + turn_bonus
-                    score += s["nav"]["free_sigil_slots"] * 2
-                    score += s["matter"]["total"] // 2
+                    state = s["nav"]["free_sigil_slots"] * 2 + s["matter"]["total"] // 2
+                    score = _score(self.profile, "forge", state, bonus, True)
                     candidates.append(("forge", score, AgentAction("forge", target=ability)))
                     break
 
-        # ---- BREAKDOWN: recover matter ----
+        # ---- BREAKDOWN ----
         for sig in s["sigils"]:
             if sig.get("durability", 2) <= 1:
-                score = self.profile.get("breakdown", 0) + turn_bonus
-                score += 5  # urgency — about to shatter
+                score = _score(self.profile, "breakdown", 5, bonus, True)
                 candidates.append(("breakdown", score, AgentAction("breakdown", target=sig["ability"])))
                 break
 
-        # ---- SHIELD: build defense ----
-        if not s["adjacent_hostiles"]:
-            score = self.profile.get("shield", 0) + turn_bonus
-            if s["vitals"]["defense"] < 3:
-                score += 5
-            else:
-                score -= 10  # don't shield at cap
-            candidates.append(("shield", score, AgentAction("shield")))
+        # ---- SHIELD ----
+        reachable = len(s.get("adjacent_hostiles", [])) == 0
+        if reachable:
+            state = 5 if s["vitals"]["defense"] < 3 else -10
+            score = _score(self.profile, "shield", state, bonus, True)
+            if score > 0:
+                candidates.append(("shield", score, AgentAction("shield")))
 
-        # ---- CONSUMABLE CRAFT: spend matter for one-shot items ----
-        known_recipes = getattr(game.player, "_known_recipes", set())
-        if known_recipes and s["matter"]["total"] >= 1 and not s["adjacent_hostiles"]:
-            # Pick cheapest known recipe
+        # ---- CONSUMABLE ----
+        known = getattr(game.player, "_known_recipes", set())
+        reachable = bool(known and s["matter"]["total"] >= 1 and len(s.get("adjacent_hostiles", [])) == 0)
+        if reachable:
             from runtime.wear import RECIPE_COSTS
-            cheapest = min(known_recipes, key=lambda r: RECIPE_COSTS.get(r, 99), default=None)
-            if cheapest and RECIPE_COSTS.get(cheapest, 99) <= s["matter"]["total"]:
-                score = self.profile.get("forge", 3) + turn_bonus + 3  # lean on forge affinity
-                candidates.append(("consumable", score, ("consumable", cheapest)))
+            affordable = [r for r in known if RECIPE_COSTS.get(r, 99) <= s["matter"]["total"]]
+            if affordable:
+                score = _score(self.profile, "forge", 3, bonus, True)  # forge affinity
+                candidates.append(("consumable", score, ("consumable", affordable[0])))
 
-        # ---- FLEE: escape adjacent hostiles ----
-        if s["adjacent_hostiles"] and hp_pct < 40:
+        # ---- FLEE ----
+        reachable = bool(s["adjacent_hostiles"] and hp_pct < 40)
+        if reachable:
             t = s["adjacent_hostiles"][0]
             away = step_away(game, actor, t["x"], t["y"], safe=True)
             if away != (0, 0) and not s["has_trap_near"]:
-                score = self.profile.get("flee", 0) + turn_bonus + 5
+                score = _score(self.profile, "flee", 5, bonus, True)
                 candidates.append(("flee", score, AgentAction("move", dx=away[0], dy=away[1])))
 
-        # ---- EXPLORE: unseen tiles, POIs, caches, salvage, landmarks ----
-        # Unseen tiles
+        # ---- EXPLORE ----
         know = game.system("knowledge")
         unseen_count = 0
         if know:
@@ -230,36 +235,33 @@ class UniversalBrain(Brain):
                     if game.level.walkable(x, y) and (x, y) not in seen:
                         unseen_count += 1
             if unseen_count > 0:
-                score = self.profile.get("explore", 0) + turn_bonus + min(unseen_count // 5, 5)
+                state = min(unseen_count // 5, 5)
+                score = _score(self.profile, "explore", state, bonus, True)
                 candidates.append(("explore_unseen", score, "unseen"))
 
-        # Landmarks
         if game.commune_landmark() is not None:
-            score = self.profile.get("explore", 0) + turn_bonus + 8
+            score = _score(self.profile, "explore", 8, bonus, True)
             candidates.append(("interact", score, AgentAction("interact")))
 
-        # Salvage
         salvage_sys = game.system("salvage")
         if salvage_sys:
             ground = getattr(salvage_sys, "ground", {})
             if ground:
                 nearest = min(ground.keys(), key=lambda p: abs(p[0]-actor.x)+abs(p[1]-actor.y))
-                score = self.profile.get("explore", 0) + turn_bonus + 5
+                score = _score(self.profile, "explore", 5, bonus, True)
                 candidates.append(("salvage", score, ("salvage", nearest[0], nearest[1])))
 
-        # Caches
         if s["caches"]:
             cc = s["caches"][0]
-            score = self.profile.get("explore", 0) + turn_bonus + 4
+            score = _score(self.profile, "explore", 4, bonus, True)
             candidates.append(("cache", score, ("cache", cc["x"], cc["y"])))
 
-        # POIs
         if s["pois"]:
-            px, py = s["pois"][0]
-            score = self.profile.get("explore", 0) + turn_bonus + 3
-            candidates.append(("poi", score, ("poi", px, py)))
+            ppx, ppy = s["pois"][0]
+            score = _score(self.profile, "explore", 3, bonus, True)
+            candidates.append(("poi", score, ("poi", ppx, ppy)))
 
-        # ---- WORKSPACES: path to crafting sites ----
+        # ---- WORKSPACES ----
         for ws_key, ws_field in [("workspace_fabricator", "nearest_fabricator"),
                                   ("workspace_terminal", "nearest_terminal"),
                                   ("workspace_depleted", "nearest_depleted"),
@@ -267,32 +269,33 @@ class UniversalBrain(Brain):
             ws = s.get(ws_field)
             if ws and len(ws) >= 3 and ws[2] is not None:
                 dist = ws[2]
-                # Only path to workspaces when very close and area is safe
-                max_dist = 6  # conservative — don't cross floors for crafting
-                if dist <= max_dist and len(s.get("adjacent_hostiles", [])) == 0 and len(s.get("near_hostiles", [])) == 0:
-                    score = self.profile.get(ws_key, 3) + max(0, max_dist - dist)
+                if dist <= 6 and len(s.get("adjacent_hostiles", [])) == 0 and len(s.get("near_hostiles", [])) == 0:
+                    score = _score(self.profile, ws_key, max(0, 6 - dist), bonus, True)
                     candidates.append((ws_key, score, ("workspace", ws[0], ws[1])))
 
-        # ---- REST: heal when safe ----
-        if not s["adjacent_hostiles"] and not s["near_hostiles"] and hp_pct < 70:
-            score = self.profile.get("rest", 0) + turn_bonus
-            score += (100 - hp_pct) // 5
-            candidates.append(("rest", score, AgentAction("rest")))
+        # ---- REST ----
+        reachable = (len(s.get("adjacent_hostiles", [])) == 0 and len(s.get("near_hostiles", [])) == 0 and hp_pct < 70)
+        if reachable:
+            state = (100 - hp_pct) // 5
+            score = _score(self.profile, "rest", state, bonus, True)
+            if score > 0:
+                candidates.append(("rest", score, AgentAction("rest")))
 
-        # ---- WEATHER CLEAR: interact to clear hazardous weather ----
-        if s["weather_hazard"] and s["matter"]["total"] >= 1 and not s["adjacent_hostiles"]:
-            score = self.profile.get("rest", 3) + turn_bonus + 3
+        # ---- WEATHER CLEAR ----
+        if s["weather_hazard"] and s["matter"]["total"] >= 1 and len(s.get("adjacent_hostiles", [])) == 0:
+            score = _score(self.profile, "rest", 3, bonus, True)
             candidates.append(("clear_weather", score, AgentAction("interact")))
 
-        # ---- FIGHT: combat as option (not last resort — scored alongside others) ----
+        # ---- FIGHT ----
         if s["adjacent_hostiles"]:
             t = s["adjacent_hostiles"][0]
-            score = self.profile.get("fight", 0) + turn_bonus
+            state = 0
             if hp_pct > 60:
-                score += 5
+                state += 5
             if hp_pct < 30:
-                score -= 15
-            score += s["vitals"]["defense"]
+                state -= 15
+            state += s["vitals"]["defense"]
+            score = _score(self.profile, "fight", state, bonus, True)
             candidates.append(("fight", score,
                 AgentAction("move", dx=(t["x"]>actor.x)-(t["x"]<actor.x),
                                   dy=(t["y"]>actor.y)-(t["y"]<actor.y))))
@@ -305,44 +308,41 @@ class UniversalBrain(Brain):
                 step = step_toward_avoiding_elites(game, actor, st[0], st[1])
                 candidates.append(("deesc_stairs", 40, AgentAction("move", dx=step[0], dy=step[1])))
 
-        # ---- STAIRS (fallback) ----
+        # ---- STAIRS ----
         if s["position"]["on_stairs"]:
-            candidates.append(("descend", self.profile.get("stairs", 0) + 2, AgentAction("descend")))
+            candidates.append(("descend", _score(self.profile, "stairs", 2, bonus, True), AgentAction("descend")))
         elif st:
             step = step_toward_avoiding_elites(game, actor, st[0], st[1])
             if step != (0, 0):
-                candidates.append(("stairs", self.profile.get("stairs", 0), AgentAction("move", dx=step[0], dy=step[1])))
+                candidates.append(("stairs", _score(self.profile, "stairs", 0, bonus, True),
+                                   AgentAction("move", dx=step[0], dy=step[1])))
 
-        # ---- Pick highest-scoring action ----
+        # ---- Pick highest ----
         if not candidates:
             return AgentAction("wait")
 
         candidates.sort(key=lambda c: c[1], reverse=True)
         winner = candidates[0][2]
 
-        # Resolve explore-like actions to actual AgentAction moves
         if isinstance(winner, tuple):
             kind = winner[0]
-            if kind == "unseen":
-                know = game.system("knowledge")
-                seen = know.seen.get(game.floor, set()) if know else set()
-                px, py = actor.x, actor.y
-                best, bd = None, 999
-                for y in range(max(0, py-20), min(game.level.h, py+21)):
-                    for x in range(max(0, px-20), min(game.level.w, px+21)):
-                        if game.level.walkable(x, y) and (x, y) not in seen:
-                            d = max(abs(x-px), abs(y-py))
+            if kind == "consumable":
+                return AgentAction("craft_consumable", target=winner[1])
+            elif kind == "unseen":
+                best, bd, bt = None, 999, None
+                pk = actor.x
+                pk_y = actor.y
+                kn = game.system("knowledge")
+                sn = kn.seen.get(game.floor, set()) if kn else set()
+                for y in range(max(0, pk_y-20), min(game.level.h, pk_y+21)):
+                    for x in range(max(0, pk-20), min(game.level.w, pk+21)):
+                        if game.level.walkable(x, y) and (x, y) not in sn:
+                            d = max(abs(x-pk), abs(y-pk_y))
                             if d < bd:
-                                best, bd = (x, y), d
-                if best:
-                    step = step_toward(game, actor, best[0], best[1], safe=True)
-                    if step != (0, 0):
-                        return AgentAction("move", dx=step[0], dy=step[1])
+                                best, bd, bt = (x, y), d, step_toward(game, actor, x, y, safe=True)
+                if bt and bt != (0, 0):
+                    return AgentAction("move", dx=bt[0], dy=bt[1])
                 return AgentAction("wait")
-            elif kind == "consumable":
-                # winner[1] is the recipe name
-                recipe = winner[1]
-                return AgentAction("craft_consumable", target=recipe)
             elif kind in ("salvage", "cache", "poi", "workspace"):
                 tx, ty = winner[1], winner[2]
                 step = step_toward(game, actor, tx, ty, safe=True)
@@ -355,8 +355,6 @@ class UniversalBrain(Brain):
         return winner
 
 
-# Berlin-compliant: all 6 agents use the same UniversalBrain.
-# Behavioral divergence comes from PROFILES dict + game.py starting_kit().
 register_brain("artisan", UniversalBrain)
 register_brain("cartographer", UniversalBrain)
 register_brain("emergent", UniversalBrain)
