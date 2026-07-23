@@ -69,6 +69,11 @@ class WhisperBrain(Brain):
                 for i, sig in enumerate(s["sigils"]):
                     if sig.get("ability") == "Phase" or sig.get("base") == "Phase":
                         return AgentAction("cast", index=i)
+            if s.get("danger_ahead") and s["near_hostiles"]:
+                st = _stairs(game)
+                if st:
+                    step = step_toward_avoiding_elites(game, actor, st[0], st[1])
+                    return AgentAction("move", dx=step[0], dy=step[1])
             if s["position"]["on_stairs"]:
                 return AgentAction("descend")
             st = _stairs(game)

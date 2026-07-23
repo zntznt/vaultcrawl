@@ -1706,7 +1706,8 @@ class Game:
     def wait(self):
         """Pass the turn in place. On settled ground, waiting is REST.
         Three consecutive waits enter camp mode: faster healing, status recovery.
-        Outside towns, resting still provides a small heal if no hostiles are near."""
+        Outside towns, resting still provides a small heal if no hostiles are near.
+        Cleared rooms (no hostiles) provide safer rest. Emergency heal: spend matter."""
         if not self.alive or self.won:
             return
         on_town = (self._on_surface()
@@ -1715,11 +1716,28 @@ class Game:
         near_hostile = any(self.hostile(self.player, a)
                            and max(abs(a.x - self.player.x), abs(a.y - self.player.y)) <= 4
                            for a in self.actors)
+        # Room-clearing check: is the current room free of hostiles?
+        room_idx = self.room_at(self.player.x, self.player.y)
+        room_clear = False
+        if room_idx is not None:
+            room_tiles = self.room_tiles(room_idx) if hasattr(self, 'room_tiles') else set()
+            room_clear = all(
+                not self.hostile(self.player, a) or max(abs(a.x-self.player.x), abs(a.y-self.player.y)) > 4
+                for a in self.actors
+            ) if room_tiles else False
+
         if on_town and near_hostile:
             self.log("Hostiles too near; you cannot rest.")
             on_town = False
             self._resting = False
             self._consecutive_rest = 0
+
+        # Kill-confidence decays on rest: each rest reduces the bonus by 1
+        if hasattr(self.player, '_kill_confidence') and self.player._kill_confidence > 0:
+            self.player._kill_confidence -= 1
+            self.player.max_hp -= 1
+            self.player.hp = min(self.player.hp, self.player.max_hp)
+
         # non-town resting: small heal if safe and no hostiles nearby
         can_rest = on_town or (not near_hostile and self.player.hp < self.player.max_hp)
         if can_rest:
@@ -1735,16 +1753,28 @@ class Game:
                         self.player._slowed = 0
                         self.player.speed = getattr(self.player, "_base_speed", 1.0)
             from .body_parts import heal_body
-            # town rest: 2-3 HP. safe non-town rest: 1 HP
+            # Healing: cleared room (3 HP), town rest (2-3 HP), otherwise 1 HP
             heal = 1
+            if room_clear:
+                heal = 3
+                self.log("The room is clear. You rest deeply.")
             if on_town:
                 heal = 3 if self._resting else 2
                 if self._aspect and "Hallowed" in self._aspect:
                     heal *= 2
             heal_body(self.player, heal)
-            tag = f"+{heal} HP" if on_town else "+1 HP"
+            tag = f"+{heal} HP"
             self.log(f"You rest ({tag}).")
             self.absorb_aspect()
+        # Emergency heal: spend 1 matter for +3 HP when below 50% and no hostiles near
+        elif not near_hostile and self.player.hp * 100 < self.player.max_hp * 50:
+            salv = self.system("salvage")
+            if salv and salv.inventory(self).total() >= 1:
+                bag = salv.inventory(self)
+                richest = max(bag.comp.keys(), key=lambda k: bag.comp[k]) if bag.comp else "scrap"
+                bag.pay({richest: 1})
+                heal_body(self.player, 3)
+                self.log(f"You spend {richest} to staunch your wounds (+3 HP).")
         self.turn += 1
         self._tick_effects()
         self.enemies_act()
@@ -2557,6 +2587,12 @@ class Game:
         if att.is_player and dfn.allegiance == "monster":
             self.kills += 1
             self._tension = max(0, self._tension - 20)  # action calms the wild
+            # Kill-confidence: each kill grants +1 max HP (caps at +5), decays on rest
+            if not hasattr(self.player, '_kill_confidence'):
+                self.player._kill_confidence = 0
+            self.player._kill_confidence = min(5, self.player._kill_confidence + 1)
+            self.player.max_hp = max(1, self.player.max_hp + 1)
+            self.player.hp = min(self.player.max_hp, self.player.hp + 1)
             self.log(f"You destroy {dfn.name}{' [BOSS]' if dfn.is_boss else ''}.")
             if self.kills == 1:
                 sigs = self.system("sigils")

@@ -430,12 +430,23 @@ def agent_state(game, actor) -> dict:
 
         encounter_options.append("fight")
 
+    # Thrall telegraph: elite within 8 tiles means danger ahead
+    danger_ahead = False
+    for a in game.actors:
+        if a is actor or getattr(a, "hp", 0) <= 0:
+            continue
+        if getattr(a, "tier", 1) >= 3 or getattr(a, "is_boss", False):
+            if max(abs(a.x - actor.x), abs(a.y - actor.y)) <= 8:
+                danger_ahead = True
+                break
+
     return {
         "vitals": vitals,
         "status": status,
         "effects": effects,
         "position": position,
         "weather_hazard": weather_hazard,
+        "danger_ahead": danger_ahead,
         "hostiles": hostiles_list,
         "adjacent_hostiles": adjacent_hostiles,
         "near_hostiles": near_hostiles,
