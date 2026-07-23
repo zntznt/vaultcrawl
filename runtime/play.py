@@ -1305,6 +1305,7 @@ def main(argv=None) -> int:
             return 2
     game.player.brain = make_brain(game, game.player,
                                    name="hunter" if a.brain == "dumb" else a.brain)
+    game.starting_kit(a.brain)
     if headless:
         transcript, cleared = auto_play(game, a.floors)
         print("\n\n".join(transcript))

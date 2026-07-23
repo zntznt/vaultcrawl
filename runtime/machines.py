@@ -200,6 +200,12 @@ class MachineSystem(System):
         return False
 
     def _use_terminal(self, game, pos):
+        weather = game.system("weather")
+        if weather:
+            props = getattr(weather, 'props', {})
+            if props:
+                self._scramble_weather(game, pos)
+                return
         knowledge = game.system("knowledge")
         region_id = self.region_ahead(game)
         if knowledge is None or region_id is None:
@@ -213,6 +219,21 @@ class MachineSystem(System):
         self._disarm_nearby(game)                    # opportunistic, guarded
         game.log("You hack the terminal — a region ahead loads.")
         self.terminals.discard(pos)
+
+    def _scramble_weather(self, game, pos):
+        """Terminal option: scramble weather in the current region for 30 turns."""
+        weather = game.system("weather")
+        if weather is None:
+            return
+        from runtime.components import inv as get_inv
+        game.log("You hack the terminal — the weather pattern scrambles.")
+        if not hasattr(game, '_weather_suppressed'):
+            game._weather_suppressed = {}
+        for y in range(game.level.h):
+            for x in range(game.level.w):
+                game._weather_suppressed[(x, y)] = 30
+        self.terminals.discard(pos)
+        game.emit("weather_cleared", pos=pos, radius=999)
 
     # ---- per-turn -----------------------------------------------------------
     def on_player_act(self, game):

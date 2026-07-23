@@ -154,8 +154,10 @@ class Dampener:
     @staticmethod
     def compute_mods(scores: dict) -> dict:
         """Given attractor scores (0.0-1.0), return parameter mods for next run.
-        Each mod is additive -- applied by the game setup before descent."""
+        Extended with terraforming-specific dampening (Milestone C)."""
         mods = {}
+
+        # Existing dampening (Milestone 1)
         if scores.get("industrial", 0) > 0.7:
             mods["forge_cost_penalty"] = min(3, int((scores["industrial"] - 0.5) * 6))
         if scores.get("echo_cascade", 0) > 0.5:
@@ -164,4 +166,29 @@ class Dampener:
             mods["standing_decay_accel"] = min(3, int((scores["pacifist"] - 0.5) * 4))
         if scores.get("standing_range", 0) > 0.8:
             mods["standing_dampen"] = int(scores["standing_range"] * 2)
+
+        # Terraforming-specific dampening (Milestone C)
+        if scores.get("industrial", 0) >= 0.9:
+            mods["forge_quality_penalty"] = 1
+        if scores.get("haunted", 0) >= 0.7:
+            mods["ghost_chance_penalty"] = max(0, int(scores["haunted"] * 3))
+        if scores.get("companion_flux", 0) >= 0.8:
+            mods["companion_penalty_increase"] = 2
+
+        mods["_total_mods"] = len(mods)
+
         return mods
+
+    @staticmethod
+    def compute_terraforming_velocity(prev_scores: dict, curr_scores: dict) -> float:
+        """Rate of change between two runs' attractor scores.
+        Returns 0.0-1.0 where higher = faster change."""
+        if not prev_scores:
+            return 0.0
+        total = 0.0
+        count = 0
+        for key in curr_scores:
+            if key in prev_scores:
+                total += abs(curr_scores[key] - prev_scores[key])
+                count += 1
+        return total / max(1, count) if count else 0.0

@@ -145,6 +145,66 @@ class Game:
         else:
             self.descend()
 
+    def starting_kit(self, agent_name: str):
+        """Provide each agent a personality-matched starting economic seed."""
+        know = self.system("knowledge")
+        salv = self.system("salvage")
+        fcs = self.system("factions")
+
+        if agent_name == "artisan":
+            if salv:
+                salv.inventory(self).add({"lamplight": 2}, quality=2)
+            if know:
+                nodes = self.m.get("graph", {}).get("nodes", {})
+                hubs = [nid for nid, n in nodes.items() if n.get("role") == "hub"]
+                if hubs:
+                    know._reveal(self, hubs[0])
+
+        elif agent_name == "cartographer":
+            if salv:
+                salv.inventory(self).add({"vellum": 1}, quality=1)
+            if know:
+                nodes = self.m.get("graph", {}).get("nodes", {})
+                bridge = [nid for nid, n in nodes.items() if n.get("role") == "bridge"]
+                if len(bridge) >= 2:
+                    know._reveal(self, bridge[0])
+                    know._reveal(self, bridge[1])
+
+        elif agent_name == "emergent":
+            if salv:
+                salv.inventory(self).add({"iron": 1}, quality=2)
+            self.player.hp = min(self.player.max_hp, self.player.hp + 4)
+
+        elif agent_name == "exploiter":
+            if salv:
+                salv.inventory(self).add({"brass": 1}, quality=2)
+            sigs = self.system("sigils")
+            if sigs and sigs.slots:
+                for s in sigs.slots:
+                    if s.get("ability") == "Ward":
+                        s["durability"] = 3
+                        break
+
+        elif agent_name == "seeker":
+            if salv:
+                salv.inventory(self).add({"moss": 1}, quality=1)
+            if know:
+                nodes = self.m.get("graph", {}).get("nodes", {})
+                non_player = [nid for nid in nodes if nid != self.player.source]
+                if non_player:
+                    choice = non_player[hash(agent_name + "seed") % len(non_player)]
+                    know._reveal(self, choice)
+
+        elif agent_name == "whisper":
+            if salv:
+                salv.inventory(self).add({"vellum": 1}, quality=1)
+            if fcs:
+                factions_list = list(getattr(fcs, "standing", {}).keys())
+                if factions_list:
+                    target = factions_list[hash(agent_name) % len(factions_list)]
+                    current = fcs.standing.get(target, 0)
+                    fcs.standing[target] = min(4, current + 1)
+
     def _set_level(self, level, z: int = 0):
         self.level = level
         level.z = getattr(level, "z", z)
@@ -1302,6 +1362,7 @@ class Game:
             # of teleport baked into try_move.)
             self._pickup()
             self.emit("noise", pos=(nx, ny), volume=3)   # footsteps carry
+            self.encounter_resolve(self.player)
         self._tick_effects()
         self.enemies_act()
         self._restore_winded()
@@ -1403,6 +1464,83 @@ class Game:
         target.allegiance = "wild"
         target.brain = None
         self.emit("becalmed", actor=target, pos=(target.x, target.y))
+
+    def encounter_resolve(self, actor) -> str | None:
+        """Called when player approaches an elite/boss. Returns an encounter outcome
+        or None if no encounter triggers (already resolved, or no elite present)."""
+        nearby = []
+        for a in self.actors:
+            if a is self.player or a.hp <= 0:
+                continue
+            d = max(abs(a.x - self.player.x), abs(a.y - self.player.y))
+            if d <= 3 and (getattr(a, "is_boss", False) or getattr(a, "tier", 1) >= 3):
+                nearby.append((d, a))
+        if not nearby:
+            return None
+        _, target = min(nearby, key=lambda x: x[0])
+
+        if hasattr(target, "_encountered"):
+            return None
+        target._encountered = True
+
+        hp_pct = self.player.hp * 100 // max(1, getattr(self.player, "max_hp", self.player.hp))
+        salv = self.system("salvage")
+        matter = salv.inventory(self).total() if salv else 0
+        fcs = self.system("factions")
+        faction = getattr(target, "faction", "")
+        standing = fcs.standing.get(faction, 0) if fcs else 0
+        know = self.system("knowledge")
+        source_known = know.is_known(getattr(target, "source", "")) if know else False
+        truths = (getattr(self.system("marginalia"), "read", 0) or 0) + \
+                 (getattr(self.system("history"), "read", 0) or 0)
+
+        options = []
+
+        if standing >= 2:
+            options.append("coerce")
+        if source_known:
+            options.append("parley")
+        if matter >= 2:
+            options.append("flee")
+        if truths >= 1:
+            options.append("appease")
+        if hp_pct >= 40:
+            options.append("fight")
+
+        if not options:
+            options.append("fight")
+
+        preferred = [o for o in options if o != "fight"]
+        choice = preferred[0] if preferred else "fight"
+
+        if choice == "coerce":
+            if salv and salv.inventory(self).total() >= 1:
+                from .components import inv
+                bag = inv(self.player)
+                richest = max(bag.comp.keys(), key=lambda k: bag.comp[k]) if bag.comp else "scrap"
+                bag.pay({richest: 1})
+                self.log(f"You offer {richest} to {target.name}. It steps aside.")
+                target.allegiance = "wild"
+                target.brain = None
+        elif choice == "parley":
+            self.log(f"{target.name} regards you with recognition.")
+            target.allegiance = "npc"
+        elif choice == "flee":
+            if salv and salv.inventory(self).total() >= 2:
+                self._spend_matter(salv.inventory(self), 2)
+                self.log(f"You toss matter as a distraction. {target.name} chases the clatter.")
+                for dx, dy in ((5, 0), (-5, 0), (0, 5), (0, -5)):
+                    nx, ny = target.x + dx, target.y + dy
+                    if self.level.walkable(nx, ny):
+                        target.x, target.y = nx, ny
+                        self.emit("noise", pos=(nx, ny), volume=8)
+                        break
+        elif choice == "appease":
+            self.log(f"You commune briefly. {target.name} lowers its guard.")
+            target.allegiance = "wild"
+            target.brain = None
+
+        return choice
 
     def recruit(self, target):
         """A swayed creature chooses to walk with you: it mirrors your hostilities
@@ -1523,6 +1661,7 @@ class Game:
             heal_body(self.player, heal)
             tag = f"+{heal} HP" if on_town else "+1 HP"
             self.log(f"You rest ({tag}).")
+            self.absorb_aspect()
         self.turn += 1
         self._tick_effects()
         self.enemies_act()
@@ -1535,6 +1674,12 @@ class Game:
         Iterates all systems, collects handlers, and consumes the turn if any fire."""
         if not self.alive or self.won:
             return
+        weather = self.system("weather")
+        if weather:
+            props = getattr(weather, 'props_at', None)
+            if props and props(self.player.x, self.player.y):
+                self.clear_weather()
+                return
         decay = self.system("decay")
         if decay and hasattr(decay, 'corpses') and (self.player.x, self.player.y) in decay.corpses:
             if (hasattr(self.player, 'body') and self.player.body and
@@ -1955,6 +2100,19 @@ class Game:
         player/environment kills the factions care about."""
         if actor in self.actors:
             self.actors.remove(actor)
+        if getattr(actor, 'is_player', False):
+            try:
+                from runtime.persistence import chronicle
+                pos = (actor.x, actor.y)
+                hp = actor.hp
+                salv = self.system("salvage")
+                inv = dict(getattr(salv.inventory(self), 'comp', {})) if salv else {}
+                last_act = self.messages[-1] if self.messages else ""
+                had_comp = any(getattr(a, 'allegiance', '') == 'companion' for a in self.actors)
+                resting = getattr(self, '_resting', False)
+                chronicle().record_death(pos, hp, inv, last_act, had_comp, resting, self.floor)
+            except Exception:
+                pass
         if getattr(actor, 'allegiance', '') == 'companion':
             fcs = self.system("factions")
             faction = getattr(actor, 'faction', '')
@@ -2036,6 +2194,7 @@ class Game:
     def _tick_effects(self):
         """Per-turn decay of status effects: bleeding deals damage, counters tick.
         Also decay creature emotions each turn (anger/fear drift)."""
+        self._tick_weather_suppression()
         from .sense import decay_emotions, apply_trigger
         for a in list(self.actors):
             bleed = getattr(a, "_bleeding", 0)
@@ -2056,6 +2215,139 @@ class Game:
                         if r.is_hazard(a.x + dx, a.y + dy):
                             apply_trigger(self, a, "fire_near", 0.4)
                             break
+
+    def clear_weather(self, radius: int = 5):
+        """Spend 1 matter to clear weather hazards in a radius around the player.
+        Lasts 20 turns before weather returns."""
+        if not self.alive or self.won:
+            return
+        salv = self.system("salvage")
+        if salv is None or salv.inventory(self).total() < 1:
+            structures = self.system("structures")
+            crystal_consumed = False
+            if structures and hasattr(structures, 'crystals'):
+                px, py = self.player.x, self.player.y
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (0, 0)):
+                    if (px + dx, py + dy) in getattr(structures, 'crystals', set()):
+                        structures.crystals.discard((px + dx, py + dy))
+                        crystal_consumed = True
+                        self.log("You channel the crystal's energy — the air clears.")
+                        break
+            if not crystal_consumed:
+                self.log("You need matter or a nearby crystal to clear the weather.")
+                return
+        else:
+            from .components import inv as get_inv
+            bag = get_inv(self.player) if hasattr(self.player, '_inv') else salv.inventory(self)
+            richest = max(bag.comp.keys(), key=lambda k: bag.comp[k]) if bag.comp else "scrap"
+            bag.pay({richest: 1})
+            self.log(f"You spend {richest} to clear the sky.")
+        weather = self.system("weather")
+        if weather is None:
+            return
+        if not hasattr(self, '_weather_suppressed'):
+            self._weather_suppressed = {}
+        px, py = self.player.x, self.player.y
+        for y in range(max(0, py - radius), min(self.level.h, py + radius + 1)):
+            for x in range(max(0, px - radius), min(self.level.w, px + radius + 1)):
+                self._weather_suppressed[(x, y)] = 20
+        self.log(f"The weather clears in a {radius}-tile radius for 20 turns.")
+        self.emit("weather_cleared", pos=(self.player.x, self.player.y), radius=radius)
+        self.turn += 1
+        self._tick_effects()
+        self.enemies_act()
+        for s in self.systems:
+            s.on_player_act(self)
+
+    def is_weather_suppressed(self, x: int, y: int) -> bool:
+        """Check if weather is suppressed at a given position."""
+        return getattr(self, '_weather_suppressed', {}).get((x, y), 0) > 0
+
+    def absorb_aspect(self):
+        """Absorb weather aspect for permanent power after 3 consecutive rests in weather.
+        Clears the weather on this tile permanently and grants a buff."""
+        if not self.alive or self.won:
+            return
+        if not getattr(self, '_rest_tile', None):
+            self._rest_tile = (self.player.x, self.player.y)
+            self._rest_tile_turns = 1
+            return
+        current_tile = (self.player.x, self.player.y)
+        if current_tile == self._rest_tile:
+            self._rest_tile_turns += 1
+        else:
+            self._rest_tile = current_tile
+            self._rest_tile_turns = 1
+            return
+
+        if self._rest_tile_turns < 3:
+            return
+
+        weather = self.system("weather")
+        if weather is None:
+            self._rest_tile_turns = 0
+            return
+        props = getattr(weather, 'props', {})
+        tile_props = props.get(current_tile, set()) if isinstance(props, dict) else set()
+        if not tile_props:
+            self._rest_tile_turns = 0
+            return
+
+        aspect_buff = None
+        aspect_name = ""
+        if "acid" in str(tile_props).lower() or "corrosive" in str(tile_props).lower():
+            aspect_buff = "corrosive_touch"
+            aspect_name = "Corrosive Touch"
+        elif "chill" in str(tile_props).lower() or "frozen" in str(tile_props).lower() or "cold" in str(tile_props).lower():
+            aspect_buff = "cold_endurance"
+            aspect_name = "Cold Endurance"
+        elif "static" in str(tile_props).lower() or "charged" in str(tile_props).lower():
+            aspect_buff = "static_discharge"
+            aspect_name = "Static Discharge"
+
+        if aspect_buff is None:
+            self._rest_tile_turns = 0
+            return
+
+        if not hasattr(self.player, '_absorbed_aspects'):
+            self.player._absorbed_aspects = []
+        if len(self.player._absorbed_aspects) >= 3:
+            self.log("You cannot absorb any more of the weather.")
+            self._rest_tile_turns = 0
+            return
+        self.player._absorbed_aspects.append(aspect_buff)
+        self.log(f"You have absorbed the weather. You gain {aspect_name}.")
+
+        if not hasattr(self, '_weather_suppressed'):
+            self._weather_suppressed = {}
+        self._weather_suppressed[current_tile] = 9999
+
+        if aspect_buff == "corrosive_touch":
+            if hasattr(self.player, 'attack'):
+                self.player.attack = getattr(self.player, 'attack', 4) + 1
+                self.log("Your attacks deal +1 corrosive damage.")
+        elif aspect_buff == "cold_endurance":
+            self.player.defense = getattr(self.player, 'defense', 0) + 2
+            self.log("Your skin hardens against the cold. +2 DEF.")
+        elif aspect_buff == "static_discharge":
+            if not hasattr(self.player, '_static_discharge'):
+                self.player._static_discharge = True
+                self.log("Static crackles across your fingertips.")
+
+        self._rest_tile_turns = 0
+        self.emit("aspect_absorbed", pos=current_tile, buff=aspect_buff)
+
+    def _tick_weather_suppression(self):
+        """Decrement weather suppression timers by 1 each turn."""
+        if not hasattr(self, '_weather_suppressed') or not self._weather_suppressed:
+            return
+        expired = []
+        for pos in list(self._weather_suppressed):
+            self._weather_suppressed[pos] -= 1
+            if self._weather_suppressed[pos] <= 0:
+                expired.append(pos)
+        for pos in expired:
+            del self._weather_suppressed[pos]
 
     def _restore_winded(self):
         """Restore ATK for creatures that were temporarily winded this turn."""
@@ -2141,6 +2433,15 @@ class Game:
         elite = getattr(att, "quality", 0) > 0 and dfn.is_player
         part = hit_part(dfn, rng, elite_aim=elite)
         damage_part(dfn, part, dmg)
+        if att.is_player and getattr(self.player, '_static_discharge', False):
+            adj_enemies = [e for e in self.actors if e is not dfn and e.hp > 0
+                           and self.hostile(self.player, e)
+                           and max(abs(e.x - dfn.x), abs(e.y - dfn.y)) <= 1]
+            if adj_enemies:
+                import random as _rng
+                chain = adj_enemies[hash(f"{self.seed}:{self.turn}:static") % len(adj_enemies)]
+                chain.hp -= 1
+                self.log(f"Static arcs from {dfn.name} to {chain.name}.")
         pname = {"head": "head", "torso": "chest", "legs": "legs"}.get(part, part)
         if dmg >= 4 and dfn.is_player:
             self._apply_onhit(dfn, dmg, part)

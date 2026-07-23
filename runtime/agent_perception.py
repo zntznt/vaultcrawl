@@ -391,6 +391,45 @@ def agent_state(game, actor) -> dict:
                 can_recruit = True
                 break
 
+    # -- encounter options -----------------------------------------------------
+    encounter_options = []
+    best_actor = None
+    best_dist = 9999
+
+    for a in game.actors:
+        if a is p:
+            continue
+        tier = getattr(a, "tier", 1)
+        is_boss = getattr(a, "is_boss", False)
+        if tier < 3 and not is_boss:
+            continue
+        d = max(abs(px - a.x), abs(py - a.y))
+        if d > 3:
+            continue
+        if d < best_dist:
+            best_dist = d
+            best_actor = a
+
+    if best_actor is not None:
+        faction = getattr(best_actor, "faction", "")
+        source = getattr(best_actor, "source", "")
+
+        if fac_sys and faction:
+            if getattr(fac_sys, "standing", {}).get(faction, 0) >= 2:
+                encounter_options.append("coerce")
+
+        if know_sys and source:
+            if know_sys.is_known(source):
+                encounter_options.append("parley")
+
+        if matter_total >= 2:
+            encounter_options.append("flee")
+
+        if truths_read >= 1:
+            encounter_options.append("appease")
+
+        encounter_options.append("fight")
+
     return {
         "vitals": vitals,
         "status": status,
@@ -424,4 +463,5 @@ def agent_state(game, actor) -> dict:
         "companions": companions_list,
         "companion_penalty": companion_penalty,
         "can_recruit": can_recruit,
+        "encounter_options": encounter_options,
     }
