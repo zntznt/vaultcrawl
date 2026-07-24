@@ -78,7 +78,7 @@ codebase-wide sloppiness.
 | F7 | Brain registry collision makes `ExploiterBrain` unreachable | `runtime/tactics.py:145` vs `runtime/agent.py:637` |
 | F8 | Eval harness runs 26 systems, the game runs 28 | `runtime/agent_eval.py:57` vs `runtime/play.py:1274` |
 | F9 | Sandbox versus classic selected by TTY detection | `runtime/play.py:1288-1290` |
-| F10 | Agent outcomes are flat and shallow | all six profiles stall at floor 3 of 26 |
+| F10 | Agent win rate is unreproducible and every win is an escape | `runtime/game.py:1317` |
 | F11 | Verb vocabulary has drifted from every document | `AGENT_SPEC.md:83` vs `agent_action.py` |
 | F12 | Event-bus logic lives in `Game` and fails silently | `runtime/game.py:1204-1297` |
 | F13 | Real-LLM path has no on switch | `vaultcrawl/bake.py:76` |
@@ -328,17 +328,57 @@ silenced, and no test covers `emit` directly.
 rendering, persistence, the bus, social verbs, and roughly fifteen player verbs. It is the
 natural place to start decomposing.
 
-### F10. Agent outcomes are flat and shallow
+### F10. The agent works, but its win rate is not reproducible and not what it looks like
 
-All six profiles on `examples/world.json` reach floor 3 of 26 and stop, with 0 kills
-(`emergent` gets 1) and 0 items. The log shows repeated resting and then
-"(no progress, abandoning floor)".
+The agent stack does complete the descent end to end. A 30-run `agent_eval` pass on
+`examples/world.json`:
 
-Berlin compliance holds structurally, but differentiation is not observable in outcomes. Six
-profiles that produce one identical result are not six playstyles. Given that the agent is
-the project's demo, its headline feature, and the thing `agent_eval.py` measures, this is the
-largest gap between ambition and behavior in the repo. It also compounds with F8: the numbers
-measuring it are produced by a stack missing two systems.
+| Agent | Win% | Avg floor | Avg kills | Caches | Turns |
+|---|---|---|---|---|---|
+| artisan | 80% | 25.2 | 4.8 | 0.0 | 6449 |
+| cartographer | 60% | 22.8 | 3.4 | 0.0 | 4737 |
+| emergent | 100% | 27.0 | 1.2 | 0.0 | 8354 |
+| exploiter | 100% | 27.0 | 0.0 | 0.0 | 10018 |
+| seeker | 100% | 27.0 | 0.0 | 0.0 | 9049 |
+| whisper | 100% | 27.0 | 0.0 | 0.0 | 9521 |
+
+Aggregate 27 of 30, so 90%, not 100%. Three findings sit inside that table.
+
+**Every win is an escape victory.** `DEEPEST` is 27 for every agent, and floor 27 is the
+`self.floor > self.max_floor` branch at `runtime/game.py:1317-1318` ("you slip past the final
+warden"). Across 30 runs, not one win came from the boss-commune path
+(`game.py:1742`) or the boss-kill path (`game.py:2702`). The victory the project describes as
+its climax is never the victory the harness records.
+
+**Three profiles win 100% with 0.0 kills and 0.0 caches.** `exploiter`, `seeker`, and
+`whisper` beat the game by descending 27 times and touching almost nothing. Whatever the
+20-branch scoring cascade is doing, on this world the winning policy is "find the stairs",
+and the commune/forge/salvage economy is not what produces the wins.
+
+**The result is not reproducible across invocations.** `run_agents.py` from a clean
+`~/.vaultcrawl` gives 6 wins out of 6. Running the identical command a second time, with the
+state directory now warm, gives 4 out of 6 with two deaths. The harness carries cross-run
+state: `~/.vaultcrawl/graves.json` (`game.py:438,450`), the forge cache
+(`run_agents.py:28`), and the chronicle. Within a fixed state the run is deterministic
+(repeated `run_one("seeker")` reproduced floor 18, 6336 turns, 7 kills exactly), so this is
+persistence, not RNG.
+
+Upheaval and death artifacts are a designed feature (`runtime/persistence.py`), so the
+coupling is intentional. The problem is that no reported win rate is meaningful without
+stating the state of `~/.vaultcrawl`, and nothing in the harness output records it.
+Benchmarks taken from a cold directory and a warm one are different experiments.
+
+Two consequences worth acting on: `agent_eval` should report or reset the persistence state
+it ran against, and the six profiles should be distinguishable by more than turn count. Four
+identical 100% / 0-kill rows is not six playstyles. This also compounds with F8: the harness
+producing these numbers is missing `CraftSystem` and `LocusSystem`, so the craft and locus
+economies are absent from every figure above.
+
+**Correction to an earlier draft of this document.** A previous version reported that all six
+profiles "reach floor 3 of 26 and stop". That was wrong. `runtime/play.py:1205` defaults
+`--floors` to 3, so `python3 -m runtime.play <world> --auto` descends three floors because
+that is what was asked of it, not because the agent stalls. The agent is far more capable
+than that measurement implied.
 
 ### F11. Verb vocabulary has drifted from every document
 
@@ -455,9 +495,12 @@ concurrency across pass-2 slots. The prompts are already written. This is the fe
 makes the project's premise land for a stranger with their own vault, and it is closer than
 `CLAUDE.md` suggests.
 
-**5. Agent depth.** F10 is the honest measure of the agent stack, and floor 3 of 26 with zero
-items is not what `AGENT_SPEC.md` describes. Fixing F8 first is a precondition: the harness
-has to run the real game before its numbers mean anything.
+**5. Agent depth.** The agent already finishes the game, which is more than `AGENT_SPEC.md`
+can currently prove. What is missing is meaning in the result: every win is an escape past
+floor 26 rather than a confrontation, three profiles win with zero kills, and the reported
+rate moves depending on what is in `~/.vaultcrawl`. Fixing F8 is a precondition (the harness
+has to run the real game), then making the escape victory harder to fall into by default
+would force the commune, forge, and salvage economies to actually carry a run.
 
 **6. One generator interface.** F9's TTY split and the manual sandbox-to-classic backports are
 a recurring tax. A shared layout interface, with the two generators behind it, ends the drift
@@ -510,8 +553,14 @@ touch -d "2020-01-01" /tmp/vb/*.md
 python3 -m vaultcrawl.bake /tmp/va -o /tmp/a.json
 python3 -m vaultcrawl.bake /tmp/vb -o /tmp/b.json && diff /tmp/a.json /tmp/b.json
 
-# all six profiles stall at floor 3
-for b in artisan cartographer emergent exploiter seeker whisper; do
-  python3 -m runtime.play examples/world.json --auto --brain $b | tail -1
-done
+# win rate depends on cross-run persistence state, not just the agent
+rm -rf ~/.vaultcrawl && python3 run_agents.py    # 6 wins of 6
+python3 run_agents.py                            # 4 wins of 6, same command
+
+# 30-run statistics: 90% aggregate, every win an escape at floor 27
+python3 -m runtime.agent_eval examples/world.json --runs 5
+
+# note: `runtime.play --auto` defaults to --floors 3 (play.py:1205),
+# so it is not a full descent unless you ask for one
+python3 -m runtime.play examples/world.json --auto --brain seeker --floors 26
 ```
