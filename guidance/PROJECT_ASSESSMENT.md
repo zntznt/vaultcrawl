@@ -1,5 +1,10 @@
-<!-- Status: Current | Written: 2026-07-24 | Empirical audit of HEAD (937beea) against the guidance/ spec corpus -->
+<!-- Status: Current | Written: 2026-07-24 | Empirical audit of HEAD (937beea) against the guidance/ spec corpus | Balance pass appended 2026-07-24 -->
 # Project assessment: specs versus running code
+
+> **Update.** A balance pass has since landed on top of this audit and changed several of
+> the numbers below. F10 in particular was written before the livelock underneath it was
+> found. See "Balance pass" at the end for what moved, what the new baseline is, and which
+> findings here are now closed.
 
 ## Verdict
 
@@ -563,4 +568,112 @@ python3 -m runtime.agent_eval examples/world.json --runs 5
 # note: `runtime.play --auto` defaults to --floors 3 (play.py:1205),
 # so it is not a full descent unless you ask for one
 python3 -m runtime.play examples/world.json --auto --brain seeker --floors 26
+```
+
+---
+
+# Balance pass
+
+Everything above describes HEAD `937beea`. This section describes what changed after it,
+and supersedes F10.
+
+## The finding F10 missed: 83% of every run was a livelock
+
+F10 reported that agents win by escaping and that three profiles win with zero kills. True,
+but it did not ask why 87-93% of turns were `rest` or `wait`. The answer is not that resting
+was attractive. It is that the agent was stuck.
+
+`runtime/agent.py` adds an `absorb_hazard` candidate whenever the player stands on a hazard
+tile with no hostiles nearby: flat score 15, no HP gate, dispatching `rest`. Its comment
+promises a buff after three rests. The buff could not arrive. `Game.absorb_aspect` was called
+only from inside the `can_rest` branch of `wait()`, so a rester at full HP never advanced its
+counter, and it read tile props from `WeatherSystem` alone while the agent's candidate reads
+`System.hazard_tiles` across the whole stack. The agent would hold a reaction-laid acid tile
+forever, waiting on something only a weather tile could give.
+
+Measured on `exploiter` before the fix: **7,688 rest calls, `_rest_tile_turns` never once
+reaching 3, zero aspects absorbed.** The loop only ever broke because the harness abandons a
+floor after 500 turns, which is what "(no progress, abandoning floor)" was.
+
+So every balance number this project has ever published, including the ones in F10, described
+a livelock rather than a strategy.
+
+A second contributor: `decide()` collapsed to `wait` whenever the winning candidate resolved
+to no step. Cartographer, whose `rest` weight is 0, still called `game.wait()` 3,299 times a
+run, and because `wait` healed, **the agent was paid 3 HP for getting stuck.**
+
+## What changed
+
+Ordered as it was applied, each step measured against the last.
+
+**R0, the livelock.** `absorb_aspect` runs on every rest turn and unions props from every
+system that writes them; the brain caps the attempt at three turns. `decide()` walks the
+sorted candidate list and takes the first that resolves, instead of collapsing to `wait`.
+`_score` breaks ties by state urgency, which unstuck `salvage`, `cache`, `interact` and
+`poi`: they share the `explore` key with `explore_unseen`, and a stable sort meant that for
+any profile with `explore >= 4` they could never be chosen at all.
+
+**Instrumentation.** `runtime/pressure.py` measures whether choices are hard rather than
+whether the agent won: decision margin and the share of turns that are genuine contests,
+label share by candidate name rather than dispatched verb, the resource floor, and pairwise
+policy divergence between profiles. `Game.win_path` records which of the four routes ended a
+run. `eval_stats.json` stamps the persistence fingerprint and `PYTHONHASHSEED`, without which
+no two win rates are comparable.
+
+**R1-R4, the healing economy.** `wait` and `rest` were the same call; they are now separate,
+and only `rest` heals. The dormant `_tension` counter is live, ticks on the activity it
+exists to price, and past its cap the ground stops giving anything back; it also decays on
+action instead of ratcheting (it had been measured at 1,709 against a threshold of 200). The
+descend refund is halved, auto-forge is off by default, the per-craft heal is gone.
+`FactionSystem.rest_modifier` sets the rest rate from standing with the house that owns the
+floor, identical for all six profiles.
+
+**R5, the escape victory.** Kept, because a kill-only win makes a pacifist profile strictly
+inferior. Priced: the last stair opens on any of four routes (warden dead, warden communed,
+enough truths, or standing 3 with its house). Truths are finite now, which they were not:
+marginalia re-scattered on every floor entry so a loop could print them, and
+`breakdown_sigil` minted one per call.
+
+## New baseline
+
+5 runs per agent, clean `~/.vaultcrawl`, `PYTHONHASHSEED=0`:
+
+| agent | win% | turns | kills | caches | top choice | contested | min HP | win paths |
+|---|---|---|---|---|---|---|---|---|
+| artisan | 100% | 1979 | 4.8 | 4.4 | deploy 31% | 2% | 9 | escape 4, commune 1 |
+| cartographer | 0% | 1210 | 4.0 | 1.0 | deploy 36% | 8% | 0 | none |
+| emergent | 100% | 1058 | 15.0 | 6.0 | deesc_stairs 48% | 6% | 4 | escape 5 |
+| exploiter | 0% | 4554 | 5.0 | 2.0 | locus 26% | 11% | 2 | none |
+| seeker | 0% | 2891 | 4.0 | 3.0 | deploy 34% | 1% | 3 | none |
+| whisper | 100% | 4181 | 2.0 | 3.0 | deploy 30% | 1% | 0 | escape 5 |
+
+Against the pre-pass numbers: aggregate win rate 90% to 50%, turns 4,700-10,000 down to
+1,000-4,600, kills off zero for every profile, caches off zero (they had been unreachable and
+the metric read a field that does not exist), and agents now reach 0-9% HP where before every
+run ended at 100/100.
+
+## What is still open
+
+- **Outcomes are bimodal.** Three profiles win every run and three win none. The aggregate
+  sits in the target band by averaging two extremes, which is not the same as being balanced.
+  Cartographer in particular dies around floor 11-13 in every configuration tried.
+- **Contested decisions run 1-11%.** The agent is still almost never choosing between
+  comparable options. This is the number that most directly says "the choices are not hard
+  yet", and it moved least.
+- **Escape still dominates.** The win path is no longer unanimous, but the other three routes
+  are rare. The truths route in particular is not reached on the ten-note sample vault: agents
+  peak at 3-4 truths against a requirement of 5.
+- **Cross-process determinism is not complete.** All 21 `hash()` sites are converted to
+  SHA-256 seeding and two set-iteration sites are sorted, but runs still differ across
+  `PYTHONHASHSEED` values, traced to set-iteration order in the knowledge-to-sigil-slot path.
+  Within a fixed hash seed, runs reproduce exactly.
+- **The sixteen failing tests from F3 are untouched.** They are now stable rather than flaky:
+  `test_becalm` used to report 1 or 2 failures depending on the interpreter's hash seed.
+
+## Reproducing
+
+```bash
+rm -rf ~/.vaultcrawl
+PYTHONHASHSEED=0 python3 -m runtime.agent_eval examples/world.json --runs 5
+python3 -m pytest tests/test_pressure.py -q     # the rules this pass added
 ```
