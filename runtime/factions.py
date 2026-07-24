@@ -106,6 +106,30 @@ class FactionSystem(System):
         """Current favor with a faction (0 if never interacted with)."""
         return self.standing.get(faction_id, 0)
 
+    def rest_modifier(self, game) -> int:
+        """How much a rest restores on this floor, given who owns the ground.
+
+        Standing 0, where a player who has engaged nobody permanently sits, heals 1
+        instead of 3. Negative standing heals nothing and is heard: sleeping in hostile
+        country raises that house's alert toward its hunter threshold.
+
+        Identical for every profile. Differentiation comes from starting standing in
+        `Game.starting_kit` and from what each profile does about it, never from a
+        per-profile branch here.
+        """
+        region = game.region_for(game.floor) or {}
+        fid = region.get("factionId") or game._region_faction.get(region.get("id", ""), "")
+        standing = self.standing_of(fid) if fid else 0
+        if standing < 0 and fid:
+            # Sleeping in hostile country is heard.
+            self.disturbance[fid] = self.disturbance.get(fid, 0) + 1
+        # A gradient, not a cliff, and neutral ground still rests at the old rate. An
+        # earlier cut returned 0 for any negative standing, so a single loud kill locked a
+        # run out of healing for good: 185 rests delivering 12 HP across a whole run.
+        # Neutral heals 3 as it always did; a house that trusts you heals 4; being hated
+        # is what costs you, and only badly hated leaves you nothing.
+        return max(0, min(4, 3 + standing))
+
     # ---- helpers ---------------------------------------------------------------
     def _current_region_id(self, game):
         region = game.region_for(game.floor)
@@ -245,7 +269,9 @@ class FactionSystem(System):
                 spawned += 1
             if spawned:
                 game.log(f"⚔ {fname} dispatches hunters.")
-            self.disturbance[fac] = 0  # alert spent
+            # Alert is spent, not erased. Zeroing it let a player farm the spawn cycle
+            # back to a clean slate indefinitely; now repeated provocation compounds.
+            self.disturbance[fac] = max(0, self.disturbance[fac] - 4)
 
         # --- Diplomacy (water-ritual): a region that favors you grants passage ---
         cur = region.get("factionId")

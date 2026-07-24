@@ -59,9 +59,11 @@ def dispatch(game, action: AgentAction) -> bool:
             return True
 
         # -- wait ---------------------------------------------------------------
+        # A bare turn pass. This used to be the same call as rest, so a stalled decision
+        # or a cancelled action healed the player for standing still.
         if kind == "wait":
             if hasattr(game, "wait"):
-                game.wait()
+                game.wait(allow_heal=False)
             else:
                 game.turn += 1
                 game.enemies_act()
@@ -114,7 +116,8 @@ def dispatch(game, action: AgentAction) -> bool:
             if hasattr(forge, "forge"):
                 ok = forge.forge(game, ability=action.target or None)
                 if ok:
-                    game.wait()
+                    # Forging costs the turn; it should not also be a rest.
+                    game.wait(allow_heal=False)
                     return True
                 return False
             if hasattr(forge, "on_player_forge"):
@@ -133,7 +136,7 @@ def dispatch(game, action: AgentAction) -> bool:
                 a = game.actor_at(game.player.x + dx, game.player.y + dy)
                 if a is not None and getattr(a, "allegiance", "") == "monster":
                     if game.becalm(a):
-                        game.wait()
+                        game.wait(allow_heal=False)
                         return True
             result = game.commune_landmark()
             if result is not None:
@@ -157,7 +160,7 @@ def dispatch(game, action: AgentAction) -> bool:
             parley.hear(game, target_actor, moves[-1])
             if parley.outcome == "enraged":
                 return False
-            game.wait()
+            game.wait(allow_heal=False)
             return True
 
         # -- breakdown ----------------------------------------------------------
@@ -168,7 +171,7 @@ def dispatch(game, action: AgentAction) -> bool:
             try:
                 got = salv.breakdown_sigil(game, action.target or None)
                 if got is not None:
-                    game.wait()
+                    game.wait(allow_heal=False)
                     return True
                 return False
             except Exception:
@@ -180,7 +183,7 @@ def dispatch(game, action: AgentAction) -> bool:
             if a is None:
                 return False
             if game.becalm(a):
-                game.wait()
+                game.wait(allow_heal=False)
                 return True
             return False
 

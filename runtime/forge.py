@@ -192,16 +192,16 @@ class ForgeSystem(System):
 
         slots.append(sigil)
         game.emit("forge_used", ability=ability, tier=tier)
-        # The forge-fire mends the crafter — every successful forge heals
-        from runtime.body_parts import heal_body
-        heal_body(game.player, 3)
+        # No heal. Crafting should produce a sigil, not double as a heal button that also
+        # produces one. With auto-forge on, this fired every turn the player held matter.
         ptracker().exercise(ability)
         return True
 
     # ---- auto-forge ---------------------------------------------------------
-    # `auto` stays True for the headless demo/tests; the interactive UI sets it False
-    # so the `f` key is a real choice instead of a race the autopilot always wins.
-    auto = True
+    # Off by default. The interactive UI already disabled it so the `f` key was a real
+    # choice; the headless harness did not, so every balance number was measured against a
+    # forge the agent never decided to use, running on every single turn.
+    auto = False
 
     def on_player_act(self, game):
         """Whenever there's a free slot and enough matter, auto-craft the missing ability,

@@ -15,6 +15,14 @@ from runtime.tactics import _stairs
 
 # Game.absorb_aspect grants its buff on the third consecutive rest on one tile.
 ABSORB_ATTEMPTS = 3
+# Rest stops restoring at Game.TENSION_REST_CAP, so urgency to act should climb before it.
+TENSION_PRESSURE_AT = 100
+
+
+def _tension_urgency(s) -> int:
+    """Extra urgency from the vault noticing you. Identical for all six profiles."""
+    t = s.get("tension", 0) or 0
+    return max(0, (t - TENSION_PRESSURE_AT) // 10)
 
 
 PROFILES = {
@@ -233,6 +241,7 @@ class UniversalBrain(Brain):
                 state += 15
             state += s.get("factions", {}).get("reputation_sum", 0) * 2
             state += 8  # base preference for non-violence
+            state += _tension_urgency(s)   # the non-violent way to spend complacency
             score = _score(self.profile, "becalm", state, bonus, True)
             candidates.append(("becalm", score, AgentAction("becalm")))
 
@@ -522,10 +531,15 @@ class UniversalBrain(Brain):
                     candidates.append((ws_key, score, ("workspace", ws[0], ws[1])))
 
         # ---- REST ----
+        # Wider window and steeper urgency. While `wait` healed, stalls topped the agent up
+        # for free and this branch barely mattered; with that gone it is the only heal in
+        # the cascade, and at (100-hp)//5 it scored ~12 when hurt, losing every turn to
+        # deploy and forge. Profiles still differ by their `rest` floor, and the urgency
+        # term is identical for all six.
         reachable = (len(s.get("adjacent_hostiles", [])) == 0
-                     and len(s.get("near_hostiles", [])) == 0 and hp_pct < 55)
+                     and len(s.get("near_hostiles", [])) == 0 and hp_pct < 70)
         if reachable:
-            state = (100 - hp_pct) // 5
+            state = (100 - hp_pct) // 3
             score = _score(self.profile, "rest", state, bonus, True)
             if score > 0:
                 candidates.append(("rest", score, AgentAction("rest")))
@@ -562,6 +576,10 @@ class UniversalBrain(Brain):
             if hp_pct < 30:
                 state -= 15
             state += s["vitals"]["defense"]
+            # Complacency has to be spent, and killing is one of the two sinks. Same
+            # pressure for every profile: max(profile_floor, state) still lets a fighter
+            # reach for this and a pacifist reach for becalm instead.
+            state += _tension_urgency(s)
             score = _score(self.profile, "fight", state, bonus, True)
             candidates.append(("fight", score,
                 AgentAction("move", dx=(t["x"]>actor.x)-(t["x"]<actor.x),

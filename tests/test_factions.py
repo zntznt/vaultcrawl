@@ -135,7 +135,8 @@ def test_factions():
     assert len(hunters) >= 1, "a disturbed faction dispatches at least one hunter"
     assert all(getattr(h, "is_hunter", False) for h in hunters), "hunters are flagged for intel"
     assert len(g.actors) > before_n or before_n == 0, "hunters were appended to g.actors"
-    assert s.disturbance[victim] == 0, "disturbance resets after dispatch"
+    assert s.disturbance[victim] == 2, "dispatch spends alert (-4), it does not erase it"
+    assert s.disturbance[victim] < 6, "alert falls after hunters go out"
 
     # --- HUD line renders as a non-empty string ---
     line = s.status_line(g)

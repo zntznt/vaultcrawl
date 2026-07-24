@@ -25,6 +25,8 @@ COMMUNE_TRUTHS = 2   # marginalia + lore fragments read
 COMMUNE_COST = 4     # total salvaged matter, any mix
 BECALM_COST = 2      # matter per tier to placate a lesser hostile
 LEASH = 3            # sandbox: a creature's territory (and pursuit range) around home
+TENSION_ALERT = 200  # complacency at which the vault notices you and sends something
+TENSION_REST_CAP = 300  # above this, holding still stops restoring anything
 FRIEND_STANDING = 4  # reputation at which a house stops fighting the one you control
 
 
@@ -1346,8 +1348,12 @@ class Game:
             self.player._base_max_hp = self.player.max_hp
         else:
             self.player.x, self.player.y = px, py
-            # rest between floors: a fixed fraction, not a stat gain (no power creep)
-            self.player.hp = min(self.player.max_hp, self.player.hp + self.player.max_hp // 5)
+            # A reduced mend between floors. At max_hp // 5 this handed +20 HP twenty-six
+            # times for performing the exact action that wins the game, so the winning
+            # strategy was also the largest heal in it. Halved: descending still relieves,
+            # but it no longer pays for the whole descent.
+            self.player.hp = min(self.player.max_hp,
+                                 self.player.hp + self.player.max_hp // 10)
         penalty = self._companion_penalty()
         self.player.max_hp = max(4, self.player._base_max_hp - penalty)
         self.player.hp = min(self.player.hp, self.player.max_hp)
@@ -2095,7 +2101,7 @@ class Game:
         except Exception: pass
         return True
 
-    def wait(self):
+    def wait(self, allow_heal: bool = True):
         """Pass the turn in place. On settled ground, waiting is REST.
         Three consecutive waits enter camp mode: faster healing, status recovery.
         Outside towns, resting still provides a small heal if no hostiles are near.
@@ -2113,8 +2119,11 @@ class Game:
         room_clear = False
         if room_idx is not None:
             room_tiles = self.room_tiles(room_idx) if hasattr(self, 'room_tiles') else set()
+            # Membership in the room, not distance from the player. Measuring distance made
+            # this identical to `not near_hostile`, so the deep rest always applied and the
+            # documented 1 HP corridor rest never happened once.
             room_clear = all(
-                not self.hostile(self.player, a) or max(abs(a.x-self.player.x), abs(a.y-self.player.y)) > 4
+                not self.hostile(self.player, a) or (a.x, a.y) not in room_tiles
                 for a in self.actors
             ) if room_tiles else False
 
@@ -2131,7 +2140,18 @@ class Game:
             self.player.hp = min(self.player.hp, self.player.max_hp)
 
         # non-town resting: small heal if safe and no hostiles nearby
-        can_rest = on_town or (not near_hostile and self.player.hp < self.player.max_hp)
+        # `heal=False` is a bare turn pass. Waiting and resting used to be the same call,
+        # so a navigation stall or a cancelled action paid the agent 3 HP for standing
+        # still, and roughly three thousand of those landed in a single run.
+        # Resting is self-limiting: complacency rises while you hold still, and past the
+        # cap the ground stops giving anything back. Tension only falls through action,
+        # by killing (-20) or becalming (-15), and both of those cost faction standing or
+        # matter. That is what ties healing to the one zero-sum ledger the game has.
+        too_watched = self._tension >= TENSION_REST_CAP
+        can_rest = allow_heal and not too_watched and (
+            on_town or (not near_hostile and self.player.hp < self.player.max_hp))
+        if allow_heal and too_watched and self.player.hp < self.player.max_hp:
+            self.log("You are too watched to rest here.")
         if can_rest:
             if on_town:
                 self._consecutive_rest += 1
@@ -2145,10 +2165,18 @@ class Game:
                         self.player._slowed = 0
                         self.player.speed = getattr(self.player, "_base_speed", 1.0)
             from .body_parts import heal_body
-            # Healing: cleared room (3 HP), town rest (2-3 HP), otherwise 1 HP
+            # Where you can heal is a diplomatic fact, not a geometric one. The house that
+            # owns this ground sets the base rate: tolerated, you sleep; unwelcome, you do
+            # not. A cleared room still rests better than a corridor.
             heal = 1
-            if room_clear:
-                heal = 3
+            fcs = self.system("factions")
+            if fcs is not None and not on_town:
+                try:
+                    heal = fcs.rest_modifier(self)
+                except Exception:
+                    heal = 1
+            if room_clear and heal > 0:
+                heal = min(3, heal + 1)
                 self.log("The room is clear. You rest deeply.")
             if on_town:
                 heal = 3 if self._resting else 2
@@ -2158,7 +2186,7 @@ class Game:
             tag = f"+{heal} HP"
             self.log(f"You rest ({tag}).")
         # Emergency heal: spend 1 matter for +3 HP when below 50% and no hostiles near
-        elif not near_hostile and self.player.hp * 100 < self.player.max_hp * 50:
+        elif allow_heal and not near_hostile and self.player.hp * 100 < self.player.max_hp * 50:
             salv = self.system("salvage")
             if salv and salv.inventory(self).total() >= 1:
                 bag = salv.inventory(self)
@@ -2171,6 +2199,7 @@ class Game:
         # advanced the counter and could hold a tile forever for a buff that never came.
         self.absorb_aspect()
         self.turn += 1
+        self._tick_tension(resting=allow_heal)
         self._tick_effects()
         self.enemies_act()
         self._restore_winded()
@@ -3331,12 +3360,21 @@ class Game:
             if p[2] <= 0:
                 self._pulses.remove(p)
 
-    def _tick_tension(self):
-        """Complacency rises on idle, decays on action. High tension = camp risk."""
-        rate = 3 if self._resting else 1
-        self._tension += rate
+    def _tick_tension(self, resting: bool = False):
+        """Complacency rises on idle, decays on action. High tension = camp risk.
+
+        This was called only from try_move, so the one activity it is meant to price,
+        holding still, was the one activity that never advanced it. It also only ever
+        added, which made it a one-way ratchet: measured at 1,709 against a threshold of
+        200, so past the first stretch of resting it was pinned forever. Now it does what
+        its name says. Resting raises it; doing anything else works it back down.
+        """
+        if resting or self._resting:
+            self._tension += 3
+        else:
+            self._tension = max(0, self._tension - 2)
         # decay on kills: handled in attack() — subtract 20 per kill
-        if self._tension >= 200 and self.sandbox and self._on_surface():
+        if self._tension >= TENSION_ALERT and self._on_surface():
             from random import Random
             rng = Random(f"{self.seed}:tension:{self.turn}")
             if rng.random() < 0.30:
