@@ -62,6 +62,8 @@ class MarginaliaSystem(System):
         self.corpus: dict = {}
         self.ground: dict = {}   # (x, y) -> note_id whose words are buried here
         self.read: int = 0
+        # Notes already read this run. Truths are finite: a note has only so much to say.
+        self.spent: set = set()
 
     def on_world_start(self, game):
         self.corpus = game.m.get("corpus", {}) or {}
@@ -76,8 +78,11 @@ class MarginaliaSystem(System):
             return
         rng = random.Random(f"{game.seed}:{game.floor}:marginalia")
         room_notes = getattr(game, "room_notes", {}) or {}
+        # Skip notes already read. on_floor_enter re-scattered with a floor-stable seed,
+        # so re-entering a floor put the same two marks back in the same places and let
+        # them be read again: truths were unbounded, printable by walking a loop.
         rooms = [(i, nid) for i, nid in sorted(room_notes.items())
-                 if self._community_for(game, nid)]
+                 if self._community_for(game, nid) and nid not in self.spent]
         rng.shuffle(rooms)
         taken = {(game.player.x, game.player.y), game.level.stairs}
         taken |= {(a.x, a.y) for a in game.actors}
@@ -92,6 +97,7 @@ class MarginaliaSystem(System):
         nid = self.ground.pop((game.player.x, game.player.y), None)
         if nid is None:
             return
+        self.spent.add(nid)
         comm = self._community_for(game, nid)
         rng = random.Random(f"{game.seed}:{game.floor}:marginalia:{game.turn}")
         line = weave(comm, nid, rng) if comm else ""

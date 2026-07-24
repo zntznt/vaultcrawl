@@ -186,6 +186,12 @@ class UniversalBrain(Brain):
         reachable = can_commune and elite_near
         # Late-game surge: floors 20+ raise commune priority for healing sustain
         late_bonus = max(0, floor - 19) * 8  # +0 at 19, +8 at 20, +48 at 26
+        # The last stair opens on any of four routes (Game.egress_ready). If it is shut,
+        # dealing with the warden is one of them, so wanting it badly is correct. Read
+        # from game state, never from the profile: every profile gets the same push and
+        # reaches for whichever route its own weights make cheapest.
+        if not s["position"].get("egress_ready", True):
+            late_bonus += 20
         # Boss proximity: if any nearby elite is the final boss, override priority
         boss_bonus = 100 if boss_near and floor >= 26 else 0
         score = _score(self.profile, "commune", 25 + late_bonus + boss_bonus, bonus, reachable)

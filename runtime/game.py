@@ -27,6 +27,9 @@ BECALM_COST = 2      # matter per tier to placate a lesser hostile
 LEASH = 3            # sandbox: a creature's territory (and pursuit range) around home
 TENSION_ALERT = 200  # complacency at which the vault notices you and sends something
 TENSION_REST_CAP = 300  # above this, holding still stops restoring anything
+EGRESS_TRUTHS_MAX = 8   # ceiling for the truths route on a large vault
+EGRESS_TRUTHS_MIN = 3   # floor, so a tiny vault still asks for something
+EGRESS_STANDING = 3     # standing with the warden's house that opens it instead
 FRIEND_STANDING = 4  # reputation at which a house stops fighting the one you control
 
 
@@ -95,6 +98,9 @@ class Game:
         # Which of the four routes actually ended the run. `won` alone is a bool, which is
         # how a 90% win rate looked healthy while every single win was the same win.
         self.win_path: str = ""
+        # Whether the warden has been dealt with, either way. The last stair reads these.
+        self._boss_felled: bool = False
+        self._boss_communed: bool = False
         self._resting = False
         self._consecutive_rest = 0
         self._tension: int = 0              # complacency counter — rises on idle, decays on action
@@ -1316,6 +1322,58 @@ class Game:
         self.won = True
         self.win_path = path
 
+    def egress_ready(self) -> tuple[bool, str]:
+        """Whether the last stair will open, and what is missing if it will not.
+
+        Escape is a legitimate ending and stays reachable: a kill-only victory would make
+        a pacifist profile strictly inferior and the whole diplomacy stack decorative,
+        which is the Berlin violation this project cares most about. What it should not be
+        is free. It cost one `descend`, checked before the floor was even generated, while
+        every other route required standing next to a twelve-attack warden. The agents
+        were pricing that menu correctly by always taking it.
+
+        So: four routes, any one of which opens the way.
+
+          - the warden is dead
+          - the warden has been communed with
+          - you carry EGRESS_TRUTHS truths, having read the vault instead
+          - you stand at EGRESS_STANDING with the warden's own house
+
+        A pure function of game state. It must never read the brain's profile name: the
+        profiles differ only in which of these four is cheapest for them, never in which
+        are available.
+        """
+        if getattr(self, "_boss_felled", False) or getattr(self, "_boss_communed", False):
+            return True, ""
+        truths = 0
+        for sys_name in ("marginalia", "history"):
+            s = self.system(sys_name)
+            truths += int(getattr(s, "read", 0) or 0) if s else 0
+        need = self.egress_truths_needed()
+        if truths >= need:
+            return True, ""
+        fcs = self.system("factions")
+        if fcs is not None:
+            boss_region = next((r for r in self.m.get("regions", [])
+                                if r.get("sourceNoteId") == self.final_boss_source), None)
+            fid = (boss_region or {}).get("factionId") or self._region_faction.get(
+                (boss_region or {}).get("id", ""), "")
+            if fid and fcs.standing_of(fid) >= EGRESS_STANDING:
+                return True, ""
+        return False, (f"Fell the warden, commune with it, carry {need} truths "
+                       f"(you have {truths}), or earn standing {EGRESS_STANDING} with "
+                       f"its house.")
+
+    def egress_truths_needed(self) -> int:
+        """Truths the last stair asks for, scaled to the vault.
+
+        A note yields its marginalia once per run, so a fixed threshold is a threshold
+        about vault size rather than about play: at 8 it was unreachable on the ten-note
+        sample and trivial on a large one. Half the notes, bounded.
+        """
+        notes = len(self.m.get("graph", {}).get("nodes", {})) or 1
+        return max(EGRESS_TRUTHS_MIN, min(EGRESS_TRUTHS_MAX, notes // 2))
+
     def descend(self):
         if self.sandbox:
             t = self.level.tiles[self.player.y][self.player.x]
@@ -1331,6 +1389,11 @@ class Game:
             self.log("No way through here; doors (>) wait in each district's "
                      "heart, stairs (<) climb home.")
             return
+        if self.floor >= self.max_floor and not self.won:
+            ok, why = self.egress_ready()
+            if not ok:
+                self.log(f"The way down is shut. {why}")
+                return
         self.floor += 1
         # Victory: descending past the final boss without killing it = escape victory
         if self.floor > self.max_floor and not self.won:
@@ -1762,6 +1825,7 @@ class Game:
                       and a.source == self.final_boss_source), None)
         if boss and max(abs(boss.x - p.x), abs(boss.y - p.y)) <= 1:
             self.actors.remove(boss)
+            self._boss_communed = True
             self._win("commune")
             self.log("You commune with the deepest thought in the vault. You win.")
             return True
@@ -1995,6 +2059,7 @@ class Game:
             self.log(f"{target.name} regards you with recognition.")
             target.allegiance = "npc"
             if getattr(target, 'is_boss', False) and target.source == self.final_boss_source:
+                self._boss_communed = True
                 self._win("diplomacy")
                 self.log("The final boss lays down its arms. You have won through diplomacy.")
         elif choice == "flee":
@@ -2748,6 +2813,7 @@ class Game:
         if actor in self.actors:
             self.actors.remove(actor)
         if getattr(actor, 'is_boss', False) and actor.source == self.final_boss_source and not self.won:
+            self._boss_felled = True
             self._win("boss_killed")
             self.log("The deepest thought in the vault falls silent. You win.")
         if getattr(actor, 'is_player', False):
@@ -3142,6 +3208,7 @@ class Game:
                 chain.hp -= 1
                 self.log(f"Static arcs from {dfn.name} to {chain.name}.")
                 if chain.hp <= 0 and getattr(chain, 'is_boss', False) and chain.source == self.final_boss_source:
+                    self._boss_felled = True
                     self._win("boss_killed")
                     self.kill(chain, "static discharge")
                     self.log("The deepest thought in the vault falls silent. You win.")
@@ -3165,6 +3232,7 @@ class Game:
             return
         # a non-player actor died
         if dfn.is_boss and dfn.source == self.final_boss_source:
+            self._boss_felled = True
             self._win("boss_killed")
             self.log("The deepest thought in the vault falls silent. You win.")
         # friend_died trigger
