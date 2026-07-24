@@ -258,6 +258,71 @@ def step_away(game, actor, fx, fy, safe=True):
     return best
 
 
+def flee_toward_safety(game, actor, min_safe_dist=5, search_radius=15):
+    """BFS outward from `actor` to find the nearest walkable tile at least
+    `min_safe_dist` Chebyshev from every hostile. Returns the first (dx, dy)
+    step toward that tile, or (0, 0) if no safe tile exists within radius."""
+    ax, ay = actor.x, actor.y
+    danger = danger_tiles(game)
+    hostiles = [(a.x, a.y) for a in game.actors
+                if a is not actor and a.hp > 0
+                and hasattr(a, "allegiance") and a.allegiance == "monster"]
+    if not hostiles:
+        return (0, 0)  # nothing to flee from
+
+    # BFS from actor position
+    from collections import deque
+    prev = {(ax, ay): None}
+    q = deque([(ax, ay)])
+    best_tile = None
+    best_dist = 9999
+
+    while q:
+        x, y = q.popleft()
+        dist = max(abs(x - ax), abs(y - ay))
+        if dist > search_radius:
+            continue
+        # Check if this tile is safe: at least min_safe_dist from all hostiles
+        safe = True
+        for hx, hy in hostiles:
+            if max(abs(x - hx), abs(y - hy)) < min_safe_dist:
+                safe = False
+                break
+        if safe and (x, y) != (ax, ay) and game.level.walkable(x, y) \
+           and game.actor_at(x, y) is None and (x, y) not in danger \
+           and (x, y) != (game.player.x, game.player.y):
+            best_tile = (x, y)
+            break  # BFS guarantees nearest
+
+        for dx, dy in _ORTH:
+            nx, ny = x + dx, y + dy
+            if (nx, ny) in prev:
+                continue
+            if not game.level.walkable(nx, ny):
+                continue
+            if (nx, ny) in danger:
+                continue
+            occ = game.actor_at(nx, ny)
+            if occ is not None and occ is not actor:
+                continue
+            if (nx, ny) == (game.player.x, game.player.y) and actor is not game.player:
+                continue
+            prev[(nx, ny)] = (x, y)
+            q.append((nx, ny))
+
+    if best_tile is None:
+        return (0, 0)
+
+    # Trace back from best_tile to actor to get first step
+    cur = best_tile
+    while prev.get(cur) != (ax, ay):
+        nxt = prev.get(cur)
+        if nxt is None:
+            return (0, 0)
+        cur = nxt
+    return (cur[0] - ax, cur[1] - ay)
+
+
 def adjacent(ax, ay, bx, by):
     return max(abs(ax - bx), abs(ay - by)) <= 1
 

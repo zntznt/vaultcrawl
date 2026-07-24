@@ -218,6 +218,13 @@ class MachineSystem(System):
         knowledge.reveal(region_id)
         self._disarm_nearby(game)                    # opportunistic, guarded
         game.log("You hack the terminal — a region ahead loads.")
+        try:
+            from runtime.recipes import discover_from_terminal
+            recipe = discover_from_terminal(game)
+            if recipe:
+                game.player._known_recipes.add(recipe)
+                game.log(f"The terminal scry reveals the craft of {recipe}.")
+        except Exception: pass
         self.terminals.discard(pos)
 
     def _scramble_weather(self, game, pos):

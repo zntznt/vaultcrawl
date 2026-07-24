@@ -211,6 +211,10 @@ class HistorySystem(System):
             return
         game.log(f"You read a lore fragment: {line}")
         self.read += 1
+        try:
+            from .proficiency import exercise_skill
+            exercise_skill("scholarship")
+        except Exception: pass
         if self.insight < 3:
             self.insight += 1
             game.log(f"You gain an insight charge ({self.insight}/3).")

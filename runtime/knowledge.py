@@ -47,6 +47,8 @@ class KnowledgeSystem(System):
         self.seen: dict[int, set[tuple[int, int]]] = {}
         # faction insight: count of known notes per faction for combat bonuses
         self._known_faction_notes: dict[str, int] = {}
+        # known locations of notes: {note_id: (x, y, floor)}
+        self.known_locations: dict[str, tuple[int, int, int]] = {}
         # last game we were attached to, so the param-less query API
         # (reveal / is_known, called by other systems) can resolve regions + graph.
         self.game = None

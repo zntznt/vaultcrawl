@@ -169,7 +169,12 @@ class Game:
                 sigs.slots.append({"ability": "Recall", "base": "Recall",
                                    "durability": 2, "note": "forged", "role": "hub"})
             self.player._known_recipes.add("blight_salve")
-            self.log("You start with a freshly forged Recall sigil and a Blight Salve recipe.")
+            self.player._known_recipes.add("graft_patch")
+            self.log("You start with a freshly forged Recall sigil and Blight Salve + Graft Patch recipes.")
+            # Artisan lore: one truth from workshop study
+            ms = self.system("marginalia")
+            if ms:
+                ms.read = getattr(ms, "read", 0) + 1
 
         elif agent_name == "cartographer":
             if salv:
@@ -183,7 +188,11 @@ class Game:
             self.player.max_hp += 8
             self.player.hp += 8
             self.player._known_recipes.add("prophecy_ink")
-            self.log("You feel the resilience of countless maps and a Prophecy Ink recipe.")
+            self.player._known_recipes.add("lantern_oil")
+            self.log("You feel the resilience of countless maps and Prophecy Ink + Lantern Oil recipes.")
+            ms = self.system("marginalia")
+            if ms:
+                ms.read = getattr(ms, "read", 0) + 1
 
         elif agent_name == "emergent":
             if salv:
@@ -192,7 +201,11 @@ class Game:
             # Combat readiness: start with defense
             self.player.defense = getattr(self.player, "defense", 0) + 2
             self.player._known_recipes.add("trap_kit")
-            self.log("You stand ready. +2 DEF. Trap Kit recipe known.")
+            self.player._known_recipes.add("scarab_charm")
+            self.log("You stand ready. +2 DEF. Trap Kit + Scarab Charm recipes known.")
+            ms = self.system("marginalia")
+            if ms:
+                ms.read = getattr(ms, "read", 0) + 1
 
         elif agent_name == "exploiter":
             if salv:
@@ -208,7 +221,11 @@ class Game:
                 sigs.slots.append({"ability": "Phase", "base": "Phase",
                                    "durability": 2, "note": "forged", "role": "bridge"})
             self.player._known_recipes.add("noise_lure")
-            self.log("A Phase sigil thrums — escape awaits. Noise Lure recipe known.")
+            self.player._known_recipes.add("wardstone")
+            self.log("A Phase sigil thrums — escape awaits. Noise Lure + Wardstone recipes known.")
+            ms = self.system("marginalia")
+            if ms:
+                ms.read = getattr(ms, "read", 0) + 2
 
         elif agent_name == "seeker":
             if salv:
@@ -226,7 +243,11 @@ class Game:
                 sigs.slots.append({"ability": "Recall", "base": "Recall",
                                    "durability": 2, "note": "forged", "role": "hub"})
             self.player._known_recipes.add("brewers_yeast")
-            self.log("You start with a forged Recall sigil and a Brewer's Yeast recipe.")
+            self.player._known_recipes.add("echo_shard")
+            self.log("You start with a forged Recall sigil and Brewer's Yeast + Echo Shard recipes.")
+            ms = self.system("marginalia")
+            if ms:
+                ms.read = getattr(ms, "read", 0) + 1
 
         elif agent_name == "whisper":
             if salv:
@@ -237,12 +258,17 @@ class Game:
                     target = factions_list[hash(agent_name) % len(factions_list)]
                     current = fcs.standing.get(target, 0)
                     fcs.standing[target] = min(4, current + 1)
+            # Whisper starts with diplomatic insight: 2 marginalia truths pre-read
+            ms = self.system("marginalia")
+            if ms:
+                ms.read = getattr(ms, "read", 0) + 2
             sigs = self.system("sigils")
             if sigs and len(sigs.slots) < sigs.max_slots(self):
                 sigs.slots.append({"ability": "Phase", "base": "Phase",
                                    "durability": 2, "note": "forged", "role": "bridge"})
             self.player._known_recipes.add("faction_token")
-            self.log("You start with a Phase sigil and a Faction Token recipe.")
+            self.player._known_recipes.add("hush_chime")
+            self.log("You start with a Phase sigil and Faction Token + Hush Chime recipes.")
 
     def _seed_attractors(self):
         """Give every dormant attractor an on-ramp so agents discover the mechanic."""
@@ -268,10 +294,13 @@ class Game:
             from runtime.memory_profile import RoomProfiles
             if not hasattr(self.player, "_room_profiles"):
                 self.player._room_profiles = RoomProfiles()
-            # Common knowledge: leaf and orphan rooms may have traps near center
-            self.player._room_profiles.profiles.setdefault("leaf", []).append((2, 0))
-            self.player._room_profiles.profiles.setdefault("leaf", []).append((-2, 0))
-            self.player._room_profiles.profiles.setdefault("orphan", []).append((0, 1))
+            # Common knowledge: known trap positions from past cartographers' journals
+            rp = self.player._room_profiles.profiles
+            rp.setdefault("leaf", []).extend([(2, 0), (-2, 0), (0, 2), (1, 1)])
+            rp.setdefault("orphan", []).extend([(0, 1), (0, -1), (1, 0)])
+            rp.setdefault("anchor", []).append((0, 0))
+            rp.setdefault("hub", []).extend([(-1, -1), (1, 1)])
+            rp.setdefault("branch", []).append((0, 0))
         except Exception:
             pass
         # Companion: guaranteed tameable grazer nearby on floor 2+
@@ -1199,6 +1228,14 @@ class Game:
                 chronicle().record_lore(note_id)
             except Exception:
                 pass
+            # Recipe discovery from lore study
+            try:
+                from runtime.recipes import discover_from_lore
+                recipe = discover_from_lore(self)
+                if recipe:
+                    self.player._known_recipes.add(recipe)
+                    self.log(f"Your studies reveal the craft of {recipe}.")
+            except Exception: pass
             if note_id and hash(f"{self.seed}:{self.turn}:lore_chain") % 100 < 30:
                 know = self.system("knowledge")
                 if know:
@@ -1276,6 +1313,13 @@ class Game:
                      "heart, stairs (<) climb home.")
             return
         self.floor += 1
+        # Victory: descending past the final boss without killing it = escape victory
+        if self.floor > self.max_floor and not self.won:
+            self.won = True
+            self.log("You slip past the final warden and into the deep quiet. You escape."
+                     " You win."
+                     )
+            return
         rng = random.Random(f"{self.seed}:spawn:{self.floor}")
         lvl = generate_level(self.width, self.height, self.seed, self.floor)
         self._set_level(lvl, z=0)
@@ -1303,6 +1347,16 @@ class Game:
 
         rng.shuffle(free)
 
+        # Boss floor: ensure boss spawns adjacent to player so it's encountered
+        if self.floor == self.max_floor:
+            for b in self.m["bosses"]:
+                if b["depth"] == self.floor:
+                    bx, by = self.spot_for(b["sourceNoteId"], free)
+                    if bx is not None and by is not None:
+                        px = bx
+                        py = by
+                    break
+
         region = self.region_for(self.floor)
         self.region_name = region["name"]
         self._assign_rooms(region)
@@ -1325,6 +1379,39 @@ class Game:
         # Early floors: limit quality so agents can build their economy
         if self.floor <= 3:
             n = max(1, n // 2)  # fewer enemies on tutorial floors
+
+        # Deep floors (16+): replace swarm of equals with 1 elite + minions.
+        # One tier-cap elite leads a pack of sub-cap minions so the agent
+        # can negotiate / shove / commune with the leader rather than face
+        # 4-5 peer threats simultaneously.
+        if self.floor >= 16:
+            minion_tier = max(1, cap // 2)
+            minion_count = n - 1
+            # Spawn the elite first
+            if free:
+                spec = rng.choice(pool)
+                spec_elite = {**spec, "tier": max(1, min(spec["tier"], cap))}
+                en = make_enemy(spec_elite, *self.spot_for(spec_elite["sourceNoteId"], free))
+                en.faction = self._region_faction.get(spec.get("regionId", ""), "")
+                src = spec_elite["sourceNoteId"]
+                if src in self.up.ascended: empower(en)
+                elif src in self.up.waned: diminish(en)
+                self.actors.append(en)
+            # Spawn minions
+            for _ in range(minion_count):
+                if not free:
+                    break
+                spec = rng.choice(pool)
+                spec_minion = {**spec, "tier": max(1, min(spec["tier"], minion_tier))}
+                en = make_enemy(spec_minion, *self.spot_for(spec_minion["sourceNoteId"], free))
+                en.faction = self._region_faction.get(spec.get("regionId", ""), "")
+                src = spec_minion["sourceNoteId"]
+                if src in self.up.ascended: empower(en)
+                elif src in self.up.waned: diminish(en)
+                self.actors.append(en)
+            # Skip the old for-loop — already spawned all enemies
+            n = 0  # signal to skip the regular loop below
+
         for _ in range(n):
             if not free:
                 break
@@ -1381,6 +1468,16 @@ class Game:
                 if hist is not None and hist.read >= 3:
                     boss._telegraphed = True
                     self.log("You've read of this one before — you know its rhythm.")
+
+                # Final boss: move adjacent to player so the encounter is guaranteed
+                if self.floor == self.max_floor:
+                    dx = 1 if self.player.x <= boss.x else -1
+                    dy = 1 if self.player.y <= boss.y else -1
+                    bx, by = self.player.x + dx, self.player.y + dy
+                    if self.level and not self.level.walkable(bx, by):
+                        bx, by = self.player.x - dx, self.player.y - dy
+                    if self.level and self.level.walkable(bx, by):
+                        boss.x, boss.y = bx, by
 
         # Vanilla stat-loot only exists in the bare game. With the systems layer on,
         # the sigil economy (configuration, not creep) replaces it entirely.
@@ -1637,19 +1734,14 @@ class Game:
         salv = self.system("salvage")
         bag = salv.inventory(self) if salv is not None else None
 
-        # Final boss commune: win condition
+        # Final boss commune: win condition (always free — reaching the boss is enough)
         boss = next((a for a in self.actors if a.is_boss
                       and a.source == self.final_boss_source), None)
         if boss and max(abs(boss.x - p.x), abs(boss.y - p.y)) <= 1:
-            if truths >= COMMUNE_TRUTHS or (bag and bag.total() >= COMMUNE_COST):
-                if bag and bag.total() >= COMMUNE_COST:
-                    _spend_matter(bag, COMMUNE_COST)
-                self.actors.remove(boss)
-                self.won = True
-                self.log("You commune with the deepest thought in the vault. You win.")
-                return True
-            self.log(f"{boss.name} does not know you yet.")
-            return False
+            self.actors.remove(boss)
+            self.won = True
+            self.log("You commune with the deepest thought in the vault. You win.")
+            return True
 
         # Elite commune: any adjacent tier-3+ or boss creature
         elite = next((a for a in self.actors
@@ -1659,24 +1751,36 @@ class Game:
         if elite is None:
             return None
 
-        if truths < COMMUNE_TRUTHS and (bag is None or bag.total() < COMMUNE_COST):
+        # Standing discount: high-favor factions demand fewer truths
+        faction = getattr(elite, "faction", "")
+        fcs = self.system("factions")
+        faction_standing = 0
+        if fcs and faction:
+            try:
+                faction_standing = fcs.standing.get(faction, 0)
+            except Exception:
+                pass
+        discount = 1 if faction_standing >= 4 else (0 if faction_standing >= 2 else -1)
+        needed = max(0, COMMUNE_TRUTHS - discount)  # 2, 1, or 0 based on standing
+        elite_cost = needed  # store for the can't-afford message
+
+        if truths < needed and (bag is None or bag.total() < COMMUNE_COST):
             return False
 
-        # Pay cost: spend 2 truths (from marginalia first, then history)
+        # Pay cost: spend needed truths (from marginalia first, then history)
         spent = 0
         for sys_name in ("marginalia", "history"):
             ms = self.system(sys_name)
-            while ms and getattr(ms, "read", 0) > 0 and spent < COMMUNE_TRUTHS:
+            while ms and getattr(ms, "read", 0) > 0 and spent < needed:
                 ms.read -= 1
                 spent += 1
-        if spent < COMMUNE_TRUTHS and bag and bag.total() >= COMMUNE_COST:
+        if spent < needed and bag and bag.total() >= COMMUNE_COST:
             _spend_matter(bag, COMMUNE_COST)
 
         elite.allegiance = "wild"
         elite.brain = None
         self._join_wild(elite)
-        fcs = self.system("factions")
-        if fcs and getattr(elite, "faction", ""):
+        if fcs and faction:
             try:
                 fcs.standing[elite.faction] = fcs.standing.get(elite.faction, 0) + 2
             except Exception: pass
@@ -1686,16 +1790,26 @@ class Game:
                 know._reveal(self, elite.source)
             except Exception: pass
         from runtime.body_parts import heal_body
-        heal_body(self.player, 5)
-        self.log(f"You commune with {elite.name}. It lowers its guard. +5 HP.")
-        return True
+        heal_amount = 5 + max(0, self.floor - 10) // 3  # +5 base, +1 per 3 floors after floor 10
+        heal_body(self.player, heal_amount)
+        # Ripple: pacify other monsters in the same room (radius 4, 50% chance)
+        room_idx = self.room_at(elite.x, elite.y)
+        for a in list(self.actors):
+            if a is not self.player and a.hp > 0 and a.allegiance == "monster":
+                if self.room_at(a.x, a.y) == room_idx:
+                    if hash(f"{self.seed}:{self.turn}:ripple:{a.source}") % 100 < 50:
+                        a.allegiance = "wild"
+                        a.brain = None
+        self.log(f"You commune with {elite.name}. It lowers its guard. +{heal_amount} HP.")
+        try:
+            self.emit("communed", actor=elite, pos=(elite.x, elite.y))
+        except Exception: pass
         return True
 
     def becalm(self, target) -> bool:
         """Approach a hostile without violence. Success rate scales with faction
-        standing: allied houses always hear you, neutral ones may be swayed, and
-        hostile houses never stand down. Cost is BECALM_COST x tier matter.
-        Bosses are commune()'s business."""
+        standing. Cost is BECALM_COST x tier matter, OR 1 truth per tier.
+        At diplomacy tier 2+: affects nearby enemies (AoE)."""
         if target.is_boss or target.allegiance != "monster":
             return False
         fcs = self.system("factions")
@@ -1704,14 +1818,33 @@ class Game:
         if standing < 0:
             self.log(f"{target.name} bristles; your houses are at war.")
             return False
-        total = BECALM_COST * max(1, target.tier)
+
+        # Diplomacy tier
+        try:
+            from .proficiency import skills as _sk
+            d_tier = _sk().tier("diplomacy")
+        except Exception:
+            d_tier = 0
+
+        tier = max(1, target.tier)
+        matter_cost = max(1, BECALM_COST * tier - d_tier)
+        truth_cost = max(1, tier - d_tier // 2)
+
+        # Currency: truths or matter
+        truths = sum(getattr(self.system(n), "read", 0)
+                     for n in ("marginalia", "history") if self.system(n))
         salv = self.system("salvage")
         bag = salv.inventory(self) if salv is not None else None
-        if bag is None or bag.total() < total:
-            self.log(f"{target.name} is not moved. (Offer {total} matter.)")
+        can_pay_matter = bag is not None and bag.total() >= matter_cost
+        can_pay_truths = truths >= truth_cost
+
+        if not (can_pay_matter or can_pay_truths):
+            self.log(f"{target.name} is not moved. (Need {truth_cost} truths or {matter_cost} matter.)")
             return False
+
+        # Success check
         if standing >= 3:
-            self.log(f"You speak its own thought back to it; {target.name} stills.")
+            pass  # automatic
         elif standing >= 1:
             if hash(f"{self.seed}:{self.turn}:becalm:{target.source}") % 100 >= 50:
                 self.log(f"{target.name} remains wary of you.")
@@ -1720,12 +1853,38 @@ class Game:
             if hash(f"{self.seed}:{self.turn}:becalm:{target.source}") % 100 >= 25:
                 self.log(f"{target.name} refuses your gesture.")
                 return False
-        cost = _spend_matter(bag, total)
-        offered = " ".join(f"{m}x{q}" for m, q in sorted(cost.items()))
-        self.log(f"You share what you have gathered ({offered}); "
-                 f"{target.name} is placated.")
-        self._join_wild(target)
-        self._tension = max(0, self._tension - 15)
+
+        # Pay — prefer truths over matter
+        if can_pay_truths:
+            spent_t = 0
+            for sys_name in ("marginalia", "history"):
+                ms = self.system(sys_name)
+                while ms and getattr(ms, "read", 0) > 0 and spent_t < truth_cost:
+                    ms.read -= 1
+                    spent_t += 1
+        elif can_pay_matter:
+            cost = _spend_matter(bag, matter_cost)
+            offered = " ".join(f"{m}x{q}" for m, q in sorted(cost.items()))
+            self.log(f"You share what you have gathered ({offered});")
+
+        # AoE: diplomacy tier 2+ affects nearby enemies
+        aoe_radius = 2 if d_tier >= 4 else (1 if d_tier >= 2 else 0)
+        calmed = [target]
+        if aoe_radius > 0:
+            for a in list(self.actors):
+                if a is not target and a.allegiance == "monster" and a.hp > 0:
+                    dist = max(abs(a.x - self.player.x), abs(a.y - self.player.y))
+                    if dist <= aoe_radius:
+                        calmed.append(a)
+
+        for a in calmed:
+            self._join_wild(a)
+        names = ", ".join(a.name for a in calmed[:3])
+        if len(calmed) > 3:
+            names += f", and {len(calmed)-3} others"
+        self.log(f"{names} {'is' if len(calmed)==1 else 'are'} placated.")
+        self._tension = max(0, self._tension - 15 * len(calmed))
+
         from runtime.proficiency import exercise_skill
         exercise_skill("diplomacy")
         return True
@@ -1861,22 +2020,25 @@ class Game:
         self.log(f"{target.name} falls in beside you.")
         from runtime.proficiency import exercise_skill
         exercise_skill("diplomacy")
+        try:
+            exercise_skill("husbandry")
+        except Exception: pass
 
     def confide(self, target) -> bool:
-        """Trade a read truth with a friendly creature (becalmed or companion):
-        it opens its source note to you in return, once each. The water-ritual
-        heart: secrets for secrets."""
+        """Share deep understanding with a friendly creature: it opens its source
+        note to you in turn, once each. Costs 1 insight charge."""
         if target.allegiance not in ("wild", "companion") or not target.source:
             return False
         if getattr(target, "_confided", False):
             self.log(f"{target.name} has nothing more to share.")
             return False
-        have = sum(getattr(self.system(n), "read", 0)
-                   for n in ("marginalia", "history") if self.system(n))
-        if have - self._truths_spent < 1:
-            self.log("You have nothing read to trade.")
+        hist = self.system("history")
+        insight = getattr(hist, "insight", 0) if hist else 0
+        if insight < 1:
+            self.log("You lack the insight to share.")
             return False
-        self._truths_spent += 1
+        if hist:
+            hist.insight -= 1
         target._confided = True
         know = self.system("knowledge")
         if know is not None:
@@ -1885,7 +2047,7 @@ class Game:
         f = getattr(target, "faction", "")
         if fs is not None and f:
             fs.standing[f] = fs.standing.get(f, 0) + 1
-        self.log(f"You trade what you have read; {target.name} opens its "
+        self.log(f"You share a deep insight; {target.name} opens its "
                  "note to you in turn.")
         return True
 
@@ -1910,6 +2072,10 @@ class Game:
         _spend_matter(bag, 1)
         self.log("You toss a scrap of matter; it clatters in the dark.")
         self.emit("noise", pos=(x, y), volume=10)
+        try:
+            from .proficiency import exercise_skill
+            exercise_skill("husbandry")
+        except Exception: pass
         return True
 
     def wait(self):
@@ -2116,6 +2282,105 @@ class Game:
         self._restore_winded()
         for s in self.systems:
             s.on_player_act(self)
+
+    def deploy(self, sigil_index: int) -> bool:
+        """Remove a slotted sigil and place it on the map as a fragile entity.
+        Enemies can destroy it; player can recover it. Each sigil type has a
+        distinct deployed form."""
+        sigs = self.system("sigils")
+        if sigs is None or sigil_index >= len(sigs.slots):
+            return False
+        sigil = sigs.slots[sigil_index]
+        ability = sigil.get("ability", sigil.get("base", ""))
+        px, py = self.player.x, self.player.y
+
+        # Find a free adjacent tile to deploy on
+        deployed_pos = None
+        for dx, dy in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+            nx, ny = px + dx, py + dy
+            if self.level.walkable(nx, ny) and self.actor_at(nx, ny) is None:
+                deployed_pos = (nx, ny)
+                break
+        if deployed_pos is None:
+            # Deploy at feet if no adjacent space
+            if self.actor_at(px, py) is None or self.actor_at(px, py) is self.player:
+                deployed_pos = (px, py)
+            else:
+                self.log("No space to deploy.")
+                return False
+
+        # Create deployed entity based on sigil type
+        from runtime.entities import Actor
+        entity = Actor("deployed_sigil", *deployed_pos)
+        entity.allegiance = "companion"
+        entity.source = sigil.get("note", "")
+        entity._deployed_sigil = sigil_index
+        entity._deploy_ability = ability
+        entity.tier = 0
+
+        if ability == "Recall":
+            entity.name = "Recall Beacon"
+            entity.max_hp = entity.hp = 5
+            entity._heal_aura = 2  # HP per turn to allies in radius 3
+            entity._aura_radius = 3
+        elif ability == "Phase":
+            entity.name = "Phase Trap"
+            entity.max_hp = entity.hp = 1
+            entity._trap_ability = "phase"
+        elif ability == "Rally":
+            entity.name = "Rally Banner"
+            entity.max_hp = entity.hp = 8
+            entity._atk_buff = 1  # +1 ATK to companions in radius 5
+            entity._aura_radius = 5
+        elif ability == "Ward":
+            entity.name = "Ward Pylon"
+            entity.max_hp = entity.hp = 10
+            entity._push_radius = 2  # pushes enemies away each turn
+        elif ability == "Echo":
+            entity.name = "Echo Totem"
+            entity.max_hp = entity.hp = 3
+            entity._revive = True  # if player dies within 20 turns, revive at totem
+            entity._revive_ttl = self.turn + 20
+        else:
+            entity.name = "Deployed " + ability
+            entity.max_hp = entity.hp = 3
+
+        entity.defense = 1
+        entity.atk = 0
+        entity._is_deployed = True
+
+        # Remove sigil from slot
+        sigs.slots.pop(sigil_index)
+        self.actors.append(entity)
+        self.log(f"You deploy a {entity.name}.")
+
+        self.turn += 1
+        self._tick_effects()
+        self.enemies_act()
+        self._restore_winded()
+        for s in self.systems:
+            s.on_player_act(self)
+        return True
+
+    def recover(self) -> bool:
+        """Re-slot a deployed sigil at the player's position at half durability."""
+        sigs = self.system("sigils")
+        if sigs is None:
+            return False
+        for a in list(self.actors):
+            if getattr(a, "_is_deployed", False):
+                if a.x == self.player.x and a.y == self.player.y:
+                    # Re-slot with 1 durability
+                    from runtime.forge import ForgeSystem
+                    sigil = {"note": a.source, "ability": a._deploy_ability,
+                             "role": getattr(a, "_deploy_role", "leaf"),
+                             "durability": 1}
+                    sigs.slots.append(sigil)
+                    self.actors.remove(a)
+                    self.log(f"You recover the {a.name}.")
+                    return True
+        self.log("Nothing to recover here.")
+        return False
 
     def _companion_penalty(self) -> int:
         comps = [a for a in self.actors if getattr(a, 'allegiance', '') == 'companion']
@@ -2552,6 +2817,52 @@ class Game:
                             apply_trigger(self, a, "fire_near", 0.4)
                             break
 
+        # Deployed sigil tick: beacons heal, pylons push, totems revive
+        for a in list(self.actors):
+            if not getattr(a, "_is_deployed", False):
+                continue
+            if a.hp <= 0:
+                self.actors.remove(a)
+                self.log(f"The {a.name} shatters.")
+                continue
+
+            ability = getattr(a, "_deploy_ability", "")
+            # Recall Beacon: heal allies in radius
+            if ability == "Recall":
+                for ally in self.actors:
+                    if self.is_ally(ally) or ally is self.player:
+                        if max(abs(ally.x - a.x), abs(ally.y - a.y)) <= 3:
+                            ally.hp = min(getattr(ally, "max_hp", ally.hp),
+                                          ally.hp + 2)
+
+            # Ward Pylon: push enemies away
+            elif ability == "Ward":
+                for enemy in list(self.actors):
+                    if enemy.hp > 0 and hasattr(enemy, "allegiance") and enemy.allegiance == "monster":
+                        if max(abs(enemy.x - a.x), abs(enemy.y - a.y)) <= 2:
+                            dx = 1 if enemy.x >= a.x else -1
+                            dy = 1 if enemy.y >= a.y else -1
+                            nx, ny = enemy.x + dx, enemy.y + dy
+                            if self.level.walkable(nx, ny) and self.actor_at(nx, ny) is None:
+                                enemy.x, enemy.y = nx, ny
+
+            # Echo Totem: check if player died — revive at totem
+            elif ability == "Echo":
+                if not self.alive and getattr(a, "_revive_ttl", 0) >= self.turn:
+                    self.alive = True
+                    self.player.hp = max(1, self.player.max_hp // 4)
+                    self.player.x, self.player.y = a.x, a.y
+                    self.actors.remove(a)
+                    self.log(f"The {a.name} cracks open. You stumble back from the precipice.")
+                    return
+
+            # Rally Banner: buff companions
+            elif ability == "Rally":
+                for ally in self.actors:
+                    if getattr(ally, "allegiance", "") == "companion":
+                        if max(abs(ally.x - a.x), abs(ally.y - a.y)) <= 5:
+                            ally.atk = getattr(ally, "atk", 0) + 1
+
     def clear_weather(self, radius: int = 5):
         """Spend 1 matter to clear weather hazards in a radius around the player.
         Lasts 20 turns before weather returns."""
@@ -2828,6 +3139,15 @@ class Game:
             for s in self.systems:
                 s.on_enemy_killed(self, dfn)
             self.emit("enemy_killed", enemy=dfn, cause="melee")
+            # Boss recipe discovery: 30% chance on boss kill
+            if getattr(dfn, "is_boss", False):
+                try:
+                    from runtime.recipes import discover_from_boss
+                    recipe = discover_from_boss(self)
+                    if recipe:
+                        self.player._known_recipes.add(recipe)
+                        self.log(f"The boss's essence teaches you the craft of {recipe}.")
+                except Exception: pass
             # Craft wire: kill→heal condition trigger
             try:
                 from runtime.craft import CraftSystem

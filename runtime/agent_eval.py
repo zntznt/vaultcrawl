@@ -99,6 +99,7 @@ class RunResult:
     average_hp: float = 0.0
     attractor_scores: dict = None
     narrative: str = ""
+    metrics: dict = None
 
 
 def run_agent(world_json: str, agent_name: str,
@@ -251,7 +252,30 @@ def run_agent(world_json: str, agent_name: str,
         average_hp=round(avg_hp, 2),
         attractor_scores=tracker.scores(),
         narrative=tracker.narrative(),
+        metrics=_get_metrics(),
     )
+
+
+def _get_metrics() -> dict | None:
+    """Collect metrics snapshot from the MetricsTracker for eval output."""
+    try:
+        from runtime.metrics import metrics as _m, reset_metrics
+        m = _m()
+        summary = m.summary()
+        reset_metrics()
+        return summary
+    except Exception:
+        return None
+
+
+def _agg_metrics_field(runs, field: str) -> dict:
+    """Aggregate a metrics dict field across runs."""
+    totals = {}
+    for r in runs:
+        if r.metrics:
+            for k, v in r.metrics.get(field, {}).items():
+                totals[k] = totals.get(k, 0) + v
+    return totals
 
 
 class _Sentinel:
@@ -323,6 +347,18 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
                 narratives.append(r.narrative)
         stats[name]["attractor_avg"] = {k: round(sum(v)/len(v), 3) if v else 0 for k, v in attractor_scores.items()}
         stats[name]["narratives"] = narratives[:3]  # sample
+
+        # Metrics aggregation
+        verb_totals: dict[str, list] = {}
+        for r in runs:
+            if r.metrics:
+                for verb, count in r.metrics.get("verbs", {}).items():
+                    verb_totals.setdefault(verb, []).append(count)
+        stats[name]["metrics"] = {
+            "avg_verb_diversity": round(sum(r.metrics.get("verb_diversity", 0) for r in runs if r.metrics) / max(1, sum(1 for r in runs if r.metrics)), 3),
+            "top_verbs": {v: round(sum(c)/max(1, len(c)), 1) for v, c in sorted(verb_totals.items(), key=lambda x: -sum(x[1]))[:5] if c},
+            "locus_types": _agg_metrics_field(runs, "locus_distribution"),
+        }
 
         # per-floor survival: count how many runs reached at least floor f
         surv_curve: dict[int, int] = {}

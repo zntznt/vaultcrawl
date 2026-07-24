@@ -109,3 +109,8 @@ def craft_consumable(game, recipe_name: str) -> bool:
 
     game.log(f"You craft a {recipe_name}.")
     return True
+
+
+# Populate recipe registry from recipes.py module (imported at bottom to
+# break circular dependency — recipes imports register_recipe from us).
+from . import recipes  # noqa: E402,F401 — must be after register_recipe definition

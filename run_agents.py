@@ -139,7 +139,7 @@ def auto_play(game, floors: int, max_turns: int = 500):
         return (cur[0] - start[0], cur[1] - start[1])
 
     cleared = 0
-    while game.alive and not game.won and cleared < floors:
+    while game.alive and not game.won and cleared < floors and game.floor <= getattr(game, "max_floor", 26):
         turns = 0
         while game.alive and not game.won:
             ppos = (game.player.x, game.player.y)
@@ -171,7 +171,7 @@ def auto_play(game, floors: int, max_turns: int = 500):
     return cleared
 
 
-def run_one(world_path: str, agent_name: str, floors: int = 99) -> RunStats:
+def run_one(world_path: str, agent_name: str, floors: int = 26) -> RunStats:
     from runtime.game import Game, load_manifest
     from runtime.sense import make_brain
 

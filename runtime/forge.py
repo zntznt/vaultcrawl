@@ -240,6 +240,25 @@ class ForgeSystem(System):
             return True   # first forge of this ability: waived
         return ptracker().can_craft(ability, required=1.0)
 
+    def forge_consumable(self, game, recipe_name: str) -> bool:
+        """Forge a known consumable recipe using the forge economy.
+        Costs 2 matter (same as sigil forging). Teaches the recipe if unknown."""
+        known = getattr(game.player, "_known_recipes", set())
+        if recipe_name not in known:
+            game.player._known_recipes.add(recipe_name)
+            game.log(f"Your forge intuition reveals the recipe for {recipe_name}.")
+        from runtime.wear import RECIPE_COSTS, craft_consumable
+        # Override cost: forge always costs 2 matter for consumables
+        saved = RECIPE_COSTS.get(recipe_name, 99)
+        try:
+            import runtime.wear as _w
+            _w.RECIPE_COSTS[recipe_name] = 2  # forge discount
+            result = craft_consumable(game, recipe_name)
+            _w.RECIPE_COSTS[recipe_name] = saved
+        except Exception:
+            result = False
+        return result
+
     @staticmethod
     def _proficiency_required(role: str) -> int:
         """How many notes of this role must be known to forge its sigil."""

@@ -199,6 +199,14 @@ def dispatch(game, action: AgentAction) -> bool:
                 return True
             return False
 
+        # -- deploy -------------------------------------------------------------
+        if kind == "deploy":
+            return game.deploy(action.index)
+
+        # -- recover ------------------------------------------------------------
+        if kind == "recover":
+            return game.recover()
+
         return False
 
     except Exception:

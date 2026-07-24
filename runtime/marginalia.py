@@ -98,6 +98,10 @@ class MarginaliaSystem(System):
         if line:
             self.read += 1
             game.log(f'Marginalia, in your own hand: "{line}"')
+            try:
+                from .proficiency import exercise_skill
+                exercise_skill("scholarship")
+            except Exception: pass
 
     def render_overlay(self, game, grid):
         h = len(grid)

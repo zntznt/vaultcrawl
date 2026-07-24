@@ -125,8 +125,20 @@ class SalvageSystem(System):
         if not tile:
             return
         q = self.ground_q.pop((player.x, player.y), 0)
+        # Foraging tier bonus: +1 matter per tier
+        try:
+            from .proficiency import skills as _sk
+            bonus = _sk().tier("foraging")
+            if bonus > 0:
+                for k in list(tile.keys()):
+                    tile[k] += bonus
+        except Exception: pass
         inv(player).add(tile, quality=q)       # banks the matter's grade for the forge floor
         game.log(f"Salvaged {_summary(tile)}.")
+        try:
+            from .proficiency import exercise_skill
+            exercise_skill("foraging")
+        except Exception: pass
 
     # ---- trash heaps --------------------------------------------------------
     def _collect_heaps(self, game):
@@ -138,10 +150,19 @@ class SalvageSystem(System):
         if heap is None or heap["depleted"]:
             return
         heap["depleted"] = True
-        inv(player).add({"scrap": heap["matter"]})
+        matter = heap["matter"]
+        try:
+            from .proficiency import skills as _sk
+            matter += _sk().tier("foraging")
+        except Exception: pass
+        inv(player).add({"scrap": matter})
         rng = random.Random(f"{game.seed}:{game.floor}:heaps:{pos}")
         self._heap_timers[pos] = game.turn + rng.randint(80, 120)
         game.log(f"You pick through the trash ({heap['matter']} scrap).")
+        try:
+            from .proficiency import exercise_skill
+            exercise_skill("foraging")
+        except Exception: pass
 
     def _respawn_heaps(self, game):
         for pos, timer in list(self._heap_timers.items()):
@@ -172,6 +193,10 @@ class SalvageSystem(System):
         self._scrapped.add(pos)
         inv(player).add({"scrap": 1})
         game.log("You find usable scrap in the rubble.")
+        try:
+            from .proficiency import exercise_skill
+            exercise_skill("foraging")
+        except Exception: pass
 
     # ---- player command: melt a slotted sigil back into matter --------------
     def breakdown_sigil(self, game, ability=None):
@@ -196,6 +221,12 @@ class SalvageSystem(System):
                               source=s.get("note", ""), name=s.get("ability", ""))
         inv(game.player).add(comps, quality=s.get("quality", 0))
         game.log(f"You break down the {s.get('ability', 'sigil')} sigil ({_summary(comps)}).")
+        # Breakdown yields a truth — knowledge recovered from shattered form
+        try:
+            ms = game.system("marginalia")
+            if ms:
+                ms.read = getattr(ms, "read", 0) + 1
+        except Exception: pass
         return comps
 
     # ---- query API ----------------------------------------------------------

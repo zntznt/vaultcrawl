@@ -323,6 +323,94 @@ def agent_state(game, actor) -> dict:
     except Exception:
         pass
 
+    # -- environmental hazard awareness ------------------------------------------
+    # Visible hazard tiles within perception range — agent can exploit these.
+    hazard_tiles = []
+    hazard_tiles_typed = {}  # {"acid": [...], "charged": [...], "fire": [...]}
+    try:
+        react = game.system("reactions")
+        if react and hasattr(react, "props"):
+            perception_range = 12 + (6 if has_lantern else 0)
+            for (hx, hy), props in react.props.items():
+                dist = max(abs(hx - px), abs(hy - py))
+                if dist <= perception_range:
+                    if game.level.walkable(hx, hy):
+                        entry = {"x": hx, "y": hy, "dist": dist}
+                        hazard_tiles.append(entry)
+                        for p in props:
+                            if p not in hazard_tiles_typed:
+                                hazard_tiles_typed[p] = []
+                            hazard_tiles_typed[p].append(entry)
+    except Exception:
+        pass
+
+    # Boss elemental affinity: what element is the boss weak to?
+    boss_home_element = None
+    boss_weak_element = None
+    boss_telegraphed = False
+    try:
+        for a in game.actors:
+            if getattr(a, "is_boss", False) and getattr(a, "source", ""):
+                telegraphed = getattr(a, "_telegraphed", False)
+                boss_telegraphed = telegraphed
+                # Derive boss home element from faction → region element
+                from .reactions import _ELEMENT_OPPOSITE
+                fcs = game.system("factions")
+                if fcs and getattr(a, "faction", ""):
+                    # Walk: faction.standing keys → region factionId → region element
+                    # Simplest heuristic: look at the boss's own faction ID
+                    bfid = getattr(a, "faction", "")
+                    # If we can derive the home element from faction ID (faction_N → region N's element)
+                    if bfid.startswith("faction_"):
+                        try:
+                            n = int(bfid[len("faction_"):])
+                            regions = game.m.get("regions", [])
+                            for r in regions:
+                                if r.get("id") == f"faction_{n}" or r.get("factionId") == bfid:
+                                    elem = r.get("element", "")
+                                    if elem and elem != "inert":
+                                        boss_home_element = elem
+                                        boss_weak_element = _ELEMENT_OPPOSITE.get(elem)
+                                    break
+                        except Exception:
+                            pass
+                break
+    except Exception:
+        pass
+
+    # Hazard direction behind each near hostile: where to shove/lure them.
+    # Checks the tile immediately behind the enemy (shove destination).
+    # Also checks 2 tiles out — the enemy may end up adjacent to a hazard.
+    for h in near_hostiles:
+        ex, ey = h["x"], h["y"]
+        hazard_behind = None
+        for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+            tx, ty = ex + dx, ey + dy
+            if game.level.walkable(tx, ty):
+                actor_at_dest = game.actor_at(tx, ty)
+                if actor_at_dest is not None:
+                    continue
+                try:
+                    react = game.system("reactions")
+                    if react and hasattr(react, "props"):
+                        # Direct hazard at destination (1 tile)
+                        props_set = react.props.get((tx, ty), set())
+                        if props_set:
+                            hazard_behind = {"dx": dx, "dy": dy, "props": list(props_set)}
+                            break
+                        # Hazard 2 tiles out — enemy lands adjacent to it
+                        tx2, ty2 = ex + 2*dx, ey + 2*dy
+                        if game.level.walkable(tx2, ty2) and game.actor_at(tx2, ty2) is None:
+                            props2 = react.props.get((tx2, ty2), set())
+                            if props2:
+                                hazard_behind = {"dx": dx, "dy": dy,
+                                                 "props": list(props2),
+                                                 "adjacent": True}
+                                break
+                except Exception:
+                    pass
+        h["hazard_behind"] = hazard_behind
+
     # -- faction kills ---------------------------------------------------------
     faction_kills = {}
     recent_kill_count = 0
@@ -574,4 +662,9 @@ def agent_state(game, actor) -> dict:
         "companion_penalty": companion_penalty,
         "can_recruit": can_recruit,
         "encounter_options": encounter_options,
+        "hazard_tiles": hazard_tiles,
+        "hazard_tiles_typed": hazard_tiles_typed,
+        "boss_home_element": boss_home_element,
+        "boss_weak_element": boss_weak_element,
+        "boss_telegraphed": boss_telegraphed,
     }

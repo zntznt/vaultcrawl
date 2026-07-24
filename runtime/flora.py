@@ -172,6 +172,10 @@ class FloraSystem(System):
             salv.inventory(game).add({"growth": yield_amt})
         game.log("You harvest the plant. A rustle carries on the air.")
         game.emit("noise", pos=(p.x, p.y), volume=5)
+        try:
+            from .proficiency import exercise_skill
+            exercise_skill("foraging")
+        except Exception: pass
         return True
 
     # ---- rendering / HUD -----------------------------------------------------
