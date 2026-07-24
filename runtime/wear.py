@@ -1,5 +1,6 @@
 """Wear system: items degrade with use. Higher quality = slower wear."""
 from __future__ import annotations
+from .det import dhash, droll
 
 WEAR_TIERS = ["fine", "scuffed", "worn", "damaged", "broken"]
 WEAR_EFFECTS = {"fine": 1.0, "scuffed": 0.75, "worn": 0.5, "damaged": 0.25, "broken": 0.0}
@@ -28,8 +29,8 @@ def apply_wear(game, item: dict, quality_name: str = "Normal", uses: int = 1):
     chance = WEAR_CHANCE[qi]
 
     # Deterministic: seed from item identity + game turn
-    item_id = item.get("ability", item.get("note", str(hash(str(item)))))
-    roll = hash(f"{item_id}:{game.turn}") % 100 / 100.0
+    item_id = item.get("ability", item.get("note", str(dhash(str(item)))))
+    roll = droll(f"{item_id}:{game.turn}", 100) / 100.0
     if roll < chance:
         current_tier += uses
         item["wear"] = WEAR_TIERS[min(current_tier, 4)]
@@ -51,7 +52,7 @@ def maintain(game, item: dict, quality_name: str = "Normal") -> bool:
     if tier >= 3:
         restore = 2
     elif tier >= 2:
-        restore = 1 + (hash(f"{item.get('ability','')}:{game.turn}") % 2)  # 1 or 2
+        restore = 1 + droll(f"{item.get('ability','')}:{game.turn}", 2)  # 1 or 2
     new_tier = max(0, current - restore)
     item["wear"] = WEAR_TIERS[new_tier]
     from runtime.proficiency import exercise_skill

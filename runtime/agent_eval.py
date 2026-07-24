@@ -19,61 +19,17 @@ from typing import Any
 from runtime.game import Game, load_manifest
 from runtime.sense import make_brain
 
-ALL_SYSTEMS: list = []
-
-
 def _build_systems():
-    global ALL_SYSTEMS
-    if ALL_SYSTEMS:
-        return ALL_SYSTEMS
-    from runtime.senses import SenseField
-    from runtime.memory import MemorySystem
-    from runtime.sigils import SigilSystem
-    from runtime.reactions import ReactionSystem
-    from runtime.weather import WeatherSystem
-    from runtime.flora import FloraSystem
-    from runtime.structures import StructureSystem
-    from runtime.decay import DecaySystem
-    from runtime.fauna import FaunaSystem
-    from runtime.salvage import SalvageSystem
-    from runtime.forge import ForgeSystem
-    from runtime.scent import ScentSystem
-    from runtime.body_parts import BodySystem
-    from runtime.terrain_mod import TerrainModSystem
-    from runtime.portals import PortalSystem
-    from runtime.sacrifice import SacrificeSystem
-    from runtime.quests import QuestSystem
-    from runtime.dialogue import DialogueSystem
-    from runtime.machines import MachineSystem
-    from runtime.caches import CacheSystem
-    from runtime.factions import FactionSystem
-    from runtime.history import HistorySystem
-    from runtime.marginalia import MarginaliaSystem
-    from runtime.knowledge import KnowledgeSystem
-    from runtime.effects import EffectSystem
-    from runtime.quality import QualitySystem
-    import runtime.abilities  # noqa: F401
-
-    ALL_SYSTEMS = [
-        SenseField(), MemorySystem(), SigilSystem(), ReactionSystem(), WeatherSystem(),
-        FloraSystem(), StructureSystem(), DecaySystem(), FaunaSystem(),
-        SalvageSystem(), ForgeSystem(),
-        ScentSystem(),
-        QuestSystem(), DialogueSystem(), MachineSystem(),
-        CacheSystem(),
-        TerrainModSystem(),
-        PortalSystem(),
-        SacrificeSystem(),
-        FactionSystem(), BodySystem(), QualitySystem(),
-        HistorySystem(), MarginaliaSystem(), KnowledgeSystem(),
-        EffectSystem(),
-    ]
-    return ALL_SYSTEMS
+    """Fresh instances every call. These objects are stateful (sigil slots, faction
+    standing, cache counters), and this used to memoise one list into a module global,
+    so every run after the first in a batch inherited the previous run's systems."""
+    from runtime.stack import build_systems
+    return build_systems()
 
 
 def _register_brains():
-    from runtime import brains, tactics, planner, instincts  # noqa: F401
-    from runtime import agent  # noqa: F401 — universal brain
+    from runtime.stack import register_brains
+    register_brains()
 
 
 AGENT_NAMES = ["artisan", "cartographer", "emergent", "exploiter", "seeker", "whisper"]
@@ -117,11 +73,11 @@ def run_agent(world_json: str, agent_name: str,
     from runtime.agent_action import AgentAction, dispatch
     from runtime.attractors import AttractorTracker
 
-    _build_systems()
+    systems = _build_systems()
     _register_brains()
 
     manifest = load_manifest(world_json)
-    game = Game(manifest, systems=list(ALL_SYSTEMS), sandbox=False)
+    game = Game(manifest, systems=systems, sandbox=False)
     game.player.brain = make_brain(game, game.player, name=agent_name)
     game.player.brain.name = agent_name
     game.starting_kit(agent_name)
@@ -199,8 +155,9 @@ def run_agent(world_json: str, agent_name: str,
             # track caches opened
             caches = game.system("caches")
             if caches is not None:
-                caches_opened = max(caches_opened,
-                                    len(getattr(caches, "opened", []) or []))
+                # CacheSystem counts in `searched`; there is no `opened` attribute, so this
+                # read was hardcoding 0 into every run the harness has ever recorded.
+                caches_opened = max(caches_opened, int(getattr(caches, "searched", 0) or 0))
 
             floor_turns += 1
             if floor_turns > max_turns_per_floor:
@@ -283,19 +240,21 @@ class _Sentinel:
 
 
 def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
-                    max_floor: int = DEFAULT_MAX_FLOOR) -> dict[str, Any]:
+                    max_floor: int = DEFAULT_MAX_FLOOR,
+                    agents: list[str] | None = None) -> dict[str, Any]:
     """Run each agent n_runs times and compute aggregate statistics.
 
     Returns a dict with per-agent stats and per-floor survival curves,
     also written to ~/.vaultcrawl/eval_stats.json.
     """
-    results: dict[str, list[RunResult]] = {name: [] for name in AGENT_NAMES}
+    agent_names = list(agents) if agents else list(AGENT_NAMES)
+    results: dict[str, list[RunResult]] = {name: [] for name in agent_names}
 
-    total_runs = len(AGENT_NAMES) * n_runs
+    total_runs = len(agent_names) * n_runs
     run_idx = 0
     t0 = time.monotonic()
 
-    for agent_name in AGENT_NAMES:
+    for agent_name in agent_names:
         for _ in range(n_runs):
             result = run_agent(world_json, agent_name, max_floor)
             results[agent_name].append(result)
@@ -413,7 +372,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     world_json = args.world
-    evaluate_agents(world_json, args.runs, args.floors)
+    evaluate_agents(world_json, args.runs, args.floors,
+                    agents=[args.agent] if args.agent else None)
 
 
 if __name__ == "__main__":

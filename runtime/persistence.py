@@ -5,6 +5,7 @@ Wire: lore_read → lost_note (ghost), standing extremes → faction shifts,
        forge_used → sanctum persistence (terrain_mod + Upheaval).
 """
 from __future__ import annotations
+from .det import droll
 
 
 class RunChronicle:
@@ -115,7 +116,7 @@ class RunChronicle:
         # Lore → lost notes (ghosts). Each read note has a chance to become a ghost.
         for note_id in self.lore_read_notes:
             # Only some notes become ghosts (deterministic by note id hash)
-            if hash(note_id) % 3 == 0:  # ~33% chance
+            if droll(note_id, 3) == 0:  # ~33% chance
                 events.append({
                     "kind": "note_lost",
                     "note": note_id,

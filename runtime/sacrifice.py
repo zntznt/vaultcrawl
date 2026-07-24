@@ -80,7 +80,9 @@ class SacrificeSystem(System):
         elif choice == "note":
             know = game.system("knowledge")
             if know and know.known:
-                nid = next(iter(know.known), None)
+                # sorted: `known` is a set, so next(iter(...)) picked a different note
+                # per process rather than per game seed.
+                nid = next(iter(sorted(know.known)), None)
                 if nid:
                     know.known.discard(nid)
             game.player.atk += 1
@@ -103,7 +105,7 @@ class SacrificeSystem(System):
         elif choice == "effect":
             eff = game.system("effects")
             if eff and eff.collected:
-                nid = next(iter(eff.collected), None)
+                nid = next(iter(sorted(eff.collected)), None)
                 if nid:
                     eff.collected.discard(nid)
                     if eff.worn == nid:

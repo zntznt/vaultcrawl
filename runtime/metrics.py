@@ -13,6 +13,7 @@ class MetricsTracker:
             "interact": 0, "descend": 0, "ascend": 0, "forge": 0,
             "rest": 0, "talk": 0, "toss": 0, "negotiate": 0,
             "breakdown": 0, "commune": 0, "becalm": 0, "craft_consumable": 0,
+            "deploy": 0, "recover": 0,
         }
         # System activations
         self.systems: dict[str, int] = {
@@ -37,8 +38,9 @@ class MetricsTracker:
         self.total_matter_spent: int = 0
 
     def record_verb(self, verb: str):
-        if verb in self.verbs:
-            self.verbs[verb] += 1
+        # Count unknown verbs too. Silently dropping them is how deploy and recover, both
+        # emitted by the brain, stayed invisible to every report the harness ever produced.
+        self.verbs[verb] = self.verbs.get(verb, 0) + 1
 
     def record_locus(self, locus_type: str):
         self.systems["locus_activated"] += 1

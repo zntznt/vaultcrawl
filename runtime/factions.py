@@ -78,9 +78,6 @@ class FactionSystem(System):
     def on_world_start(self, game):
         self._build(game)
 
-    def on_floor_enter(self, game):
-        self._allies_called = set()   # reset per floor
-
     def faction_name(self, fid):
         if not fid:
             return "Unknown"
@@ -193,6 +190,9 @@ class FactionSystem(System):
 
     # ---- the world reacts on the next descent ---------------------------------
     def on_floor_enter(self, game):
+        # This class defined on_floor_enter twice; the earlier one lost to this and its
+        # per-floor ally reset never ran, so the call_ally perk could not re-fire.
+        self._allies_called = set()
         self._build(game)
         rng = random.Random(f"{game.seed}:{game.floor}:factions")
         region = game.region_for(game.floor)

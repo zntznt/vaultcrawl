@@ -353,7 +353,9 @@ class UniversalBrain(Brain):
                          and len(s.get("near_hostiles", [])) <= 2)
         if reachable:
             from runtime.wear import RECIPE_COSTS
-            affordable = [r for r in known if RECIPE_COSTS.get(r, 99) <= s["matter"]["total"]]
+            # sorted, because `known` is a set: iterating it raw made which recipe the
+            # agent crafted depend on PYTHONHASHSEED rather than on the game seed.
+            affordable = sorted(r for r in known if RECIPE_COSTS.get(r, 99) <= s["matter"]["total"])
             # Hazard-reactive consumables get priority when hazards are nearby
             hazard_consumables = {"trap_kit", "crystal_seed", "sparkwire", "frost_ampoule",
                                    "root_tendril", "noise_lure", "wardstone"}

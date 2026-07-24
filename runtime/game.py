@@ -12,6 +12,7 @@ from .dungeon import free_floor_tiles, generate_level
 from .entities import apply_item, make_boss, make_enemy, make_item, make_player
 from .sense import make_brain
 from .upheaval import Upheaval, diminish, empower, make_echo, title as _title
+from .det import droll
 
 MAP_W, MAP_H = 56, 20
 
@@ -234,7 +235,7 @@ class Game:
                 nodes = self.m.get("graph", {}).get("nodes", {})
                 non_player = [nid for nid in nodes if nid != self.player.source]
                 if non_player:
-                    choice = non_player[hash(agent_name + "seed") % len(non_player)]
+                    choice = non_player[droll(agent_name + "seed", len(non_player))]
                     know._reveal(self, choice)
             self.player.max_hp += 4
             self.player.hp += 4
@@ -255,7 +256,7 @@ class Game:
             if fcs:
                 factions_list = list(getattr(fcs, "standing", {}).keys())
                 if factions_list:
-                    target = factions_list[hash(agent_name) % len(factions_list)]
+                    target = factions_list[droll(agent_name, len(factions_list))]
                     current = fcs.standing.get(target, 0)
                     fcs.standing[target] = min(4, current + 1)
             # Whisper starts with diplomatic insight: 2 marginalia truths pre-read
@@ -1236,7 +1237,7 @@ class Game:
                     self.player._known_recipes.add(recipe)
                     self.log(f"Your studies reveal the craft of {recipe}.")
             except Exception: pass
-            if note_id and hash(f"{self.seed}:{self.turn}:lore_chain") % 100 < 30:
+            if note_id and droll(f"{self.seed}:{self.turn}:lore_chain", 100) < 30:
                 know = self.system("knowledge")
                 if know:
                     nodes = self.m.get("graph", {}).get("nodes", {})
@@ -1244,7 +1245,7 @@ class Game:
                         neighbors = nodes[note_id].get("neighbors", [])
                         unrevealed = [n for n in neighbors if not know.is_known(n)]
                         if unrevealed:
-                            choice_idx = hash(f"{self.seed}:{self.turn}:lore_chain:{note_id}") % len(unrevealed)
+                            choice_idx = droll(f"{self.seed}:{self.turn}:lore_chain:{note_id}", len(unrevealed))
                             choice = unrevealed[choice_idx]
                             know.reveal(choice)
 
@@ -1797,7 +1798,7 @@ class Game:
         for a in list(self.actors):
             if a is not self.player and a.hp > 0 and a.allegiance == "monster":
                 if self.room_at(a.x, a.y) == room_idx:
-                    if hash(f"{self.seed}:{self.turn}:ripple:{a.source}") % 100 < 50:
+                    if droll(f"{self.seed}:{self.turn}:ripple:{a.source}", 100) < 50:
                         a.allegiance = "wild"
                         a.brain = None
         self.log(f"You commune with {elite.name}. It lowers its guard. +{heal_amount} HP.")
@@ -1846,11 +1847,11 @@ class Game:
         if standing >= 3:
             pass  # automatic
         elif standing >= 1:
-            if hash(f"{self.seed}:{self.turn}:becalm:{target.source}") % 100 >= 50:
+            if droll(f"{self.seed}:{self.turn}:becalm:{target.source}", 100) >= 50:
                 self.log(f"{target.name} remains wary of you.")
                 return False
         else:
-            if hash(f"{self.seed}:{self.turn}:becalm:{target.source}") % 100 >= 25:
+            if droll(f"{self.seed}:{self.turn}:becalm:{target.source}", 100) >= 25:
                 self.log(f"{target.name} refuses your gesture.")
                 return False
 
@@ -2191,6 +2192,8 @@ class Game:
             self._tick_effects()
             self.enemies_act()
             self._restore_winded()
+        else:
+            self.log("Nothing here to interact with.")
         for s in self.systems:
             s.on_player_act(self)
         # Craft wires: auto-cast and condition triggers
@@ -2202,8 +2205,6 @@ class Game:
             CraftSystem.apply_wires(self, "player_hp_check", hp_pct=hp_pct)
         except Exception:
             pass
-        else:
-            self.log("Nothing here to interact with.")
 
     def repair_part(self):
         """Cogmind-style: salvage a corpse at your feet to repair your worst body part.
@@ -3092,7 +3093,7 @@ class Game:
                            and max(abs(e.x - dfn.x), abs(e.y - dfn.y)) <= 1]
             if adj_enemies:
                 import random as _rng
-                chain = adj_enemies[hash(f"{self.seed}:{self.turn}:static") % len(adj_enemies)]
+                chain = adj_enemies[droll(f"{self.seed}:{self.turn}:static", len(adj_enemies))]
                 chain.hp -= 1
                 self.log(f"Static arcs from {dfn.name} to {chain.name}.")
                 if chain.hp <= 0 and getattr(chain, 'is_boss', False) and chain.source == self.final_boss_source:

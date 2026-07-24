@@ -1238,51 +1238,8 @@ def main(argv=None) -> int:
 
     systems = []
     if not a.no_systems:
-        from .senses import SenseField
-        from .memory import MemorySystem
-        from .sigils import SigilSystem
-        from .reactions import ReactionSystem
-        from .weather import WeatherSystem
-        from .flora import FloraSystem
-        from .structures import StructureSystem
-        from .decay import DecaySystem
-        from .fauna import FaunaSystem
-        from .salvage import SalvageSystem
-        from .forge import ForgeSystem
-        from .scent import ScentSystem
-        from .body_parts import BodySystem
-        from .terrain_mod import TerrainModSystem
-        from .portals import PortalSystem
-        from .sacrifice import SacrificeSystem
-        from .quests import QuestSystem
-        from .dialogue import DialogueSystem
-        from .machines import MachineSystem
-        from .caches import CacheSystem
-        from .factions import FactionSystem
-        from .loci import LocusSystem
-        from .craft import CraftSystem
-        from .history import HistorySystem
-        from .marginalia import MarginaliaSystem
-        from .knowledge import KnowledgeSystem
-        from .effects import EffectSystem
-        from .quality import QualitySystem
-        from . import abilities  # noqa: F401  (registers creature special actions)
-        # Order matters: sigils first (Echo can revive a just-killed player); reactions
-        # before the substrate-writers (weather/flora/structures) so they see seeded
-        # tiles; decay before fauna (scavengers query corpses); knowledge LAST so its fog
-        # paints over every other overlay.
-        systems = [SenseField(), MemorySystem(), SigilSystem(), ReactionSystem(), WeatherSystem(),
-                   FloraSystem(), StructureSystem(), DecaySystem(), FaunaSystem(),
-                   SalvageSystem(), ForgeSystem(),   # salvage pools matter, then forge spends it
-                   ScentSystem(),   # scent trails for tracking and stealth
-                    QuestSystem(), DialogueSystem(), CraftSystem(), MachineSystem(),   # quests · NPCs · craft rituals · machines
-                   CacheSystem(),   # each place is a distinct opportunity
-                   TerrainModSystem(),   # dynamic terrain: sanctums, scars, thresholds
-                   PortalSystem(),       # timed realm gates
-                   SacrificeSystem(),    # renunciation shrines
-                    FactionSystem(), BodySystem(), QualitySystem(),   # factions, body parts, then quality grades all spawned foes
-                    HistorySystem(), MarginaliaSystem(), LocusSystem(), KnowledgeSystem(),
-                   EffectSystem()]   # Yume-Nikki ways-of-being (exploration, not power)
+        from .stack import build_systems
+        systems = build_systems()
 
     headless = a.auto or not sys.stdin.isatty() or not sys.stdout.isatty()
     # The grown sandbox (ARCHITECTURE_SPEC) is the interactive game; the auto demo

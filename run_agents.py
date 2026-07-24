@@ -58,50 +58,10 @@ def ensure_world(path: str = DEFAULT_WORLD) -> str:
 
 
 def build_systems():
-    from runtime.senses import SenseField
-    from runtime.memory import MemorySystem
-    from runtime.sigils import SigilSystem
-    from runtime.reactions import ReactionSystem
-    from runtime.weather import WeatherSystem
-    from runtime.flora import FloraSystem
-    from runtime.structures import StructureSystem
-    from runtime.decay import DecaySystem
-    from runtime.fauna import FaunaSystem
-    from runtime.salvage import SalvageSystem
-    from runtime.forge import ForgeSystem
-    from runtime.scent import ScentSystem
-    from runtime.body_parts import BodySystem
-    from runtime.terrain_mod import TerrainModSystem
-    from runtime.portals import PortalSystem
-    from runtime.sacrifice import SacrificeSystem
-    from runtime.quests import QuestSystem
-    from runtime.dialogue import DialogueSystem
-    from runtime.machines import MachineSystem
-    from runtime.caches import CacheSystem
-    from runtime.factions import FactionSystem
-    from runtime.history import HistorySystem
-    from runtime.marginalia import MarginaliaSystem
-    from runtime.loci import LocusSystem
-    from runtime.craft import CraftSystem
-    from runtime.knowledge import KnowledgeSystem
-    from runtime.effects import EffectSystem
-    from runtime.quality import QualitySystem
-    import runtime.abilities  # noqa: F401
+    """The canonical stack, shared with play.py and agent_eval.py."""
+    from runtime.stack import build_systems as _build
+    return _build()
 
-    return [
-        SenseField(), MemorySystem(), SigilSystem(), ReactionSystem(), WeatherSystem(),
-        FloraSystem(), StructureSystem(), DecaySystem(), FaunaSystem(),
-        SalvageSystem(), ForgeSystem(),
-        ScentSystem(),
-        QuestSystem(), DialogueSystem(), CraftSystem(), MachineSystem(),
-        CacheSystem(),
-        TerrainModSystem(),
-        PortalSystem(),
-        SacrificeSystem(),
-        FactionSystem(), BodySystem(), QualitySystem(),
-        HistorySystem(), MarginaliaSystem(), LocusSystem(), KnowledgeSystem(),
-        EffectSystem(),
-    ]
 
 
 def register_all_brains():

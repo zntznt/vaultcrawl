@@ -11,6 +11,7 @@ import random as _random
 
 from runtime.components import inv
 from runtime.wear import register_recipe
+from .det import droll
 
 
 HEAP_MATTER = 2  # matter awarded by corpse_compost
@@ -21,7 +22,7 @@ SCARAB_HP = 6
 
 def _rng(seed_str: str) -> float:
     """Deterministic float 0-1 from a seed string."""
-    return (hash(seed_str) % 10000) / 10000.0
+    return droll(seed_str, 10000) / 10000.0
 
 
 def _tile_in_radius(game, r: int):
