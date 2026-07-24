@@ -13,6 +13,9 @@ from runtime.agent_action import AgentAction
 from runtime.agent_perception import agent_state
 from runtime.tactics import _stairs
 
+# Game.absorb_aspect grants its buff on the third consecutive rest on one tile.
+ABSORB_ATTEMPTS = 3
+
 
 PROFILES = {
     "artisan": {
@@ -95,17 +98,32 @@ def _starting_bonus(turn: int) -> int:
 
 # Formula: score = max(profile_weight, state_bonus) + turn_bonus
 # Profile = floor (identity), state = ceiling (urgency), turn = initial push
+#
+# The trailing urgency term breaks ties. Several candidates share one profile key
+# (explore covers explore_unseen, interact, salvage and cache), so whenever the profile
+# weight sits above all their state values they score identically, and a stable sort then
+# hands the turn to whichever was appended first. That made salvage and cache unreachable
+# for every profile with explore >= 4. The term is small enough never to overturn a
+# genuine one-point difference in the floor, and it only ever prefers the candidate the
+# situation more urgently wants.
 def _score(profile, key, state_bonus, turn_bonus, reachable: bool = True) -> float:
     if not reachable:
         return 0
     floor = profile.get(key, 0)
-    return max(floor, state_bonus) + turn_bonus
+    return max(floor, state_bonus) + turn_bonus + max(0, state_bonus) * 0.01
 
 
 class UniversalBrain(Brain):
     def __init__(self, name: str = "seeker"):
         self._name = name
         self._profile = PROFILES.get(name, PROFILES["seeker"])
+        # Set every decide(): the scored candidate list, sorted, and the index actually
+        # taken. Read by the balance harness; nothing in the game loop depends on it.
+        self._last_candidates: list = []
+        self._last_choice: int | None = None
+        # Consecutive absorb-hazard rests on the current tile, so the attempt is bounded.
+        self._hazard_tile: tuple | None = None
+        self._hazard_tries: int = 0
 
     @property
     def name(self) -> str:
@@ -511,14 +529,21 @@ class UniversalBrain(Brain):
                 candidates.append(("rest", score, AgentAction("rest")))
 
         # ---- ABSORB-HAZARD (rest on hazard to gain aspect buff) ----
+        here = (s["position"]["x"], s["position"]["y"])
         hazard_on_player = any(
-            s["position"]["x"] == hz["x"] and s["position"]["y"] == hz["y"]
-            for hz in s.get("hazard_tiles", [])
+            here == (hz["x"], hz["y"]) for hz in s.get("hazard_tiles", [])
         )
-        if hazard_on_player and len(s.get("adjacent_hostiles", [])) == 0 and len(s.get("near_hostiles", [])) == 0:
-            # Can absorb aspects — rest 3 turns on hazard tile for permanent buff
+        if here != self._hazard_tile:
+            self._hazard_tile, self._hazard_tries = here, 0
+        # Game.absorb_aspect needs 3 consecutive rests on one tile. Give it exactly that
+        # many and no more: the tile may carry a hazard this candidate can see but that
+        # absorb_aspect cannot use, and without a cap the agent rests on it forever
+        # chasing a buff that can never land.
+        if (hazard_on_player and self._hazard_tries < ABSORB_ATTEMPTS
+                and not s.get("adjacent_hostiles") and not s.get("near_hostiles")):
             score = _score(self.profile, "rest", 15, bonus, True)
             if score > 0:
+                self._hazard_tries += 1
                 candidates.append(("absorb_hazard", score, AgentAction("rest")))
 
         # ---- WEATHER CLEAR ----
@@ -566,12 +591,31 @@ class UniversalBrain(Brain):
                                     AgentAction("move", dx=step[0], dy=step[1])))
 
         # ---- Pick highest ----
+        # Candidates are kept on the brain so a harness can read what was decided and,
+        # more usefully, how close the runner-up was. A game with hard choices produces
+        # narrow margins often; a dominant strategy produces one wide margin every turn.
         if not candidates:
+            self._last_candidates, self._last_choice = [], None
             return AgentAction("wait")
 
         candidates.sort(key=lambda c: c[1], reverse=True)
-        winner = candidates[0][2]
+        self._last_candidates = candidates
 
+        # Walk the list in score order and take the first candidate that resolves to a
+        # real action. A candidate whose target turns out to be unreachable used to
+        # collapse the whole decision to `wait`, which handed the turn to the next-best
+        # option's worst case instead of to the next-best option.
+        for idx, (_label, _cand_score, cand) in enumerate(candidates):
+            act = self._resolve(game, actor, s, cand)
+            if act is not None:
+                self._last_choice = idx
+                return act
+
+        self._last_choice = None
+        return AgentAction("wait")
+
+    def _resolve(self, game, actor, s, winner):
+        """Turn a candidate payload into an AgentAction, or None if it cannot be acted on."""
         if isinstance(winner, tuple):
             kind = winner[0]
             if kind == "consumable":
@@ -605,16 +649,17 @@ class UniversalBrain(Brain):
                                 best, bd, bt = (x, y), d, step_toward_safe(game, actor, x, y)
                 if bt and bt != (0, 0):
                     return AgentAction("move", dx=bt[0], dy=bt[1])
-                return AgentAction("wait")
+                return None
             elif kind in ("salvage", "cache", "poi", "workspace", "recover"):
                 tx, ty = winner[1], winner[2]
+                # Arriving at a deployed sigil is the point of the recover candidate, so
+                # check it before pathing: standing on the tile yields no step.
+                if kind == "recover" and max(abs(actor.x - tx), abs(actor.y - ty)) <= 1:
+                    return AgentAction("recover")
                 step = step_toward(game, actor, tx, ty, safe=True)
                 if step != (0, 0):
-                    # If we arrive at a deployed sigil, recover it
-                    if kind == "recover" and max(abs(actor.x - tx), abs(actor.y - ty)) <= 1:
-                        return AgentAction("recover")
                     return AgentAction("move", dx=step[0], dy=step[1])
-                return AgentAction("wait")
+                return None
             elif kind == "toss_toward":
                 # Toss matter toward a hazard tile to draw enemies onto it
                 tx, ty = winner[1], winner[2]
@@ -624,9 +669,9 @@ class UniversalBrain(Brain):
                 dy = 1 if ty > py else (-1 if ty < py else 0)
                 if dx != 0 or dy != 0:
                     return AgentAction("toss", dx=dx, dy=dy)
-                return AgentAction("wait")
+                return None
             else:
-                return AgentAction("wait")
+                return None
 
         return winner
 

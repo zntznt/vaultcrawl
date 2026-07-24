@@ -2140,7 +2140,6 @@ class Game:
             heal_body(self.player, heal)
             tag = f"+{heal} HP"
             self.log(f"You rest ({tag}).")
-            self.absorb_aspect()
         # Emergency heal: spend 1 matter for +3 HP when below 50% and no hostiles near
         elif not near_hostile and self.player.hp * 100 < self.player.max_hp * 50:
             salv = self.system("salvage")
@@ -2150,6 +2149,10 @@ class Game:
                 bag.pay({richest: 1})
                 heal_body(self.player, 3)
                 self.log(f"You spend {richest} to staunch your wounds (+3 HP).")
+        # Absorbing a hazard aspect is about holding a tile, not about being wounded, so it
+        # counts every rest turn. Gating it on can_rest meant a rester at full HP never
+        # advanced the counter and could hold a tile forever for a buff that never came.
+        self.absorb_aspect()
         self.turn += 1
         self._tick_effects()
         self.enemies_act()
@@ -2930,12 +2933,15 @@ class Game:
         if self._rest_tile_turns < 3:
             return
 
-        weather = self.system("weather")
-        if weather is None:
-            self._rest_tile_turns = 0
-            return
-        props = getattr(weather, 'props', {})
-        tile_props = props.get(current_tile, set()) if isinstance(props, dict) else set()
+        # Any system that writes tile props can offer an aspect, not just weather. The
+        # agent's absorb-hazard candidate reads System.hazard_tiles across the whole stack,
+        # so reading only weather here made the two disagree: it would hold a reaction-laid
+        # acid tile waiting on a buff that only a weather tile could ever grant.
+        tile_props: set = set()
+        for sys_ in self.systems:
+            props = getattr(sys_, 'props', None)
+            if isinstance(props, dict):
+                tile_props |= set(props.get(current_tile, set()) or ())
         if not tile_props:
             self._rest_tile_turns = 0
             return
