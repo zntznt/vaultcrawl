@@ -18,6 +18,9 @@ from typing import Any
 
 from runtime.game import Game, load_manifest
 from runtime.sense import make_brain
+from runtime.pressure import (
+    DecisionLog, divergence_matrix, percentiles, persistence_fingerprint,
+)
 
 def _build_systems():
     """Fresh instances every call. These objects are stateful (sigil slots, faction
@@ -56,6 +59,8 @@ class RunResult:
     attractor_scores: dict = None
     narrative: str = ""
     metrics: dict = None
+    win_path: str = ""
+    pressure: dict = None
 
 
 def run_agent(world_json: str, agent_name: str,
@@ -89,6 +94,7 @@ def run_agent(world_json: str, agent_name: str,
     floors_cleared = 0
     turns_total = 0
     tracker = AttractorTracker()
+    decisions = DecisionLog()
 
     def bfs_step(level, start, goal, avoid=None):
         avoid = avoid or set()
@@ -128,6 +134,7 @@ def run_agent(world_json: str, agent_name: str,
                 break
 
             result = game.player.brain.decide(game, game.player)
+            decisions.observe(game, game.player.brain)
             if isinstance(result, tuple) and len(result) == 2:
                 result = AgentAction("move", dx=result[0], dy=result[1])
             ok = dispatch(game, result)
@@ -210,7 +217,21 @@ def run_agent(world_json: str, agent_name: str,
         attractor_scores=tracker.scores(),
         narrative=tracker.narrative(),
         metrics=_get_metrics(),
+        win_path=getattr(game, "win_path", ""),
+        pressure=decisions.summary(),
     )
+
+
+def _mean(xs) -> float:
+    xs = [x for x in xs]
+    return sum(xs) / len(xs) if xs else 0.0
+
+
+def _tally(xs) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for x in xs:
+        out[x or "unknown"] = out.get(x or "unknown", 0) + 1
+    return dict(sorted(out.items(), key=lambda kv: -kv[1]))
 
 
 def _get_metrics() -> dict | None:
@@ -292,7 +313,31 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
             "avg_turns": round(sum(turns) / n, 2) if n else 0,
             "avg_hp_ended": round(sum(hps) / n, 2) if n else 0,
             "deaths": deaths,
+            # Spread, not just the mean. Every aggregate above is an average, which is
+            # what let six profiles look distinct while making identical choices.
+            "floor_pct": percentiles(floors),
+            "turns_pct": percentiles(turns),
+            # Which of the four routes ended each win. A unanimous split is the finding.
+            "win_paths": _tally(r.win_path for r in runs if r.won),
         }
+
+        # Pressure: how forced were the decisions, and did the agent ever get hurt.
+        press = [r.pressure for r in runs if r.pressure]
+        if press:
+            label_share: dict[str, float] = {}
+            for p in press:
+                for lbl, share in p.get("label_share", {}).items():
+                    label_share[lbl] = label_share.get(lbl, 0.0) + share / len(press)
+            stats[name]["pressure"] = {
+                "label_share": dict(sorted(label_share.items(), key=lambda kv: -kv[1])[:8]),
+                "top_label_share": round(max(label_share.values()), 3) if label_share else 0.0,
+                "contested_share": round(_mean(p["contested_share"] for p in press), 3),
+                "uncontested_share": round(_mean(p["uncontested_share"] for p in press), 3),
+                "median_margin": round(_mean(p["median_margin"] for p in press), 2),
+                "avg_candidates": round(_mean(p["avg_candidates"] for p in press), 1),
+                "min_hp_pct": min(p["min_hp_pct"] for p in press),
+                "hurt_share": round(_mean(p["hurt_share"] for p in press), 3),
+            }
 
         # Attractor scores aggregation
         attractor_scores = {"industrial": [], "haunted": [], "companion_flux": [],
@@ -325,12 +370,20 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
             surv_curve[f] = sum(1 for r in runs if r.floor_reached >= f)
         survival[name] = surv_curve
 
+    shares = {name: s.get("pressure", {}).get("label_share", {})
+              for name, s in stats.items() if s.get("pressure")}
+
     output = {
         "world": world_json,
         "n_runs": n_runs,
         "max_floor": max_floor,
         "agent_stats": stats,
         "per_floor_survival": survival,
+        # Without this, no win rate here is comparable to any other: a clean state and a
+        # warm one are different experiments run by the same command.
+        "persistence": persistence_fingerprint(),
+        "hash_seed": os.environ.get("PYTHONHASHSEED", "random"),
+        "policy_divergence": {k: round(v, 3) for k, v in divergence_matrix(shares).items()},
     }
 
     out_path = Path(os.path.expanduser("~/.vaultcrawl/eval_stats.json"))
@@ -339,8 +392,34 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
         json.dump(output, fh, indent=2)
 
     _print_table(stats)
+    _print_pressure(stats, output["policy_divergence"])
     print(f"\nSaved → {out_path}")
     return output
+
+
+def _print_pressure(stats: dict[str, dict[str, Any]], divergences: dict[str, float]):
+    """The half of the report that says whether the choices were hard."""
+    header = (f"{'AGENT':<16} {'TOP CHOICE':<22} {'CONTEST':<9} {'MARGIN':<8} "
+              f"{'MIN HP':<8} {'HURT':<8} {'WIN PATHS'}")
+    print()
+    print(header)
+    print("-" * len(header))
+    for name, s in stats.items():
+        p = s.get("pressure")
+        if not p:
+            continue
+        top = next(iter(p["label_share"].items()), ("none", 0.0))
+        paths = ", ".join(f"{k} {v}" for k, v in s.get("win_paths", {}).items()) or "no wins"
+        print(f"{name:<16} {top[0] + ' ' + format(top[1], '.0%'):<22} "
+              f"{p['contested_share']:<9.0%} {p['median_margin']:<8.1f} "
+              f"{p['min_hp_pct']:<8} {p['hurt_share']:<8.0%} {paths}")
+
+    if divergences:
+        vals = sorted(divergences.values())
+        print(f"\npolicy divergence across profile pairs: "
+              f"min {vals[0]:.2f}  median {vals[len(vals)//2]:.2f}  max {vals[-1]:.2f}")
+        closest = min(divergences.items(), key=lambda kv: kv[1])
+        print(f"  most alike: {closest[0].replace('|', ' and ')} at {closest[1]:.2f}")
 
 
 def _print_table(stats: dict[str, dict[str, Any]]):

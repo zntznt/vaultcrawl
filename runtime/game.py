@@ -90,6 +90,9 @@ class Game:
         self.message_tags: list[str] = []
         self.alive = True
         self.won = False
+        # Which of the four routes actually ended the run. `won` alone is a bool, which is
+        # how a 90% win rate looked healthy while every single win was the same win.
+        self.win_path: str = ""
         self._resting = False
         self._consecutive_rest = 0
         self._tension: int = 0              # complacency counter — rises on idle, decays on action
@@ -1298,6 +1301,19 @@ class Game:
             self.log("The clearing air invites life back.")
 
     # ---- floor lifecycle ----
+    def _win(self, path: str):
+        """Record a victory and which of the four routes produced it.
+
+        escape      descended past the final floor without engaging the warden
+        boss_killed felled it
+        commune     communed with it
+        diplomacy   swayed it in a parley
+        """
+        if self.won:
+            return
+        self.won = True
+        self.win_path = path
+
     def descend(self):
         if self.sandbox:
             t = self.level.tiles[self.player.y][self.player.x]
@@ -1316,7 +1332,7 @@ class Game:
         self.floor += 1
         # Victory: descending past the final boss without killing it = escape victory
         if self.floor > self.max_floor and not self.won:
-            self.won = True
+            self._win("escape")
             self.log("You slip past the final warden and into the deep quiet. You escape."
                      " You win."
                      )
@@ -1740,7 +1756,7 @@ class Game:
                       and a.source == self.final_boss_source), None)
         if boss and max(abs(boss.x - p.x), abs(boss.y - p.y)) <= 1:
             self.actors.remove(boss)
-            self.won = True
+            self._win("commune")
             self.log("You commune with the deepest thought in the vault. You win.")
             return True
 
@@ -1973,7 +1989,7 @@ class Game:
             self.log(f"{target.name} regards you with recognition.")
             target.allegiance = "npc"
             if getattr(target, 'is_boss', False) and target.source == self.final_boss_source:
-                self.won = True
+                self._win("diplomacy")
                 self.log("The final boss lays down its arms. You have won through diplomacy.")
         elif choice == "flee":
             if salv and salv.inventory(self).total() >= 2:
@@ -2703,7 +2719,7 @@ class Game:
         if actor in self.actors:
             self.actors.remove(actor)
         if getattr(actor, 'is_boss', False) and actor.source == self.final_boss_source and not self.won:
-            self.won = True
+            self._win("boss_killed")
             self.log("The deepest thought in the vault falls silent. You win.")
         if getattr(actor, 'is_player', False):
             try:
@@ -3097,7 +3113,7 @@ class Game:
                 chain.hp -= 1
                 self.log(f"Static arcs from {dfn.name} to {chain.name}.")
                 if chain.hp <= 0 and getattr(chain, 'is_boss', False) and chain.source == self.final_boss_source:
-                    self.won = True
+                    self._win("boss_killed")
                     self.kill(chain, "static discharge")
                     self.log("The deepest thought in the vault falls silent. You win.")
         pname = {"head": "head", "torso": "chest", "legs": "legs"}.get(part, part)
@@ -3120,7 +3136,7 @@ class Game:
             return
         # a non-player actor died
         if dfn.is_boss and dfn.source == self.final_boss_source:
-            self.won = True
+            self._win("boss_killed")
             self.log("The deepest thought in the vault falls silent. You win.")
         # friend_died trigger
         from .sense import apply_trigger as _trig
