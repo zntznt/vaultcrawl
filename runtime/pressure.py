@@ -74,6 +74,11 @@ class EmergenceLog:
             "verb_success": {k: round(self.verb_ok.get(k, 0) / n, 3)
                              for k, n in sorted(attempts.items()) if n},
             "broken_verbs": self.broken_verbs(),
+            # Raw counts, so an aggregate over several runs can judge on the totals rather
+            # than on the union of per-run verdicts. A verb that fails every attempt in one
+            # unlucky run is not a broken verb.
+            "verb_ok": dict(self.verb_ok),
+            "verb_fail": dict(self.verb_fail),
         }
 
 

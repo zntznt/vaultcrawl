@@ -347,7 +347,19 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
         # Emergence: how much of the stack participates, and is any verb simply broken.
         emg = [r.emergence for r in runs if r.emergence]
         if emg:
-            broken = sorted({v for e in emg for v in e.get("broken_verbs", [])})
+            # Judge on the summed totals, not the union of per-run verdicts. A verb that
+            # happens to fail every attempt in one unlucky run is not a broken verb; one
+            # that never succeeds across the whole batch is.
+            ok_all: dict[str, int] = {}
+            fail_all: dict[str, int] = {}
+            for e in emg:
+                for k, v in (e.get("verb_ok") or {}).items():
+                    ok_all[k] = ok_all.get(k, 0) + v
+                for k, v in (e.get("verb_fail") or {}).items():
+                    fail_all[k] = fail_all.get(k, 0) + v
+            from runtime.pressure import MIN_ATTEMPTS_TO_JUDGE
+            broken = sorted(k for k, n in fail_all.items()
+                            if n >= MIN_ATTEMPTS_TO_JUDGE and not ok_all.get(k))
             kinds: dict[str, int] = {}
             for e in emg:
                 for k, c in e.get("event_counts", {}).items():

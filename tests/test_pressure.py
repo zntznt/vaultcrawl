@@ -525,3 +525,197 @@ def test_every_profile_starts_with_a_way_out():
         if fight < 0:
             assert "Phase" in abilities, (
                 name, "a profile that refuses combat needs the panic escape", abilities)
+
+
+def test_the_profile_that_shields_has_something_to_shield_with():
+    """`shield` is exploiter's highest weight by a wide margin, and its kit gave it two
+    escape sigils and no defensive stat at all. It won 0 of 8 run seeds. Swept: +0 DEF
+    wins 0, +1 wins 3, +2 wins 5.
+
+    The general property, not the one profile: a profile whose top weight is a defensive
+    verb must not start with zero of that stat, or the weight is decoration.
+    """
+    from runtime.stack import build_systems
+    from runtime.agent import PROFILES
+    for name, weights in PROFILES.items():
+        top = max(weights, key=lambda k: weights[k])
+        if top != "shield":
+            continue
+        g = Game(load_manifest("examples/world.json"), systems=build_systems())
+        base = getattr(g.player, "defense", 0)
+        g.starting_kit(name)
+        assert getattr(g.player, "defense", 0) > base, (
+            name, "shields hardest, starts with no defence")
+
+
+def test_the_flooded_shape_stays_inside_its_region():
+    """`_flood` expanded its frontier through any neighbour, so the water blob walked off
+    the region and off the map onto the open integer plane. `seen` grew without bound and
+    `body` counts only eligible cells, so the loop did not terminate in any useful time:
+    `Game(sandbox=True)` on the shipped example world ran past ten minutes and ate enough
+    memory to get the test suite OOM-killed.
+
+    Asserted structurally rather than by wall clock, so the test does not depend on how
+    fast the machine is.
+    """
+    import random
+    from runtime.arch.areakinds import _flood, FLOOR
+
+    w = h = 40
+    tiles = [[FLOOR for _ in range(w)] for _ in range(h)]
+    # one small region in the corner, with a lot of empty map around it to escape into
+    cells = [(x, y) for x in range(2, 12) for y in range(2, 12)]
+    outside = {(x, y) for x in range(w) for y in range(h)} - set(cells)
+    _flood(tiles, cells, random.Random(1), w, h)
+    escaped = [(x, y) for (x, y) in outside if tiles[y][x] != FLOOR]
+    assert not escaped, ("the blob wrote outside its own region", escaped[:5])
+
+
+def test_a_sandbox_world_can_actually_be_built():
+    """The end of the same bug. Sandbox is the default interactive mode and it could not
+    construct examples/world.json at all."""
+    from runtime.stack import build_systems
+    g = Game(load_manifest("examples/world.json"), systems=build_systems(), sandbox=True)
+    assert g.level is not None and g.player is not None
+
+
+# ---- C: the chemistry is combinatorial ---------------------------------------------
+
+def _reactions_game():
+    from runtime.reactions import ReactionSystem
+    return Game(load_manifest("examples/world.json"), systems=[ReactionSystem()])
+
+
+def test_element_pairs_actually_interact():
+    """Two of fifteen possible pairs did anything. Water did not put out fire, and acid,
+    despite the module docstring, corroded nothing."""
+    from runtime.reactions import _PAIR_REACTIONS
+    assert len(_PAIR_REACTIONS) + 1 >= 8, (  # +1 for the charged/wet chain component
+        "at least eight of fifteen element pairs must interact", len(_PAIR_REACTIONS))
+    for pair in _PAIR_REACTIONS:
+        assert len(pair) == 2, "keys are unordered pairs, so the table cannot be asymmetric"
+
+
+def test_water_puts_out_fire():
+    g = _reactions_game()
+    r = g.system("reactions")
+    pos = (g.player.x + 6, g.player.y + 6)
+    r.props[pos] = {"fire", "wet"}
+    r._resolve_pairs(g)
+    assert "fire" not in r.props.get(pos, set()), "water must put out fire"
+
+
+def test_ice_smothers_fire_and_leaves_water():
+    g = _reactions_game()
+    r = g.system("reactions")
+    pos = (g.player.x + 6, g.player.y + 6)
+    r.props[pos] = {"fire", "ice"}
+    r._resolve_pairs(g)
+    assert r.props.get(pos) == {"wet"}, r.props.get(pos)
+
+
+def test_pair_resolution_is_order_independent():
+    """Keyed by frozenset, so there is no 'which one did we see first'."""
+    from runtime.reactions import _PAIR_REACTIONS
+    for pair in _PAIR_REACTIONS:
+        a, b = tuple(pair)
+        outs = []
+        for order in ({a, b}, {b, a}):
+            g = _reactions_game()
+            r = g.system("reactions")
+            pos = (g.player.x + 6, g.player.y + 6)
+            r.props[pos] = set(order)
+            r._resolve_pairs(g)
+            outs.append(frozenset(r.props.get(pos, frozenset())))
+        assert outs[0] == outs[1], (pair, outs)
+
+
+def test_ice_and_sacred_can_actually_be_dealt():
+    """Only fire, shock and acid dealt damage, so a flammable creature could never meet
+    the 2x from its opposite and an acid one could never meet sacred: none of the three
+    opposite pairs had both directions reachable."""
+    from runtime.reactions import _CHILL_DAMAGE, _ELEMENT_OPPOSITE
+    assert _CHILL_DAMAGE > 0, "ice has to bite for the frozen/flammable pair to mean anything"
+    damaging = {"flammable", "charged", "corrosive", "frozen", "sacred"}
+    pairs = {frozenset({a, b}) for a, b in _ELEMENT_OPPOSITE.items()}
+    live = sum(1 for p in pairs if p <= damaging)
+    assert live >= 2, ("at least two opposite pairs must be fully reachable", live)
+
+
+# ---- C3: fire travels ---------------------------------------------------------------
+
+def test_a_creature_standing_in_fire_catches():
+    g = _reactions_game()
+    r = g.system("reactions")
+    foe = next(a for a in g.actors if a.allegiance == "monster")
+    foe.hp = foe.max_hp = 99
+    r.props.clear()
+    r.ignite(foe.x, foe.y, life=8)
+    for _ in range(6):
+        r.on_player_act(g)
+        if getattr(foe, "_burning", 0):
+            return
+    raise AssertionError("a creature standing in flame must eventually catch")
+
+
+def test_a_burning_creature_sets_light_to_ground_nobody_touched():
+    """The whole point of C3. Every ignite call site writes to a tile, never an actor, so
+    the chemistry was one step deep: a thing could burn but could not carry the fire."""
+    g = _reactions_game()
+    r = g.system("reactions")
+    foe = next(a for a in g.actors if a.allegiance == "monster")
+    foe.hp = foe.max_hp = 99
+    r.props.clear()
+    foe._burning = 5
+    lit = []
+    for _ in range(3):
+        foe.x += 1
+        r.props.pop((foe.x, foe.y), None)
+        r.on_player_act(g)
+        lit.append("fire" in r.props.get((foe.x, foe.y), set()))
+    assert all(lit), ("a burning creature leaves fire behind it", lit)
+
+
+def test_water_puts_a_burning_creature_out():
+    g = _reactions_game()
+    r = g.system("reactions")
+    foe = next(a for a in g.actors if a.allegiance == "monster")
+    foe.hp = foe.max_hp = 99
+    r.props.clear()
+    foe._burning = 3
+    r.props[(foe.x, foe.y)] = {"wet"}
+    r.on_player_act(g)
+    assert not getattr(foe, "_burning", 0), "standing in water puts you out"
+
+
+def test_burning_the_player_out_actually_kills():
+    """Hazard tile damage is capped and can never kill, so it can leave the player on 0 HP
+    and still 'alive'. Burning is not capped, so it has to route through the death path
+    or the same hole opens wider."""
+    g = _reactions_game()
+    r = g.system("reactions")
+    r.props.clear()
+    g.player.hp = 1
+    g.player._burning = 3
+    r.props.pop((g.player.x, g.player.y), None)
+    r.on_player_act(g)
+    assert not g.alive, "burning to zero has to end the run"
+    assert g.player.hp <= 0
+
+
+def test_burning_is_bounded():
+    """Fire on actors must not be a new runaway. It burns out on its own."""
+    from runtime.reactions import BURN_TURNS
+    g = _reactions_game()
+    r = g.system("reactions")
+    foe = next(a for a in g.actors if a.allegiance == "monster")
+    foe.hp = foe.max_hp = 999
+    r.props.clear()
+    foe._burning = BURN_TURNS
+    for _ in range(BURN_TURNS + 2):
+        # keep it off burning ground so only the status matters
+        foe.x += 1
+        r.props.pop((foe.x, foe.y), None)
+        r.props.pop((foe.x + 1, foe.y), None)
+        r.on_player_act(g)
+    assert getattr(foe, "_burning", 0) == 0, "burning has to end by itself"

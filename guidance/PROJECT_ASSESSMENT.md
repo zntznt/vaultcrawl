@@ -987,3 +987,178 @@ per profile against three labels owning 80% of turns at the start.
 
 The one profile change did not disturb any other: artisan, emergent, exploiter, seeker and
 whisper report numbers identical to the previous run.
+
+## Tranche C: the chemistry is combinatorial
+
+Six tile props existed and two of the fifteen possible pairs did anything: fire was quenched by
+adjacent ice, and charged plus wet made a live chain. Water did not put out fire. Acid, despite
+the module docstring saying it corroded, corroded nothing. Ice and hallowed ground dealt no
+damage at all, which made half the elemental affinity table unreachable. And nothing carried an
+element: every `ignite()` and `add_prop()` call in the codebase writes to a *tile*, never to an
+actor, so the chemistry was strictly one step deep.
+
+### C1. A pair table
+
+`_PAIR_REACTIONS` in `reactions.py` is keyed by `frozenset`, so the rule is symmetric by
+construction and order cannot matter. Same-tile only, which keeps it something a player can
+predict by looking at one square.
+
+| pair | result |
+|---|---|
+| fire + wet | both spent, steam |
+| fire + ice | fire and ice spent, tile left wet |
+| fire + sacred | fire spent, hallowed ground will not burn |
+| acid + wet | acid runs off |
+| acid + ice | acid crusts over, both spent |
+| acid + sacred | opposites, both unmade |
+| charged + sacred | the charge earths itself |
+| charged + wet | the live chain, unchanged (a property of a component, not a tile) |
+
+**8 of 15 pairs interact, from 2.** That is the plan's target, hit exactly. The seven that remain
+inert are the ones with no physical story worth inventing.
+
+### C2. Ice and hallowed ground bite
+
+Ice now deals `_CHILL_DAMAGE` to the player and to creatures, scaled by affinity. Hallowed ground
+now damages what it is the opposite of rather than healing it: it used to mend corrosive natives
+too, which made `sacred` the one element that could not matter to anything.
+
+Measured across six home elements and four hazard columns, **20 of 24 affinity cells now deal
+damage**. The four that do not are exactly the correct self-immunities, so that is the ceiling.
+All three opposite pairs are now live in both directions, from one.
+
+### C3. Actors carry fire
+
+The seam that turns tile-local chemistry into propagating chemistry. A creature standing in
+flame catches at `BURN_CATCH_P`; while alight it takes damage scaled by its own affinity and
+**sets light to the ground it walks over**; standing in water or on ice puts it out. Verified: a
+burning creature moved three tiles and left fire on all three.
+
+It is deliberately subcritical, and measured as such rather than argued: a burning creature
+parked on ground it keeps re-lighting burns out and does not restart a self-feeding fire. Peak
+fire tiles over 300 turns with an immortal creature standing in its own flame: 2.
+
+One bug came out of writing it. Hazard tile damage is capped and clamped so the environment can
+never kill the player, which means it can leave the player on 0 HP and still `alive`. Burning is
+not capped, so a burning player was walking around dead. It now routes through the same death
+path the bleeding tick uses, and a test pins it.
+
+### What it cost, measured
+
+Exploiter went from 1 win in 8 to 0 in 8. Isolating it by running the profile with and without
+the tranche: **seven of the eight run seeds are identical outcomes**, and one flipped from a
+floor-26 win to a floor-18 death. That run died to a monster with an average HP of 81.6, not to
+the chemistry. Tranche C perturbed a seeded stream on a knife-edge run. The honest reading is
+not that the chemistry is too harsh, it is that exploiter had no headroom to lose.
+
+## Exploiter shielded hardest and had nothing to shield with
+
+The same shape as cartographer, one profile over. `shield` is exploiter's highest weight by a
+wide margin at 15, and its starting kit gave it two escape sigils and **no defensive stat at
+all**. It took the most damage per floor of any profile, ground the middle floors, and won 0 of
+8 run seeds.
+
+Swept over eight run seeds:
+
+| DEF bonus | wins |
+|---|---|
+| +0 | 0 of 8 |
+| +1 | **3 of 8** |
+| +2 | 5 of 8 |
+
+Taking +1 rather than +2: 5 of 8 puts the fight-first profile above the target band and second
+overall, which is not what a balance fix should produce. +1 clears "never wins" and leaves
+emergent at +2 as the defensive profile. Starting state, which is the Berlin-legal lever; nothing
+branches on the profile at decision time. The test generalises it: a profile whose top weight is
+a defensive verb must not start with zero of that stat, or the weight is decoration.
+
+The change is isolated. Artisan, cartographer, emergent, seeker and whisper report byte-identical
+outcomes across all eight seeds before and after.
+
+## Post-C baseline
+
+8 runs per agent, clean state, `PYTHONHASHSEED=0`:
+
+| agent | win rate | avg floor | contested | labels | win paths |
+|---|---|---|---|---|---|
+| artisan | 50% | 20.4 | 29% | 29 | commune 2, escape 2 |
+| cartographer | 50% | 18.1 | 70% | 25 | escape 3, commune 1 |
+| emergent | 12.5% | 11.9 | 31% | 26 | commune 1 |
+| exploiter | 37.5% | 20.4 | 23% | 28 | commune 3 |
+| seeker | 50% | 21.1 | 41% | 29 | commune 3, boss_killed 1 |
+| whisper | 87.5% | 24.0 | 36% | 28 | escape 5, commune 2 |
+
+**Aggregate 23 of 48, 47.9%, inside the 40-60% band.** No verb has a 100% failure rate. All three
+victory routes now appear in a single batch: escape 10, commune 12, and the first `boss_killed`
+win the harness has ever recorded.
+
+A measurement correction is owed here. The previous pass reported `negotiate` as a broken verb.
+It was not: the aggregator took the **union of per-run verdicts**, so a verb that happened to
+fail every attempt in one unlucky run was reported as globally broken. `negotiate` succeeds 20.9%
+of the time in the very run that flagged it. The detector now sums attempts across runs and
+judges on the totals, and `runtime/pressure.py` exposes the raw `verb_ok`/`verb_fail` counts so
+an aggregate can do that.
+
+## Still open after C
+
+- **Emergent wins 1 of 8** and averages floor 11.9 with 24.8 kills, the most of any profile by a
+  distance. It is the next profile with the cartographer/exploiter shape: it fights everything
+  and dies in the first third. It has not been swept.
+- **Emergent is the next profile to sweep** (see above).
+- **Tranche D is untouched.** The runaway loop is still open: `to_upheaval_events` has no caller,
+  grave escalation still cannot escalate (`game.py:455`), three of six attractor scores are
+  structurally 0.0, and no feedback loop in the codebase has gain above 1.
+- **The eighteen failing tests are unchanged.** They fail identically on `HEAD`, so nothing in
+  this pass caused any of them. They are the body-parts, commune, becalm, forge, machines, qud,
+  salvage, felt and ux-rest failures already recorded under F3. Spot-checked one of them,
+  `test_ux.py::test_rest_camp`, against the commit before any of this work began: it fails there
+  too, on a fixture that parks the player next to a hostile and then expects an uninterrupted
+  camp.
+
+## The sandbox could not build the world it ships with
+
+Found while trying to run the suite, and worth its own section because it is the most serious
+defect in this document. `python3 -m pytest tests/ -q` did not finish. It got OOM-killed twice
+and then sat on one test for over ten minutes on an idle four-core machine with 15 GB free.
+
+The stack, sampled with `faulthandler`:
+
+```
+runtime/arch/areakinds.py, line 78 in _flood
+runtime/game.py, line 776 in _apply_area_shapes
+runtime/game.py, line 699 in _build_sandbox
+runtime/game.py, line 173 in __init__
+```
+
+`_flood` grows a blob of water from a seed cell. It expanded its frontier through **any**
+neighbour:
+
+```python
+for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+    n = (x + dx, y + dy)
+    if n not in seen and rng.random() < 0.75:
+        seen.add(n); frontier.append(n)
+```
+
+Nothing bounds `n` to the region, or to the map. The blob walks off onto the open integer plane,
+`seen` grows without bound, and at a 0.75 expansion chance in four directions the frontier gains
+about three entries per pop, so it never empties. The loop's only other exit is `body` reaching
+20 to 60, and `body` counts only cells that are inside the region and still floor. Once the
+frontier is mostly off-map, that stops advancing.
+
+One clause fixes it: expand only into `cellset`. Then `seen` is bounded by the region and the
+loop has to terminate.
+
+**`Game(examples/world.json, sandbox=True)` went from not finishing in ten minutes to 0.6
+seconds. The full pytest suite went from unrunnable to 62 seconds, 265 collected, 247 passed.**
+
+This is not a small bug in a corner. `runtime/arch/` is live, sandbox is the **default
+interactive mode**, and the effect was that the game could not construct the world in
+`examples/`. It went unnoticed because the interactive entry point passes
+`site_cache=world.json.site.json` and there is a pre-grown cache file checked in beside the
+world, so play loads the answer instead of computing it. Every test constructs `Game(sandbox=True)`
+without a cache and paid the real cost. Two tests now pin it: one structural (the blob may not
+write outside its own region), one end to end (a sandbox world can be built).
+
+It also revises F3. The suite was never "45 of 65 modules, 16 failing". It was: pytest collects
+265 tests, and it could not get through them.

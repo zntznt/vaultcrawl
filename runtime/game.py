@@ -257,6 +257,21 @@ class Game:
         elif agent_name == "exploiter":
             if salv:
                 salv.inventory(self).add({"brass": 1}, quality=2)
+            # +1 DEF, for the same reason cartographer got a sigil.
+            #
+            # Exploiter's highest weight by a wide margin is `shield` (15), and it was the
+            # only profile whose kit gave it nothing to shield with: two escape sigils and
+            # no defensive stat at all. It ground the middle floors, took the most damage
+            # per floor of any profile, and won 0 of 8 run seeds.
+            #
+            # Swept over eight run seeds: +0 DEF wins 0, +1 wins 3, +2 wins 5. Taking +1
+            # rather than +2 because 5 of 8 puts it above the target band and would make
+            # the fight-first profile the second strongest; +1 clears "never wins" without
+            # that. It also leaves emergent at +2 as the defensive profile.
+            #
+            # Starting state, which is the Berlin-legal lever. Nothing branches on the
+            # profile at decision time.
+            self.player.defense = getattr(self.player, "defense", 0) + 1
             sigs = self.system("sigils")
             if sigs and sigs.slots:
                 for s in sigs.slots:
