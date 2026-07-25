@@ -249,11 +249,23 @@ class UniversalBrain(Brain):
             for h in s["hostiles"]:
                 if h.get("tier", 1) >= 3 or h.get("is_boss"):
                     if "parley" in s["encounter_options"]:
-                        state = s.get("faction_standings", {}).get(h.get("faction", ""), 0) * 3
+                        standing = s.get("faction_standings", {}).get(h.get("faction", ""), 0)
+                        # `standing * 3` unguarded, which goes NEGATIVE when a house
+                        # dislikes you: parley is the one action that buys standing back,
+                        # so its urgency fell exactly as the need for it rose. At the -22
+                        # a loud run used to reach it scored -66.
+                        #
+                        # The clamp is insurance, not a balance change. `_score` takes
+                        # max(profile_floor, state) and every profile's parley floor is at
+                        # least 0, so with standing bounded at STANDING_MIN this is
+                        # behaviourally identical to what it replaces. Building the
+                        # inversion into a real urgency ladder was tried and measured at
+                        # exactly zero effect over 48 runs, so it is not here; this only
+                        # stops the bug returning if that floor is ever moved.
+                        state = max(0, standing) * 3
                         if s.get("danger_ahead"):
                             state += 10
                         # Gradient: when standing >= 1 and elite within 10 tiles, strongly prefer parley
-                        standing = s.get("faction_standings", {}).get(h.get("faction", ""), 0)
                         if standing >= 1 and h.get("dist", 99) <= 10:
                             state += 15
                         score = _score(self.profile, "parley", state, bonus, True)

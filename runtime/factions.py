@@ -56,6 +56,8 @@ LOUD_CAUSES = ("melee", "sigil")  # heard by the faction; environment kills are 
 #   4. A hard ceiling, so a player who does none of the above meets something finite.
 PURSUIT_MAX = 4          # ceiling on how deep a grudge can get
 PURSUIT_DECAY = 1        # per floor spent out of that house's country
+STANDING_THAW = 1        # hostility recovered per floor spent out of that country
+STANDING_MIN = -2        # how far heard kills can sink you: -3 is where healing stops
 _PURSUIT_FLOOR_ALERT = 2  # the alert threshold can never fall below this
 
 # faction standing perks — ranked unlocks from reputation thresholds
@@ -242,7 +244,21 @@ class FactionSystem(System):
         fac = self.faction_of(getattr(enemy, "source", ""))
         if fac:
             self.disturbance[fac] = self.disturbance.get(fac, 0) + 1
-            self.standing[fac] = self.standing.get(fac, 0) - 1
+            # Bottomed out, because this is the ratchet.
+            #
+            # Standing fell 1 per heard kill with nothing underneath it. Measured at end of
+            # run, a loud profile finished at -10 to -22 off ~135 heard kills while a quiet
+            # one sat near 0. `rest_modifier` returns 0 below standing -3, so past that the
+            # player cannot heal by resting at all: kill loudly, lose the heal, have to
+            # kill to survive. Probed by removing the gate outright, the profile that lives
+            # in that state went from 1 win in 8 to 5, and from floor 15 to floor 22, so
+            # this is the constraint and not a theory about one.
+            #
+            # STANDING_MIN keeps the penalty and removes the lockout: at the floor a rest
+            # still restores 1 against a friendly 3, so being hated costs two thirds of the
+            # heal rather than all of it. Same shape as the pursuit decay in D4, which is a
+            # steep loop given a terminating condition rather than a cap.
+            self.standing[fac] = max(STANDING_MIN, self.standing.get(fac, 0) - 1)
             s = self.standing[fac]
             game.emit("standing_changed", faction=fac, standing=s)
             # antagonizing a faction pleases everyone who already opposes it
@@ -288,6 +304,27 @@ class FactionSystem(System):
         for fac in list(self.pursuit.keys()):
             if fac != here and self.pursuit[fac] > 0:
                 self.pursuit[fac] = max(0, self.pursuit[fac] - PURSUIT_DECAY)
+
+        # A grudge fades the same way the pursuit does, and for the same reason.
+        #
+        # Standing had no floor and no decay: it fell 1 per heard kill, forever. Measured
+        # at end of run, a loud profile finished at standing -10 to -22 while a quiet one
+        # sat near 0. That is not a difficulty curve, it is a one-way ratchet, and it is
+        # load-bearing in the worst way, because `rest_modifier` returns 0 below standing
+        # -3. Past that point the player cannot heal by resting in that house's country at
+        # all, so the loop closes: kill loudly, lose standing, lose healing, have to kill
+        # to survive, lose more standing. Gain above 1 and no exit.
+        #
+        # Giving the faction's pursuit a decay and not giving reputation one was the
+        # asymmetry. Both now cool while you are somewhere else. Hostility only: a house
+        # forgetting it hates you is a grudge fading, and it is the exit that makes the
+        # escalation survivable. A house forgetting it LIKES you would be a different rule
+        # and would quietly tax the diplomatic route, so it is not made here.
+        for fac in list(self.standing.keys()):
+            if fac != here and self.standing[fac] < 0:
+                self.standing[fac] = min(0, self.standing[fac] + STANDING_THAW)
+                game.emit("standing_changed", faction=fac,
+                          standing=self.standing[fac], cause="time")
 
         # --- Escalation: a sufficiently disturbed faction sends hunters ---
         floor_tier = min(5, 1 + game.floor // 4)

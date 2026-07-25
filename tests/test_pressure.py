@@ -995,3 +995,195 @@ def test_pursuit_reads_no_profile():
     code = _code_only(FactionSystem.on_floor_enter)
     for forbidden in ("brain", "profile", "artisan", "whisper", "_agent_name"):
         assert forbidden not in code, f"on_floor_enter must not branch on {forbidden}"
+
+
+# ---- the rest weight is decoration on every profile ----------------------------------
+
+def test_the_rest_weight_never_decides_whether_to_rest():
+    """`rest` urgency is (100 - hp_pct) // 3, so inside the window where the branch is even
+    reachable (hp below 70) it runs 10 to 30. Every profile's `rest` floor is at most 5, and
+    the score is max(floor, urgency), so for the REST candidate the floor never once decides
+    anything.
+
+    It is not a dead weight though, and assuming so is a trap: `clear_weather` and
+    `absorb_hazard` score off the same `rest` key with much lower urgencies, so the floor is
+    live there. Tuning `rest` changes what the agent does about weather and hazard tiles,
+    not how often it heals. A sweep of exploiter's rest floor from 3 to 5 changed its runs
+    for exactly this reason and moved its healing not at all.
+    """
+    from runtime.agent import PROFILES
+    lowest_rest_urgency = (100 - 69) // 3       # the least urgent reachable heal
+    for name, weights in PROFILES.items():
+        floor = weights.get("rest", 0)
+        assert floor < lowest_rest_urgency, (
+            name, "a rest floor above the minimum urgency would finally decide a heal; if "
+                  "that is intended, change this test alongside the sweep that proves it",
+            floor, lowest_rest_urgency)
+    # and the other two users of the key, where the same floor genuinely competes
+    weather_urgency_at_full_hp = 3
+    assert any(w.get("rest", 0) > weather_urgency_at_full_hp for w in PROFILES.values()), (
+        "the rest key is shared with clear_weather; if no profile's floor clears its "
+        "urgency the key really is dead and the sharing should go")
+
+
+def test_shield_outbids_healing_only_in_a_narrow_band():
+    """Exploiter's defining weight is `shield` at 15, and shield's own urgency is 8 or 12,
+    so unlike `rest` it IS live and it is the dominant term.
+
+    The band where that matters is narrower than it looks. Rest scores (100 - hp) // 3, so
+    a flat 15 beats it only while HP is above 55 percent, and the two tie exactly at 55.
+    Below that, healing wins on urgency alone. So shield delays the first heal by a slice
+    of the HP bar rather than replacing healing outright, which is why the profile's
+    survivability does not move when the rest weight is tuned.
+
+    Berlin: this is a preference, not a lock. The test pins where the crossover sits, so a
+    change of character shows up as a failing test instead of a silent regression.
+    """
+    from runtime.agent import PROFILES
+    ex = PROFILES["exploiter"]
+
+    def rest_at(hp_pct):
+        return max(ex.get("rest", 0), (100 - hp_pct) // 3)
+    shield = max(ex.get("shield", 0), 12)
+
+    assert shield > rest_at(60), ("shield leads while barely hurt", shield, rest_at(60))
+    assert shield == rest_at(55), ("and ties at the crossover", shield, rest_at(55))
+    assert shield < rest_at(45), ("healing takes over once it is urgent",
+                                  shield, rest_at(45))
+
+
+# ---- the player side of the escalation loop ------------------------------------------
+
+def test_hostility_thaws_while_you_are_elsewhere():
+    """Standing had no floor and no decay: it fell 1 per heard kill, forever. Measured at
+    end of run, a loud profile finished at -10 to -22 while a quiet one sat near 0.
+
+    That is load-bearing, because `rest_modifier` returns 0 below standing -3, so past
+    that point resting in that house's country restores nothing at all. Kill loudly, lose
+    standing, lose healing, have to kill to survive: gain above 1 and no exit. D4 gave the
+    faction's pursuit a decay and left reputation ratcheting, which was the asymmetry.
+    """
+    from runtime.factions import FactionSystem, STANDING_THAW
+    g = Game(load_manifest("examples/world.json"), systems=[FactionSystem()])
+    fcs = g.system("factions")
+    region = g.region_for(g.floor) or {}
+    here = region.get("factionId") or g._region_faction.get(region.get("id", ""), "")
+    other = next((f for f in fcs.standing if f != here), None)
+    if other is None:
+        return
+    fcs.standing[other] = -8
+    fcs.on_floor_enter(g)
+    assert fcs.standing[other] == -8 + STANDING_THAW, (
+        "a house you are nowhere near stops actively hating you", fcs.standing[other])
+
+
+def test_the_thaw_stops_at_neutral_and_does_not_touch_goodwill():
+    """Hostility fading is the exit that makes the escalation survivable. Goodwill fading
+    would be a different rule that quietly taxes the diplomatic route, so it is not made."""
+    from runtime.factions import FactionSystem
+    g = Game(load_manifest("examples/world.json"), systems=[FactionSystem()])
+    fcs = g.system("factions")
+    region = g.region_for(g.floor) or {}
+    here = region.get("factionId") or g._region_faction.get(region.get("id", ""), "")
+    others = [f for f in fcs.standing if f != here][:2]
+    if len(others) < 2:
+        return
+    fcs.standing[others[0]] = 0
+    fcs.standing[others[1]] = 5
+    for _ in range(4):
+        fcs.on_floor_enter(g)
+    assert fcs.standing[others[0]] == 0, "neutral is the ceiling of the thaw"
+    assert fcs.standing[others[1]] == 5, "earned goodwill is not eroded by time"
+
+
+def test_standing_does_not_thaw_where_you_are_standing():
+    """The house whose country you are in is watching. Leaving is the exit, and it has to
+    cost something or it is not one."""
+    from runtime.factions import FactionSystem
+    g = Game(load_manifest("examples/world.json"), systems=[FactionSystem()])
+    fcs = g.system("factions")
+    region = g.region_for(g.floor) or {}
+    here = region.get("factionId") or g._region_faction.get(region.get("id", ""), "")
+    if not here:
+        return
+    fcs.standing[here] = -6
+    fcs.on_floor_enter(g)
+    assert fcs.standing[here] == -6, "standing in their country, they keep their grudge"
+
+
+def test_being_hated_still_costs_the_heal():
+    """The thaw must not quietly repeal the rule it is an exit from."""
+    from runtime.factions import FactionSystem
+    g = Game(load_manifest("examples/world.json"), systems=[FactionSystem()])
+    fcs = g.system("factions")
+    region = g.region_for(g.floor) or {}
+    fid = region.get("factionId") or g._region_faction.get(region.get("id", ""), "")
+    if not fid:
+        return
+    fcs.standing[fid] = -4
+    assert fcs.rest_modifier(g) == 0, "deep hostility still means no rest here"
+
+
+def test_the_thaw_reads_no_profile():
+    """Berlin: it is the same clock for everyone, and it lands hardest on whoever has
+    spent the most reputation, which is a consequence of play and not of identity."""
+    from runtime.factions import FactionSystem
+    code = _code_only(FactionSystem.on_floor_enter)
+    for forbidden in ("brain", "profile", "artisan", "whisper", "_agent_name"):
+        assert forbidden not in code, f"on_floor_enter must not branch on {forbidden}"
+
+
+def test_heard_kills_cannot_sink_you_past_the_heal():
+    """The ratchet, and the constraint that actually bound the loud profile.
+
+    Standing fell 1 per heard kill with nothing underneath it: measured at end of run, a
+    loud profile finished at -10 to -22 off about 135 heard kills. `rest_modifier` returns
+    0 below -3, so past that point resting restores nothing and the loop closes on itself.
+    Probed by removing the gate outright, the profile living in that state went from 1 win
+    in 8 to 5. The floor keeps the penalty and removes the lockout.
+    """
+    from runtime.factions import FactionSystem, STANDING_MIN
+    g = Game(load_manifest("examples/world.json"), systems=[FactionSystem()])
+    fcs = g.system("factions")
+    foe = next((a for a in g.actors if a.allegiance == "monster"
+                and fcs.faction_of(getattr(a, "source", ""))), None)
+    if foe is None:
+        return
+    fac = fcs.faction_of(foe.source)
+    for _ in range(40):
+        fcs._loud_kill(g, foe)
+    assert fcs.standing[fac] == STANDING_MIN, (
+        "forty heard kills, and the house's opinion still has a bottom",
+        fcs.standing[fac])
+
+
+def test_the_floor_leaves_a_rest_worth_taking():
+    """The point of the floor is that hostility costs most of the heal, not all of it.
+    If STANDING_MIN ever moves to where rest_modifier is 0, the lockout is back and this
+    test says so."""
+    from runtime.factions import FactionSystem, STANDING_MIN
+    g = Game(load_manifest("examples/world.json"), systems=[FactionSystem()])
+    fcs = g.system("factions")
+    region = g.region_for(g.floor) or {}
+    fid = region.get("factionId") or g._region_faction.get(region.get("id", ""), "")
+    if not fid:
+        return
+    fcs.standing[fid] = 0
+    neutral = fcs.rest_modifier(g)
+    fcs.standing[fid] = STANDING_MIN
+    hated = fcs.rest_modifier(g)
+    assert hated > 0, ("at the worst play can reach, a rest still returns something",
+                       STANDING_MIN, hated)
+    assert hated < neutral, "and it is still much worse than being on good terms"
+
+
+def test_the_floor_binds_heard_kills_only():
+    """Other things move standing (a companion dying, a friend calling off hunters). The
+    floor is on the ratchet, not on the whole reputation system, so a test that asserts
+    the deep-hostility rule can still set it directly."""
+    from runtime.factions import FactionSystem, STANDING_MIN
+    g = Game(load_manifest("examples/world.json"), systems=[FactionSystem()])
+    fcs = g.system("factions")
+    fcs.standing["faction_probe"] = STANDING_MIN - 5
+    assert fcs.standing_of("faction_probe") == STANDING_MIN - 5, (
+        "the floor is applied where standing is spent, not as a global clamp")

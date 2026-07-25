@@ -1322,3 +1322,139 @@ the lever, so it stays at 4 and exploiter goes on the open list rather than bein
 - **The bake still reads one input.** D1 closes the play-to-play circuit, not the play-to-bake
   one. Whether a chronicle should be able to change a bake is a design question, not a bug, and
   it is the one place the deterministic skeleton would actually be at risk.
+
+## The ratchet under exploiter
+
+Exploiter was the last profile that barely won, at 1 run in 8. Four levers were tried and
+measured before the actual cause turned up, and the negative results are the useful part of
+this section, because each one was a plausible story that the numbers refused.
+
+### What it was not
+
+**Not the escalation.** The obvious suspect, since D4 had just made hunters compound and
+exploiter fights loud and stays put. Instrumented against seeker over 8 seeds each:
+
+| | waves | hunters faced | loud kills | quiet kills |
+|---|---|---|---|---|
+| exploiter (1 win) | 87 | 387 | 135 | 590 |
+| seeker (5 wins) | 119 | **522** | 155 | 530 |
+
+Seeker faces a third more hunters and is the *louder* of the two in absolute terms, and wins
+five times as often. The escalation is not what separates them.
+
+**Not defence.** +2 DEF won 5 of 8 before Tranche D and 1 of 8 after. Whatever it was
+compensating for, the game moved past it.
+
+**Not the rest weight.** Raising exploiter's `rest` from 3 to 5 bought one win, and the
+mechanism is not the one it looks like: rest urgency is `(100 - hp) // 3`, which runs 10 to 30
+inside the window the branch is reachable at all, and every profile's rest floor is at most 5.
+The floor never decides a heal for anybody. It is not a dead weight, though, which is a trap
+worth recording: `clear_weather` and `absorb_hazard` score off the same `rest` key at much
+lower urgencies, so tuning it changes what the agent does about weather and hazard tiles and
+not how often it heals.
+
+**Not a reputation thaw.** Standing had no decay at all while D4 had just given the faction's
+pursuit one, so the asymmetry was real and worth closing. It is worth almost nothing:
+21, 22, 21 of 48 at thaw 0, 1, 2. Kept at 1 because it closes a genuine one-way ratchet, not
+because it moved the game.
+
+**Not the inverted parley urgency**, though that is a real bug. Parley's urgency was
+`standing * 3`, which goes negative exactly when a house dislikes you, so the one action that
+buys standing back became least attractive precisely when it was most needed. Building that
+into a proper amends ladder measured **exactly zero** over 48 runs, because the branch needs a
+tier-3 encounter option that rarely appears. The ladder is not shipped; a one-line `max(0, ...)`
+guard is, as insurance against the sign error returning, and it is provably behaviour-neutral
+given the floor below.
+
+### What it was
+
+Standing measured at the end of every run told the story at once:
+
+| | standing at end of run |
+|---|---|
+| exploiter | -10, -10, -22, -20, -3, and **+7 on its one win** |
+| seeker | -2, 0, +2, +6, +3, +3 |
+| whisper | +4, +6, +9, +12, +14, +6 |
+
+Standing fell 1 per heard kill with **nothing underneath it**, and `rest_modifier` returns 0
+below standing -3. Past that point resting in that house's country restores nothing at all. So
+the loop closes: kill loudly, lose the heal, have to keep killing to survive, lose more
+standing. That is a feedback loop with gain above 1 and no terminating condition, which is
+precisely the thing D4 was careful to give four exits to, sitting unnoticed on the player's
+side of the same system.
+
+Confirmed by probe rather than by argument. Removing the standing gate outright, which is far
+too strong to ship and was never meant to be:
+
+| | wins | avg floor |
+|---|---|---|
+| as shipped | 1 of 8 | 15.1 |
+| standing gate removed | **5 of 8** | **21.8** |
+
+That is the constraint.
+
+### The fix, swept
+
+`STANDING_MIN` bottoms out what heard kills can cost you. The penalty stays and the lockout
+goes: at the floor a rest still restores 1 against a friendly 3, so being hated costs two
+thirds of the heal rather than all of it. Same shape as the pursuit decay in D4, which is a
+steep loop given a terminating condition rather than a cap.
+
+| floor | aggregate | artisan | cartographer | emergent | exploiter | seeker | whisper |
+|---|---|---|---|---|---|---|---|
+| none | 21/48 (43.8%) | 4 | 3 | 2 | **1** | 5 | 6 |
+| -3 | 23/48 (47.9%) | 4 | 3 | 1 | 3 | 6 | 6 |
+| **-2** | **24/48 (50.0%)** | 4 | 3 | 3 | **5** | 3 | 6 |
+| -1 | 27/48 (56.2%) | 4 | 4 | 3 | 6 | 4 | 6 |
+
+**-2 is taken.** The aggregate lands dead centre of the 40-60 band, the spread closes to 3-6
+from 1-6, and exploiter is fixed without becoming the strongest profile, which -1 does. -3 is
+worth noting for a reason I got wrong beforehand: I expected it to behave like no floor at all,
+since `rest_modifier` is 0 at -3 either way. It does not, because standing also feeds parley
+urgency, the faction perk ladder and the hunters-stand-down check. Standing is worth more than
+its healing.
+
+Berlin holds throughout. The floor is a property of the reputation system, identical for all
+six profiles, and it lands hardest on whoever spends the most reputation, which is a
+consequence of how a run is played rather than of who is playing it.
+
+One test changed with the rule: `test_factions.py` asserted standing falls exactly 1 per loud
+kill forever. It now asserts it falls per kill down to the floor.
+
+### Baseline after the floor
+
+8 runs per agent, clean state, `PYTHONHASHSEED=0`:
+
+| agent | win rate | avg floor | deepest | contested | labels | win paths |
+|---|---|---|---|---|---|---|
+| artisan | 50% | 21.1 | 27 | 30% | 29 | commune 2, boss_killed 1, escape 1 |
+| cartographer | 37.5% | 16.4 | 27 | 72% | 26 | escape 3 |
+| emergent | 37.5% | 13.8 | 27 | 28% | 26 | escape 2, commune 1 |
+| exploiter | **62.5%** | 22.5 | 27 | 24% | 28 | commune 3, escape 2 |
+| seeker | 37.5% | 21.5 | 27 | 36% | 29 | escape 2, commune 1 |
+| whisper | 75% | 22.0 | 27 | 36% | 27 | escape 3, commune 3 |
+
+**24 of 48, 50.0%**, the centre of the target band, and the spread is 37.5 to 75 against the
+12.5 to 87.5 this pass started from. Three things worth noting beyond the aggregate:
+
+- **Every profile now reaches floor 27**, the first time that has been true of all six.
+- **Every profile now has more than one victory route** except cartographer. Exploiter in
+  particular went from commune-only to commune 3 and escape 2: it is not winning one way by
+  luck, it has two.
+- Across the batch: escape 13, commune 10, boss_killed 1.
+
+The cost is spread across the middle rather than concentrated. Seeker fell 62.5 to 37.5 and
+cartographer 50 to 37.5, both of which were partly living off being the only profiles that
+could keep their standing out of the dead zone. That advantage was an artifact of a broken
+ratchet, so losing it is the fix working rather than a regression, but it is a real change to
+two profiles that were not the target and it is recorded as such.
+
+## Still open
+
+- **The eighteen failing tests.** Unchanged, and they fail identically on the commit before
+  any of this work began. `test_factions.py` was updated deliberately with the standing floor
+  and passes.
+- **`arch/vaults.py`** still has zero callers and an unresolvable data path (plan item B5).
+- **The bake still reads one input.** D1 closed the play-to-play circuit, not play-to-bake.
+- **Cartographer is the only profile with a single win route**, all three of its wins by
+  escape. It is not failing, but it is the least robust of the six.

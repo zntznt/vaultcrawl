@@ -64,7 +64,14 @@ def test_factions():
     for _ in range(3):
         g.emit("enemy_killed", enemy=make_enemy(spec, 0, 0), cause="melee")
     assert s.disturbance.get(victim, 0) == d0 + 3, "loud melee kills raise disturbance"
-    assert s.standing_of(victim) == st0 - 3, "victim faction standing drops per loud kill"
+    # Standing drops per loud kill but now bottoms out at STANDING_MIN. It used to fall
+    # forever, and `rest_modifier` returns 0 below -3, so a loud run finished at -22 unable
+    # to heal by resting at all: kill loudly, lose the heal, have to kill to survive. The
+    # floor keeps the penalty (a rest there restores 1 against a friendly 3) and removes
+    # the lockout. See guidance/PROJECT_ASSESSMENT.md, "The ratchet under exploiter".
+    from runtime.factions import STANDING_MIN
+    assert s.standing_of(victim) == max(STANDING_MIN, st0 - 3), (
+        "victim faction standing drops per loud kill, down to the floor")
     assert s.standing_of(victim) < 0, "standing shifts negative for the victim faction"
 
     # A sigil kill is loud as well.
