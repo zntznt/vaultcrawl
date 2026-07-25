@@ -19,7 +19,8 @@ from typing import Any
 from runtime.game import Game, load_manifest
 from runtime.sense import make_brain
 from runtime.pressure import (
-    DecisionLog, divergence_matrix, percentiles, persistence_fingerprint,
+    DecisionLog, EmergenceLog, divergence_matrix, percentiles,
+    persistence_fingerprint,
 )
 
 def _build_systems():
@@ -61,6 +62,7 @@ class RunResult:
     metrics: dict = None
     win_path: str = ""
     pressure: dict = None
+    emergence: dict = None
 
 
 def run_agent(world_json: str, agent_name: str,
@@ -78,6 +80,8 @@ def run_agent(world_json: str, agent_name: str,
     from runtime.agent_action import AgentAction, dispatch
     from runtime.attractors import AttractorTracker
 
+    from runtime.stack import reset_run_state
+    reset_run_state()
     systems = _build_systems()
     _register_brains()
 
@@ -95,6 +99,15 @@ def run_agent(world_json: str, agent_name: str,
     turns_total = 0
     tracker = AttractorTracker()
     decisions = DecisionLog()
+    emergence = EmergenceLog()
+    # Watch the bus and the verbs for this run. A 28-system game whose systems never touch
+    # is 28 games running in parallel, and a verb that never succeeds is a dead mechanic
+    # burning the decision budget.
+    _orig_emit = game.emit
+    def _watched_emit(etype, **kw):
+        emergence.observe_event(etype)
+        return _orig_emit(etype, **kw)
+    game.emit = _watched_emit
 
     def bfs_step(level, start, goal, avoid=None):
         avoid = avoid or set()
@@ -138,6 +151,10 @@ def run_agent(world_json: str, agent_name: str,
             if isinstance(result, tuple) and len(result) == 2:
                 result = AgentAction("move", dx=result[0], dy=result[1])
             ok = dispatch(game, result)
+            emergence.observe_verb(getattr(result, "kind", "?"), bool(ok))
+            nr = getattr(game.player.brain, 'note_result', None)
+            if nr:
+                nr(ok)
             if not ok:
                 if game.on_stairs():
                     break
@@ -219,6 +236,7 @@ def run_agent(world_json: str, agent_name: str,
         metrics=_get_metrics(),
         win_path=getattr(game, "win_path", ""),
         pressure=decisions.summary(),
+        emergence=emergence.summary(),
     )
 
 
@@ -321,6 +339,20 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
             "win_paths": _tally(r.win_path for r in runs if r.won),
         }
 
+        # Emergence: how much of the stack participates, and is any verb simply broken.
+        emg = [r.emergence for r in runs if r.emergence]
+        if emg:
+            broken = sorted({v for e in emg for v in e.get("broken_verbs", [])})
+            kinds: dict[str, int] = {}
+            for e in emg:
+                for k, c in e.get("event_counts", {}).items():
+                    kinds[k] = kinds.get(k, 0) + c
+            stats[name]["emergence"] = {
+                "event_kinds": round(_mean(e["event_kinds"] for e in emg), 1),
+                "event_counts": dict(sorted(kinds.items(), key=lambda kv: -kv[1])),
+                "broken_verbs": broken,
+            }
+
         # Pressure: how forced were the decisions, and did the agent ever get hurt.
         press = [r.pressure for r in runs if r.pressure]
         if press:
@@ -337,6 +369,8 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
                 "avg_candidates": round(_mean(p["avg_candidates"] for p in press), 1),
                 "min_hp_pct": min(p["min_hp_pct"] for p in press),
                 "hurt_share": round(_mean(p["hurt_share"] for p in press), 3),
+                "top3_label_share": round(_mean(p["top3_label_share"] for p in press), 3),
+                "labels_used": round(_mean(p["labels_used"] for p in press), 1),
             }
 
         # Attractor scores aggregation
@@ -399,8 +433,8 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
 
 def _print_pressure(stats: dict[str, dict[str, Any]], divergences: dict[str, float]):
     """The half of the report that says whether the choices were hard."""
-    header = (f"{'AGENT':<16} {'TOP CHOICE':<22} {'CONTEST':<9} {'MARGIN':<8} "
-              f"{'MIN HP':<8} {'HURT':<8} {'WIN PATHS'}")
+    header = (f"{'AGENT':<16} {'TOP CHOICE':<20} {'TOP3':<6} {'LABELS':<7} "
+              f"{'CONTEST':<8} {'MIN HP':<7} {'WIN PATHS'}")
     print()
     print(header)
     print("-" * len(header))
@@ -410,9 +444,17 @@ def _print_pressure(stats: dict[str, dict[str, Any]], divergences: dict[str, flo
             continue
         top = next(iter(p["label_share"].items()), ("none", 0.0))
         paths = ", ".join(f"{k} {v}" for k, v in s.get("win_paths", {}).items()) or "no wins"
-        print(f"{name:<16} {top[0] + ' ' + format(top[1], '.0%'):<22} "
-              f"{p['contested_share']:<9.0%} {p['median_margin']:<8.1f} "
-              f"{p['min_hp_pct']:<8} {p['hurt_share']:<8.0%} {paths}")
+        print(f"{name:<16} {top[0] + ' ' + format(top[1], '.0%'):<20} "
+              f"{p.get('top3_label_share', 0):<6.0%} {p.get('labels_used', 0):<7.0f} "
+              f"{p['contested_share']:<8.0%} {p['min_hp_pct']:<7} {paths}")
+
+    broken = sorted({v for s in stats.values()
+                     for v in s.get("emergence", {}).get("broken_verbs", [])})
+    kinds = max((s.get("emergence", {}).get("event_kinds", 0) for s in stats.values()),
+                default=0)
+    print(f"\nevent kinds per run: {kinds:.0f}")
+    if broken:
+        print(f"BROKEN VERBS (attempted, never once succeeded): {', '.join(broken)}")
 
     if divergences:
         vals = sorted(divergences.values())

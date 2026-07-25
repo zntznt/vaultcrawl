@@ -19,6 +19,24 @@ ABSORB_ATTEMPTS = 3
 TENSION_PRESSURE_AT = 100
 
 
+FATIGUE_STEP = 3.0      # score penalty added each time one objective is re-chosen
+FATIGUE_MAX = 60.0      # ceiling, so a genuinely necessary action is never locked out
+FATIGUE_DECAY = 1.0     # shed per turn, for every objective not chosen this turn
+FATIGUE_FAILED = 15.0   # extra penalty when the chosen action failed at dispatch
+
+
+def _target_key(label, cand):
+    """Identify the objective a candidate is pursuing, not merely its verb.
+
+    `move` covers explore, flee, stairs, salvage, cache and more, so the verb alone cannot
+    tell repetition from progress. A tuple candidate carries its target coordinates.
+    """
+    if isinstance(cand, tuple) and len(cand) >= 3:
+        return (label, cand[1], cand[2])
+    idx = getattr(cand, "index", None)
+    return (label, idx) if idx else (label,)
+
+
 def _tension_urgency(s) -> int:
     """Extra urgency from the vault noticing you. Identical for all six profiles."""
     t = s.get("tension", 0) or 0
@@ -132,6 +150,11 @@ class UniversalBrain(Brain):
         # Consecutive absorb-hazard rests on the current tile, so the attempt is bounded.
         self._hazard_tile: tuple | None = None
         self._hazard_tries: int = 0
+        # Fatigue: how often a given (label, target) has been chosen lately. Repeatedly
+        # picking the same objective without resolving it is the signature of every
+        # decision loop this codebase has had, so choosing one costs a little and the
+        # cost decays once the agent does something else.
+        self._fatigue: dict = {}
 
     @property
     def name(self) -> str:
@@ -253,6 +276,11 @@ class UniversalBrain(Brain):
 
         # ---- FORGE ----
         reachable = bool(s["matter"]["total"] >= 2 and s["nav"]["free_sigil_slots"] > 0)
+        if reachable:
+            _fs = game.system("forge")
+            if _fs is not None and hasattr(_fs, "can_forge"):
+                # Matter and a free slot are not enough: the forge also wants proficiency.
+                reachable = _fs.can_forge(game)
         if reachable:
             slotted = {sig.get("ability") for sig in s["sigils"]}
             for ability in ("Recall", "Ward", "Phase", "Echo", "Rally"):
@@ -624,6 +652,18 @@ class UniversalBrain(Brain):
             self._last_candidates, self._last_choice = [], None
             return AgentAction("wait")
 
+        # Fatigue decays for everything, then is charged against each candidate's score.
+        # This is what stops a candidate that never resolves from winning every turn for
+        # the rest of the run, which is how absorb_hazard, deploy and locus each came to
+        # own a fifth of the decision budget.
+        for k in list(self._fatigue):
+            self._fatigue[k] -= FATIGUE_DECAY
+            if self._fatigue[k] <= 0:
+                del self._fatigue[k]
+        if self._fatigue:
+            candidates = [(lbl, sc - self._fatigue.get(_target_key(lbl, cand), 0.0), cand)
+                          for lbl, sc, cand in candidates]
+
         candidates.sort(key=lambda c: c[1], reverse=True)
         self._last_candidates = candidates
 
@@ -635,10 +675,30 @@ class UniversalBrain(Brain):
             act = self._resolve(game, actor, s, cand)
             if act is not None:
                 self._last_choice = idx
+                key = _target_key(_label, cand)
+                self._fatigue[key] = min(FATIGUE_MAX,
+                                         self._fatigue.get(key, 0.0) + FATIGUE_STEP
+                                         + FATIGUE_DECAY)
+                self._last_key = key
                 return act
 
         self._last_choice = None
+        self._last_key = None
         return AgentAction("wait")
+
+    def note_result(self, ok: bool) -> None:
+        """Tell the brain whether the action it just chose actually worked.
+
+        Without this the brain has no idea a verb is broken. `deploy` raised TypeError on
+        every call for the life of the project, was swallowed by dispatch's blanket except,
+        and still won 27% of decisions because nothing ever told the scorer it had failed.
+        """
+        if ok:
+            return
+        key = getattr(self, "_last_key", None)
+        if key is not None:
+            self._fatigue[key] = min(FATIGUE_MAX,
+                                     self._fatigue.get(key, 0.0) + FATIGUE_FAILED)
 
     def _resolve(self, game, actor, s, winner):
         """Turn a candidate payload into an AgentAction, or None if it cannot be acted on."""

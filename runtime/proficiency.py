@@ -130,3 +130,17 @@ def skills() -> Skills:
 
 def exercise_skill(name: str):
     skills().exercise(name)
+
+
+def reset_proficiency():
+    """Clear the per-run proficiency and skill state.
+
+    These are module globals with no reset, and a harness runs hundreds of games in one
+    process. Measured: the same agent on the same world wins runs 1 and 2 at floor 27, then
+    loses runs 3 through 6 at floor 20 as skill tiers climb to 5. Every per-agent aggregate
+    was confounded with position in the batch, and it was invisible to the persistence
+    fingerprint because it lives in RAM rather than in ~/.vaultcrawl.
+    """
+    global _tracker, _skills
+    _tracker = None
+    _skills = None

@@ -677,3 +677,113 @@ rm -rf ~/.vaultcrawl
 PYTHONHASHSEED=0 python3 -m runtime.agent_eval examples/world.json --runs 5
 python3 -m pytest tests/test_pressure.py -q     # the rules this pass added
 ```
+
+---
+
+# Depth and emergence pass
+
+The balance pass above made the game press on the agents. It did not make the game deep:
+contested decisions ran 1-11% of turns. This section records why, and what changed.
+
+## The decision space was rich and the scoring collapsed it
+
+Measured before any change: the brain offers a **median of 10 live candidates per turn** and
+**27 distinct labels** across a run. That is not a thin game. But three labels took **80% of
+all choices**, and the dominant consecutive pattern was `deploy -> locus -> deploy -> locus`:
+
+```
+locus 1250 (31%) · deploy 1119 (27%) · absorb_hazard 900 (22%)
+```
+
+## Three verbs had never worked
+
+**`deploy` had a 100% failure rate for the life of the project.** `Game.deploy` constructed
+`Actor("deployed_sigil", *deployed_pos)`, but `Actor.__init__` takes
+`(x, y, glyph, name, hp, max_hp, atk)`. It raised `TypeError` on the first statement and
+`dispatch`'s blanket `except Exception: return False` swallowed it. Measured: 1,119 dispatches
+per run, 1,119 `False`, zero reaching the method body. It was still winning 27% of decisions,
+because nothing ever told the scorer it had failed.
+
+**`recover` could never succeed.** It required the player to stand on the deployed sigil's tile,
+but `deploy` places the entity on a neighbouring tile and a deployed sigil is an Actor, so it
+blocks movement. Unreachable by construction.
+
+**`negotiate` could never succeed.** `_adjacent_monster_matching` scanned only the four
+orthogonals while the rest of the game uses eight-directional adjacency, and it required an
+exact name match against a target the brain chose a turn earlier.
+
+All three are the same failure: the brain gets no feedback about whether the action it chose
+actually worked, so a permanently broken candidate keeps its score and keeps winning. The
+absorb-hazard livelock fixed in the previous pass was the first instance; these are the second,
+third and fourth.
+
+## The systems mostly do not touch
+
+- A full run emits **4,028 events across 11 kinds**, and `noise` is 90% of them. becalmed 5,
+  communed 5, lore_read 4, aspect_absorbed 3, standing_changed 2 in an entire 27-floor descent.
+- **17 of 28 systems never receive a bus event.** **11 have in-degree 0** in the
+  `game.system("x")` graph, so nothing in the game can observe them.
+- `scent.py` and `portals.py` are total isolates; ScentSystem duplicates a scent map already in
+  `senses.py:288-317`, and the duplicate is the one wired to perception.
+- `dialogue.py` is fully authored and unreachable: its `on_event` fires only on `"interact"`,
+  which nothing in real play emits.
+- **6 of 13 event types have zero system listeners**, serviced by a 90-line if/elif inside
+  `Game.emit` that writes faction standing directly, nulls monster brains, and reaches into
+  `flora.plants`, behind five silent excepts and one guard on an attribute never initialized.
+- **Chemistry: 2 of 15 element pairs interact.** Affinity covers 8 of 24 cells, and half the
+  opposite-pairs are unreachable because ice and sacred deal no damage. **Nothing carries an
+  element**: every `ignite()` writes to a tile, never to an actor.
+
+## The runaway layer is a facade
+
+`RunChronicle` has 33 fields and zero readers; 9 of 14 recorders are never called, and one
+(`record_companion_recruited`) is called but not defined, raising into a silent except.
+`to_upheaval_events()` has zero callers and would crash if wired, because `from_events` reads
+`e["note"]` while 5 of 10 producible kinds have no such key (verified `KeyError`). Six of
+Upheaval's 13 kinds have no live producer. Three of six attractor scores are permanently 0.0.
+`Dampener` has zero callers. `arch/vaults.py` has zero callers and a path that cannot resolve.
+Graves cannot escalate because `_load_graves` overwrites by position.
+
+The bake-play-bake circuit is structurally open: `bake.py` reads only the markdown directory.
+
+**Fourteen feedback loops exist and every one is capped or subcritical.** The codebase is well
+defended against runaway and, as a direct consequence, has none.
+
+## Correction to the balance pass
+
+`proficiency._tracker` and `_skills` were module globals with no reset, and the harness runs
+hundreds of games per process. Measured on a fixed agent, world and seed: runs 1 and 2 reach
+floor 27 and win; runs 3 through 6 stall at floor 20 and die as skill tiers climb to 5. **Every
+per-agent aggregate in the balance pass was confounded with position in the batch**, and the
+bimodal result reported there is partly an artifact of ordering. It was invisible to
+`persistence_fingerprint()` because it lives in RAM, not in `~/.vaultcrawl`.
+
+`runtime/stack.py:reset_run_state()` now clears proficiency, skills, the chronicle and metrics
+at the start of every run in all three harnesses. Six consecutive runs of one agent now produce
+byte-identical results.
+
+## What changed, and what it moved
+
+Fixed: the deploy crash, the recover adjacency, the negotiate targeting, the proficiency leak.
+Added: fatigue, so an objective chosen repeatedly costs a little more each time and the cost
+decays once the agent does something else, plus `note_result` so a dispatch failure charges the
+candidate that caused it. Added `EmergenceLog`, which counts event kinds and per-verb success
+and flags any verb attempted often that never once worked.
+
+| metric | before | after |
+|---|---|---|
+| top-3 label share | 80% | 46-53% |
+| distinct labels chosen | 3 dominant | 20-29 |
+| contested decisions | 1-11% | 22-76% |
+| win paths across 6 agents | escape, unanimous | commune 4, escape 2 |
+
+The broken-verb detector caught `negotiate` and `recover` on its very first run, which is the
+whole point of it: it is the check that would have caught all four instances of this bug class.
+
+## Still open
+
+- The emergence surface itself is untouched: 11 systems remain unobservable, `dialogue` remains
+  unreachable, and 2 of 15 element pairs still interact. Nothing carries an element.
+- The runaway layer is still a facade. Closing it needs the Upheaval schema normalised and
+  `to_upheaval_events` given a caller, which is roughly three edits.
+- Win rate sits at 3 of 6 agents. Outcomes are still uneven, though far less so than before.

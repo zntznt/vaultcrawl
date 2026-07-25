@@ -2423,9 +2423,14 @@ class Game:
                 self.log("No space to deploy.")
                 return False
 
-        # Create deployed entity based on sigil type
+        # Create deployed entity based on sigil type.
+        # Actor is (x, y, glyph, name, hp, max_hp, atk). This used to be called as
+        # Actor("deployed_sigil", *deployed_pos), which raised TypeError on every single
+        # invocation and was swallowed by dispatch's blanket except, so deploy has never
+        # once succeeded and recover has never had anything to recover. The name and hp
+        # below are per-ability, so the constructor values are placeholders.
         from runtime.entities import Actor
-        entity = Actor("deployed_sigil", *deployed_pos)
+        entity = Actor(deployed_pos[0], deployed_pos[1], "&", "Deployed Sigil", 3, 3, 0)
         entity.allegiance = "companion"
         entity.source = sigil.get("note", "")
         entity._deployed_sigil = sigil_index
@@ -2481,9 +2486,12 @@ class Game:
         sigs = self.system("sigils")
         if sigs is None:
             return False
+        # Adjacent, not underfoot. deploy() places the entity on a neighbouring tile and a
+        # deployed sigil is an Actor, so it blocks movement: requiring the player to stand
+        # on it made recover unreachable in play, which is why it never once succeeded.
         for a in list(self.actors):
             if getattr(a, "_is_deployed", False):
-                if a.x == self.player.x and a.y == self.player.y:
+                if max(abs(a.x - self.player.x), abs(a.y - self.player.y)) <= 1:
                     # Re-slot with 1 durability
                     from runtime.forge import ForgeSystem
                     sigil = {"note": a.source, "ability": a._deploy_ability,

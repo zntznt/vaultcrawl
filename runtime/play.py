@@ -61,6 +61,9 @@ def auto_play(game: Game, floors: int, max_turns: int = 500):
             if isinstance(result, tuple) and len(result) == 2:
                 result = AgentAction("move", dx=result[0], dy=result[1])
             ok = _dispatch(game, result)
+            nr = getattr(game.player.brain, 'note_result', None)
+            if nr:
+                nr(ok)
             if not ok:
                 if game.on_stairs():
                     break

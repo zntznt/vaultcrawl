@@ -22,10 +22,14 @@ class AgentAction:
 
 
 _ORTH = ((1, 0), (-1, 0), (0, 1), (0, -1))
+# The game is eight-directional everywhere else (Chebyshev distance <= 1). Scanning only
+# the orthogonals meant a diagonally adjacent creature was invisible to talk, becalm and
+# negotiate, which is why negotiate never once succeeded across a full run.
+_ADJ8 = tuple((dx, dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1) if (dx, dy) != (0, 0))
 
 
 def _adjacent_monster(game):
-    for dx, dy in _ORTH:
+    for dx, dy in _ADJ8:
         a = game.actor_at(game.player.x + dx, game.player.y + dy)
         if a is not None and getattr(a, "allegiance", "") == "monster":
             return a
@@ -33,12 +37,22 @@ def _adjacent_monster(game):
 
 
 def _adjacent_monster_matching(game, target: str):
-    for dx, dy in _ORTH:
+    """The named creature if it is adjacent, else any adjacent creature.
+
+    The brain picks its target from perception a turn before dispatch, so the exact name
+    can drift as creatures move. Falling back to whoever is actually next to you is what
+    the player would do, and it is the difference between negotiate working and negotiate
+    never once succeeding.
+    """
+    fallback = None
+    for dx, dy in _ADJ8:
         a = game.actor_at(game.player.x + dx, game.player.y + dy)
         if a is not None and getattr(a, "allegiance", "") == "monster":
-            if a.name == target or target in getattr(a, "source", ""):
+            if target and (a.name == target or target in getattr(a, "source", "")):
                 return a
-    return None
+            if fallback is None:
+                fallback = a
+    return fallback
 
 
 def dispatch(game, action: AgentAction) -> bool:

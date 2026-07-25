@@ -31,6 +31,50 @@ from dataclasses import dataclass, field
 CONTESTED_MARGIN = 1.0
 # Below this fraction of max HP the agent counts as under pressure.
 HURT_PCT = 50
+# A verb has to be tried this often before "never worked" is a claim rather than noise.
+MIN_ATTEMPTS_TO_JUDGE = 20
+
+
+@dataclass
+class EmergenceLog:
+    """How much of the stack is actually participating.
+
+    A 28-system game whose systems never touch is 28 games running in parallel. These are
+    the numbers that say otherwise: how many kinds of thing happen, how many systems hear
+    about them, and whether any verb is simply broken.
+    """
+
+    event_kinds: dict = field(default_factory=dict)
+    verb_ok: dict = field(default_factory=dict)
+    verb_fail: dict = field(default_factory=dict)
+
+    def observe_event(self, etype: str) -> None:
+        self.event_kinds[etype] = self.event_kinds.get(etype, 0) + 1
+
+    def observe_verb(self, kind: str, ok: bool) -> None:
+        d = self.verb_ok if ok else self.verb_fail
+        d[kind] = d.get(kind, 0) + 1
+
+    def broken_verbs(self) -> list[str]:
+        """Verbs attempted at least once that never once succeeded.
+
+        This is the check that would have caught three separate bugs: the absorb-hazard
+        livelock, `deploy` raising TypeError on every call for the life of the project, and
+        the stable-sort tie that made salvage and cache unreachable.
+        """
+        return sorted(k for k, n in self.verb_fail.items()
+                      if n >= MIN_ATTEMPTS_TO_JUDGE and not self.verb_ok.get(k))
+
+    def summary(self) -> dict:
+        attempts = {k: self.verb_ok.get(k, 0) + self.verb_fail.get(k, 0)
+                    for k in set(self.verb_ok) | set(self.verb_fail)}
+        return {
+            "event_kinds": len(self.event_kinds),
+            "event_counts": dict(sorted(self.event_kinds.items(), key=lambda kv: -kv[1])),
+            "verb_success": {k: round(self.verb_ok.get(k, 0) / n, 3)
+                             for k, n in sorted(attempts.items()) if n},
+            "broken_verbs": self.broken_verbs(),
+        }
 
 
 @dataclass
@@ -78,6 +122,11 @@ class DecisionLog:
             "label_share": {k: v / n for k, v in
                             sorted(self.labels.items(), key=lambda kv: -kv[1])} if n else {},
             "top_label_share": (max(self.labels.values()) / n) if n else 0.0,
+            # Three labels used to own 80% of every run. Concentration is the single
+            # clearest read on whether the decision space is actually being used.
+            "top3_label_share": (sum(sorted(self.labels.values(), reverse=True)[:3]) / n)
+                                if n else 0.0,
+            "labels_used": len(self.labels),
             "median_margin": _median(finite),
             "contested_share": (sum(1 for m in self.margins if m <= CONTESTED_MARGIN)
                                 / len(self.margins)) if self.margins else 0.0,

@@ -69,3 +69,30 @@ def register_brains() -> None:
     """Importing a brain module registers its tier, so this is the whole job."""
     from . import brains, tactics, creatures, planner, instincts  # noqa: F401
     from . import agent  # noqa: F401  universal brain, Berlin-compliant
+
+
+def reset_run_state() -> None:
+    """Clear every module-global that would otherwise leak from one run into the next.
+
+    A harness runs hundreds of games in one process. Metrics were already reset; skills,
+    proficiency and the chronicle were not, so run 300 of a batch started with tier-5
+    foraging and diplomacy that run 1 had to earn. Measured on a fixed agent, world and
+    seed: runs 1 and 2 reach floor 27 and win, runs 3 through 6 stall at floor 20 and die.
+    Call this at the start of every run, not the end, so a crashed run cannot poison the
+    next one.
+    """
+    try:
+        from .proficiency import reset_proficiency
+        reset_proficiency()
+    except Exception:
+        pass
+    try:
+        from .persistence import reset_chronicle
+        reset_chronicle()
+    except Exception:
+        pass
+    try:
+        from .metrics import reset_metrics
+        reset_metrics()
+    except Exception:
+        pass

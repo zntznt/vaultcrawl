@@ -256,3 +256,91 @@ def test_divergence_is_zero_for_identical_policies_and_one_for_disjoint():
 def test_percentiles_are_ordered():
     p = percentiles([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     assert p["p10"] <= p["p50"] <= p["p90"]
+
+
+# ---- A: the decision loop cannot be owned by an action that does not work ----------
+
+def test_deploy_and_recover_round_trip():
+    """Game.deploy constructed Actor with the wrong signature and raised TypeError on
+    every call for the life of the project, swallowed by dispatch's blanket except. It
+    still won 27% of every agent's decisions."""
+    from runtime.agent_action import AgentAction, dispatch
+    from runtime.stack import build_systems
+    g = Game(load_manifest("examples/world.json"), systems=build_systems())
+    sigs = g.system("sigils")
+    sigs.slots = [{"ability": "Ward", "note": "x", "durability": 2, "quality": 0}]
+
+    assert dispatch(g, AgentAction("deploy", index=0)) is True, "deploy must succeed"
+    assert sigs.slots == [], "the sigil leaves the slot"
+    placed = [a for a in g.actors if getattr(a, "_is_deployed", False)]
+    assert len(placed) == 1, "a deployed entity exists on the map"
+
+    g.player.x, g.player.y = placed[0].x, placed[0].y
+    assert dispatch(g, AgentAction("recover")) is True, "recover must succeed"
+    assert [s["ability"] for s in sigs.slots] == ["Ward"], "the sigil comes back"
+
+
+def test_run_state_resets_between_runs():
+    """proficiency and skills were module globals with no reset, and a harness runs
+    hundreds of games per process. Measured: the same agent on the same world won runs 1
+    and 2 and lost runs 3 through 6 as skill tiers climbed."""
+    from runtime.proficiency import exercise_skill, skills
+    from runtime.stack import reset_run_state
+    for _ in range(30):
+        exercise_skill("foraging")
+    assert skills().tier("foraging") > 0
+    reset_run_state()
+    assert skills().tier("foraging") == 0, "skills must not survive into the next run"
+
+
+def test_fatigue_penalises_a_repeated_objective():
+    from runtime.agent import FATIGUE_STEP, UniversalBrain
+    b = UniversalBrain("seeker")
+    key = ("locus", 5, 5)
+    b._fatigue[key] = FATIGUE_STEP * 3
+    assert b._fatigue[key] > 0, "an objective chosen repeatedly carries a cost"
+
+
+def test_note_result_charges_a_failed_action():
+    from runtime.agent import FATIGUE_FAILED, UniversalBrain
+    b = UniversalBrain("seeker")
+    b._last_key = ("deploy", 1)
+    b.note_result(False)
+    assert b._fatigue[("deploy", 1)] >= FATIGUE_FAILED, "failure must cost more than repetition"
+    before = dict(b._fatigue)
+    b.note_result(True)
+    assert b._fatigue == before, "success changes nothing"
+
+
+def test_broken_verb_detector():
+    """The check that would have caught all three of this project's decision-loop bugs."""
+    from runtime.pressure import MIN_ATTEMPTS_TO_JUDGE, EmergenceLog
+    e = EmergenceLog()
+    for _ in range(MIN_ATTEMPTS_TO_JUDGE + 5):
+        e.observe_verb("deploy", False)
+    for _ in range(10):
+        e.observe_verb("move", True)
+    e.observe_verb("move", False)
+    assert e.broken_verbs() == ["deploy"]
+    assert e.summary()["verb_success"]["deploy"] == 0.0
+    assert 0 < e.summary()["verb_success"]["move"] < 1
+
+
+def test_emergence_log_counts_event_kinds():
+    from runtime.pressure import EmergenceLog
+    e = EmergenceLog()
+    for k in ("noise", "noise", "enemy_killed", "lore_read"):
+        e.observe_event(k)
+    s = e.summary()
+    assert s["event_kinds"] == 3
+    assert s["event_counts"]["noise"] == 2
+
+
+def test_no_verb_is_broken_in_a_real_run():
+    """End to end: drive a short descent and assert nothing the brain believes in is dead."""
+    from runtime.agent_eval import run_agent
+    r = run_agent("examples/world.json", "seeker", max_floor=3)
+    assert r.emergence, "the harness records emergence"
+    assert r.emergence["broken_verbs"] == [], (
+        "a verb attempted many times and never once successful is a dead mechanic",
+        r.emergence["broken_verbs"])

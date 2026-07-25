@@ -221,6 +221,25 @@ class ForgeSystem(System):
             return None
         return "Forge: ready" if inv(game.player).can_pay(self.cost(game)) else None
 
+    def can_forge(self, game, ability=None) -> bool:
+        """Whether a forge attempt would actually succeed. Query API per INTERACTIONS_SPEC.
+
+        The brain used to offer `forge` on matter and a free slot alone, so it spent turns
+        on an action the proficiency gate would refuse. That was invisible while proficiency
+        leaked across runs in a module global and the agent arrived pre-skilled.
+        """
+        sigils = game.system("sigils")
+        if sigils is None:
+            return False
+        slots = getattr(sigils, "slots", None)
+        cap = sigils.max_slots(game) if hasattr(sigils, "max_slots") else MAX_SLOTS
+        if slots is None or len(slots) >= cap:
+            return False
+        ability = ability or self._default_ability(game)
+        if not ability:
+            return False
+        return self._has_proficiency(game, ability)
+
     def _has_proficiency(self, game, ability) -> bool:
         """Check knowledge of note-role AND recent practice with the ability."""
         role = _ABILITY_ROLE.get(ability)
