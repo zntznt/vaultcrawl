@@ -770,15 +770,25 @@ decays once the agent does something else, plus `note_result` so a dispatch fail
 candidate that caused it. Added `EmergenceLog`, which counts event kinds and per-verb success
 and flags any verb attempted often that never once worked.
 
+Measured over 2 runs per agent from a clean state at `PYTHONHASHSEED=0`:
+
 | metric | before | after |
 |---|---|---|
-| top-3 label share | 80% | 46-53% |
+| top-3 label share | 80% | 37-53% |
 | distinct labels chosen | 3 dominant | 20-29 |
-| contested decisions | 1-11% | 22-76% |
-| win paths across 6 agents | escape, unanimous | commune 4, escape 2 |
+| contested decisions | 1-11% | 24-76% |
+| win paths across 6 agents | escape, unanimous | commune, unanimous |
+| broken verbs | 4 undetected | 0 |
 
-The broken-verb detector caught `negotiate` and `recover` on its very first run, which is the
-whole point of it: it is the check that would have caught all four instances of this bug class.
+The broken-verb detector caught `negotiate` and `recover` on its very first run and `forge` on
+its second, which is the whole point of it: it is the check that would have caught all four of
+these plus the absorb-hazard livelock from the previous pass.
+
+Note the inversion in the last row. Before this pass every win in thirty runs was an escape.
+Now every win is a commune. That is not obviously better, and it is worth saying plainly: a
+unanimous win path is a smell whichever path it is. What changed is that the agents now reach
+the boss with the resources to talk to it, where before they walked past. The next pass should
+aim for a split rather than a different monoculture.
 
 ## Still open
 
@@ -786,4 +796,7 @@ whole point of it: it is the check that would have caught all four instances of 
   unreachable, and 2 of 15 element pairs still interact. Nothing carries an element.
 - The runaway layer is still a facade. Closing it needs the Upheaval schema normalised and
   `to_upheaval_events` given a caller, which is roughly three edits.
-- Win rate sits at 3 of 6 agents. Outcomes are still uneven, though far less so than before.
+- Win rate sits at 2 of 6 agents, just under the 40-60% band the balance pass targeted. The
+  forge proficiency gate, previously masked by the leak, is the likeliest cause and is worth
+  re-pricing now that it is visible.
+- The win path is unanimous again, in the other direction. See above.
