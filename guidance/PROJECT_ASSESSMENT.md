@@ -1528,3 +1528,94 @@ Two properties hold for the first time in this project:
 The spread is 37.5 to 75 percent. Seeker and emergent are now the low pair, both at 37.5, and
 both for reasons that have not been investigated; they are inside the target band, so they are
 noted rather than swept.
+
+## Seeker and emergent: the same score, two different faults
+
+Both sat at 37.5 percent, and the shape of the two runs said immediately they were not the
+same problem.
+
+| | avg floor | kills | losses |
+|---|---|---|---|
+| seeker | 21.5 | 13.2 | floors 24, 21, 18, 15, 14 |
+| emergent | 13.8 | 21.9 | floors 13, 6, 5, 4, 2 |
+
+Seeker gets deep and fails to close. Emergent dies in the first sixth or snowballs to floor 26
+with 46 kills, with nothing in between.
+
+### Seeker had no way to panic
+
+The brain's panic branch, taken at low HP with hostiles near, can do exactly one thing: cast a
+Phase sigil. Seeker started with **Ward and Recall**, so it could not take that branch at all,
+which is the gap cartographer once had. Three of its five losses ended with its standing at the
+floor and a hunter finishing it, which is precisely what the panic branch exists for.
+
+| arm | wins | avg floor |
+|---|---|---|
+| baseline (Ward, Recall) | 4/8 | 22.5 |
+| **+ Phase** | **5/8** | **23.6** |
+| +2 DEF | 4/8 | 22.1 |
+
+Defence on the same seeds changed nothing, so this is about having an escape and not about
+durability.
+
+**A correction, caught by its own test.** Writing this up I claimed the two profiles at the
+bottom of the table were exactly the two without Phase. They were not: **artisan has never
+carried Phase and sits mid-table at 50 percent**. A missing escape does not by itself explain a
+weak profile. It explained this one. The test now names the profiles without Phase as a
+deliberate list rather than asserting a rule that does not hold.
+
+### Emergent was never descending
+
+Its `stairs` weight was 1, the joint lowest in the table, and unlike `rest` that floor is live:
+the stairs candidate's base state urgency is 2, so the profile weight genuinely decides. Dying
+on floor 2 after 625 turns is 300 turns spent on a single floor. It was not a descent going
+wrong, it was no descent at all.
+
+| arm | wins | avg floor | routes |
+|---|---|---|---|
+| baseline (`stairs` 1) | 3/8 | 13.8 | commune 1, escape 2 |
+| **`stairs` 3** | **5/8** | **18.5** | commune 2, escape 3 |
+| `stairs` 6 | 2/8 | 13.5 | commune 1, escape 1 |
+| `explore` 5 | 4/8 | 17.9 | commune 1, escape 3 |
+| Phase + 2 DEF | 5/8 | 18.9 | commune 2, escape 3 |
+| `stairs` 3 + Phase | 4/8 | 20.6 | commune 2, escape 2 |
+
+`stairs` 3 and Phase-plus-defence tie at 5 of 8. The weight is taken: one number against two
+grants, and it is what the diagnosis predicted. `stairs` 6 overshoots badly, arriving
+underlevelled, and doing both fixes at once is worse than either alone, which is another
+reminder that eight seeds is a coarse instrument.
+
+Berlin holds. A weight is a preference and never a lock, `fight` stays at 15, and emergent
+still fights everything it meets. It just stops parking on floor 2 to do it. Note also that
+`stairs` 2 would be identical to `stairs` 1, since both lose to the base urgency of 2, so this
+knob has no intermediate setting.
+
+### Baseline, and an overshoot to report
+
+8 runs per agent, clean state, `PYTHONHASHSEED=0`:
+
+| agent | before | after | win paths |
+|---|---|---|---|
+| artisan | 50% | 50% | commune 2, boss_killed 1, escape 1 |
+| cartographer | 50% | 50% | escape 3, boss_killed 1 |
+| emergent | 37.5% | **62.5%** | escape 3, commune 2 |
+| exploiter | 62.5% | 75% | commune 4, escape 2 |
+| seeker | 37.5% | **62.5%** | commune 4, escape 1 |
+| whisper | 75% | 75% | escape 3, commune 3 |
+
+**30 of 48, 62.5%, which is above the stated 40-60 band.** Two things have to be said plainly
+about that number rather than buried:
+
+- **Exploiter gained a win without being touched.** Its code and kit are unchanged and its runs
+  still differ (avg floor 22.5 to 22.75, turns 6213 to 6113). Profiles run sequentially in one
+  process against a shared `~/.vaultcrawl`, so an earlier profile surviving longer warms the
+  forge cache for a later one. This is the cross-run contamination already recorded as a known
+  issue, and it means **the aggregate is order-dependent**. Discounting it, the two fixes are
+  worth +4 between them and the honest aggregate is about 60 percent.
+- **The band is now the open problem, not the profiles.** Every profile is between 50 and 75
+  percent, which is the tightest the table has ever been, and the game as a whole is easier
+  than the target. Restoring the band means tightening something global, which is a different
+  task from fixing two profiles and is left rather than done unasked.
+
+`event kinds per run` rose 12 to 13. Every profile still reaches floor 27 and still wins by at
+least two routes.

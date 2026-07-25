@@ -72,10 +72,25 @@ PROFILES = {
         "workspace_camp": 3,
     },
     "emergent": {
+        # `stairs` was 1, the joint lowest in the table, and the stairs candidate's base
+        # state urgency is 2, so unlike `rest` that floor is live and it decided things.
+        # Emergent was bimodal: snowball to floor 26 with 46 kills, or die on floor 2 to 6
+        # inside 1,500 turns. Dying on floor 2 after 625 turns is 300 turns spent on one
+        # floor, so it was not a descent going wrong, it was never descending.
+        #
+        # Swept over eight run seeds: stairs 1 wins 3 of 8 at average floor 13.8, stairs 3
+        # wins 5 at 18.5, stairs 6 wins 2 at 13.5 (it arrives underlevelled). A starting
+        # Phase sigil plus +2 DEF also reaches 5 of 8, and is not taken because this is one
+        # number against two grants and it is what the diagnosis predicted. Doing both at
+        # once is worse than either alone, at 4 of 8, which is a reminder that eight seeds
+        # is a coarse instrument.
+        #
+        # Berlin: a weight is a preference and never a lock. `fight` stays at 15, so this
+        # still fights everything it meets; it just stops parking on floor 2 to do it.
         "fight": 15, "shield": 10, "recall": 5, "flee": 4,
         "forge": 3, "breakdown": 2, "explore": 1,
         "rest": 2, "commune": 0,
-        "parley": 0, "becalm": 0, "stairs": 1,
+        "parley": 0, "becalm": 0, "stairs": 3,
         "shove": 10, "toss": 3, "ward": 8,
         "workspace_fabricator": 10,
         "workspace_terminal": 2,

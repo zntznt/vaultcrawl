@@ -1214,3 +1214,45 @@ def test_a_profile_that_cannot_fight_can_still_take_a_hit():
         assert has_mitigation, (
             name, "a profile that refuses combat needs some way to survive one round of it",
             abilities, getattr(g.player, "defense", 0))
+
+
+def test_every_profile_can_reach_the_panic_escape():
+    """The brain's panic branch (low HP, hostiles near) can do exactly one thing: cast a
+    Phase sigil. A profile without one cannot take that branch at all, whatever its HP.
+
+    Cartographer was once the only profile with no sigil at all, and giving it one took it
+    from 0 wins in 4 to 3. Seeker later gained Phase the same way, going from 4 of 8 to 5.
+
+    Lacking Phase is NOT on its own an explanation for a weak profile, and the test says so
+    by naming the exceptions rather than asserting a rule that does not hold: artisan has
+    never carried Phase and sits mid-table, and emergent was fixed by a `stairs` weight
+    instead, which matched a Phase-plus-defence arm at 5 of 8 on the same seeds. Both are
+    measured choices. This test exists to make a THIRD profile silently losing its escape
+    show up as a failure.
+    """
+    from runtime.stack import build_systems
+    from runtime.agent import PROFILES
+    without = []
+    for name in sorted(PROFILES):
+        g = Game(load_manifest("examples/world.json"), systems=build_systems())
+        g.starting_kit(name)
+        sigs = g.system("sigils")
+        if "Phase" not in [s.get("ability") for s in sigs.slots]:
+            without.append(name)
+    assert without == ["artisan", "emergent"], (
+        "the set of profiles without the panic escape is a deliberate, measured list",
+        without)
+
+
+def test_the_stairs_weight_is_live():
+    """Unlike `rest`, whose urgency of 10 to 30 buries every profile's floor, the stairs
+    candidate's base state urgency is 2. So a stairs weight is a real decision, and emergent
+    sitting at 1 was the reason it ground floor 2 for 300 turns and died there.
+    """
+    from runtime.agent import PROFILES
+    stairs_base_urgency = 2
+    live = [n for n, w in PROFILES.items() if w.get("stairs", 0) > stairs_base_urgency]
+    assert live, ("if no profile's stairs floor clears the base urgency, the weight is "
+                  "decoration and the key should go", {n: w.get('stairs') for n, w in PROFILES.items()})
+    assert PROFILES["emergent"]["stairs"] > stairs_base_urgency, (
+        "the profile that would not descend has to actually want to")

@@ -326,9 +326,28 @@ class Game:
             if sigs and len(sigs.slots) < sigs.max_slots(self):
                 sigs.slots.append({"ability": "Recall", "base": "Recall",
                                    "durability": 2, "note": "forged", "role": "hub"})
+            # And the panic escape, which it did not have.
+            #
+            # The brain's panic branch (low HP, hostiles near) can do exactly one thing:
+            # cast Phase. Seeker started with Ward and Recall, so it could not take that
+            # branch at all, which is the same gap cartographer had. Three of seeker's five
+            # losses ended with its standing at the floor and a hunter finishing it, which
+            # is precisely the situation the panic branch exists for.
+            #
+            # Not a general rule, and it is worth saying so: artisan has never carried
+            # Phase either and sits mid-table, so a missing escape does not by itself
+            # explain a weak profile. It explained this one.
+            #
+            # Swept over eight run seeds: without Phase 4 of 8 at average floor 22.5, with
+            # it 5 of 8 at 23.6. +2 DEF was measured on the same seeds and changed nothing
+            # (4 of 8), so this is about having an escape rather than about durability.
+            if sigs and len(sigs.slots) < sigs.max_slots(self):
+                sigs.slots.append({"ability": "Phase", "base": "Phase",
+                                   "durability": 2, "note": "forged", "role": "bridge"})
             self.player._known_recipes.add("brewers_yeast")
             self.player._known_recipes.add("echo_shard")
-            self.log("You start with a forged Recall sigil and Brewer's Yeast + Echo Shard recipes.")
+            self.log("You start with forged Recall and Phase sigils and "
+                     "Brewer's Yeast + Echo Shard recipes.")
             ms = self.system("marginalia")
             if ms:
                 ms.read = getattr(ms, "read", 0) + 1
