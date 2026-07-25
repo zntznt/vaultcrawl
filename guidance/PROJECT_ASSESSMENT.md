@@ -1458,3 +1458,73 @@ two profiles that were not the target and it is recorded as such.
 - **The bake still reads one input.** D1 closed the play-to-play circuit, not play-to-bake.
 - **Cartographer is the only profile with a single win route**, all three of its wins by
   escape. It is not failing, but it is the least robust of the six.
+
+## Cartographer dies early or wins late
+
+The last profile on the open list, at 3 wins in 8 and the only one with a single victory
+route. End-of-run state across 8 seeds says the two facts are the same fact:
+
+| | outcome |
+|---|---|
+| wins (3) | floor 27, standing 7 to 22, escape, 3,900 to 6,900 turns |
+| losses (5) | floors 5, 5, 12, 13, 15, and three of them inside 1,600 turns |
+
+There is no middle. When it survives the first third its standing compounds and the escape
+route opens comfortably; when it does not, it is dead on floor 5. That is a profile with a
+strong late game and no early game, not one that is weak overall.
+
+The cause is in its own weights rather than in the world. `fight` at -5 sets its flee cutoff
+to `40 + (5 - fight) * 5`, which is **90 percent HP**: it runs from almost everything, and it
+kills 2 to 6 things in a whole run. So it can never clear a threat, only outrun one, and an
+early elite that corners it before its standing is worth anything simply kills it.
+
+### Swept
+
+Four starting-state arms over 8 run seeds:
+
+| arm | wins | avg floor | routes |
+|---|---|---|---|
+| baseline | 3/8 | 16.4 | escape 3 |
+| +4 more max HP | 3/8 | 16.4 | escape 3 |
+| Phase durability 2 to 4 | 3/8 | 17.1 | escape 3 |
+| **+1 DEF** | **4/8** | **20.2** | **escape 3, boss_killed 1** |
+| +2 DEF | 4/8 | 20.2 | escape 4 |
+| +3 DEF | 2/8 | 15.9 | escape 2 |
+
+**More HP is byte-identical to the baseline.** That is the second time raw HP has measured
+inert for this profile, the first being when its old +8 was trimmed to +4. What it lacked was
+never a bigger pool, it was any ability to take a hit at all: at 90 percent flee it is barely
+ever in a fight long enough for HP to be what runs out.
+
+**+1 DEF is taken.** It matches the best win count and it is the only arm that produced a
+second victory route, which is the actual complaint about the profile. Two caveats stated
+rather than hidden: the response is **not monotonic**, since +3 is worse than +0, so eight
+seeds is a coarse instrument here and +1 wins the tiebreak on route diversity and not on a
+clean gradient.
+
+### Baseline after both profile fixes
+
+8 runs per agent, clean state, `PYTHONHASHSEED=0`:
+
+| agent | win rate | avg floor | deepest | contested | win paths |
+|---|---|---|---|---|---|
+| artisan | 50% | 21.1 | 27 | 30% | commune 2, boss_killed 1, escape 1 |
+| cartographer | **50%** | 20.3 | 27 | 68% | escape 3, boss_killed 1 |
+| emergent | 37.5% | 13.8 | 27 | 28% | escape 2, commune 1 |
+| exploiter | 62.5% | 22.5 | 27 | 24% | commune 3, escape 2 |
+| seeker | 37.5% | 21.5 | 27 | 36% | escape 2, commune 1 |
+| whisper | 75% | 22.0 | 27 | 36% | escape 3, commune 3 |
+
+**25 of 48, 52.1%.** The change is isolated: the other five profiles report identical numbers
+to the previous run across all eight seeds.
+
+Two properties hold for the first time in this project:
+
+- **Every profile reaches floor 27**, and
+- **every profile wins by at least two different routes.** Across the batch: escape 12,
+  commune 7, boss_killed 2. At the start of this work the win path was a monoculture and three
+  profiles never won at all.
+
+The spread is 37.5 to 75 percent. Seeker and emergent are now the low pair, both at 37.5, and
+both for reasons that have not been investigated; they are inside the target band, so they are
+noted rather than swept.

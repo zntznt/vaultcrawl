@@ -1187,3 +1187,30 @@ def test_the_floor_binds_heard_kills_only():
     fcs.standing["faction_probe"] = STANDING_MIN - 5
     assert fcs.standing_of("faction_probe") == STANDING_MIN - 5, (
         "the floor is applied where standing is spent, not as a global clamp")
+
+
+def test_a_profile_that_cannot_fight_can_still_take_a_hit():
+    """Cartographer died early or won late and nothing in between: three wins all ending at
+    standing 7 to 22 by escape, and three of five losses on floor 5 or 13 inside 1,600
+    turns. With `fight` at -5 it flees below 90 percent HP and kills 2 to 6 things a run,
+    so it cannot clear a threat and an early elite simply kills it.
+
+    The general property: a profile whose `fight` weight is negative has no way to trade
+    blows, so it must start with something that lets it absorb one. Raw HP does not count,
+    because it has twice now been measured byte-identical for this profile.
+    """
+    from runtime.stack import build_systems
+    from runtime.agent import PROFILES
+    for name, weights in PROFILES.items():
+        if weights.get("fight", 0) >= 0:
+            continue
+        g = Game(load_manifest("examples/world.json"), systems=build_systems())
+        base_def = getattr(g.player, "defense", 0)
+        g.starting_kit(name)
+        sigs = g.system("sigils")
+        abilities = [s.get("ability") for s in sigs.slots]
+        has_mitigation = (getattr(g.player, "defense", 0) > base_def
+                          or "Ward" in abilities)
+        assert has_mitigation, (
+            name, "a profile that refuses combat needs some way to survive one round of it",
+            abilities, getattr(g.player, "defense", 0))

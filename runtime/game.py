@@ -233,6 +233,24 @@ class Game:
             # Trimmed to +4, which matches seeker's shape of a sigil plus a modest stat.
             self.player.max_hp += 4
             self.player.hp += 4
+            # +1 DEF, because cartographer dies early or wins late and nothing in between.
+            #
+            # Its three wins all ended at standing 7 to 22 by the escape route, and three of
+            # its five losses were on floor 5 or 13 inside 1,600 turns. A profile with
+            # `fight` at -5 flees below 90 percent HP and kills 2 to 6 things a run, so it
+            # cannot clear a threat, and an early elite that corners it simply kills it.
+            #
+            # Swept over eight run seeds: +0 wins 3 by one route, +1 wins 4 by two,
+            # +2 wins 4 by one, +3 wins 2. Taking +1: it matches the best win count, and it
+            # is the only value that produced a second victory route, which is the actual
+            # complaint about this profile. Note the response is NOT monotonic, so eight
+            # seeds is a coarse instrument here and +1 is picked on route diversity rather
+            # than on a clean gradient.
+            #
+            # Another +4 max HP on top of this gives byte-identical runs, the same result
+            # as when +8 was trimmed to +4. Raw HP is inert for this profile; what it
+            # lacked was a way to take a hit at all.
+            self.player.defense = getattr(self.player, "defense", 0) + 1
             sigs = self.system("sigils")
             if sigs and len(sigs.slots) < sigs.max_slots(self):
                 sigs.slots.append({"ability": "Phase", "base": "Phase",
