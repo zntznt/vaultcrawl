@@ -15,6 +15,11 @@ from runtime.tactics import _stairs
 
 # Game.absorb_aspect grants its buff on the third consecutive rest on one tile.
 ABSORB_ATTEMPTS = 3
+# Game.absorb_aspect refuses past this many; the candidate has to know, or it parks the
+# agent on a damaging tile forever chasing a buff that is no longer on offer.
+ABSORB_CAP = 3
+# Below this, the HP a hazard tile costs is worth more than any aspect it can grant.
+ABSORB_MIN_HP = 55
 # Rest stops restoring at Game.TENSION_REST_CAP, so urgency to act should climb before it.
 TENSION_PRESSURE_AT = 100
 
@@ -609,16 +614,30 @@ class UniversalBrain(Brain):
         # many and no more: the tile may carry a hazard this candidate can see but that
         # absorb_aspect cannot use, and without a cap the agent rests on it forever
         # chasing a buff that can never land.
+        #
+        # It also has to know what standing there costs. Hazard tiles and weather are
+        # roughly ninety percent of all HP the player loses; combat is a tenth of it. The
+        # agent was parking in acid for a buff and paying more for it than the buff is
+        # worth, and once the aspect budget is full it was paying for nothing at all.
+        absorbed = len(getattr(actor, "_absorbed_aspects", []) or [])
         if (hazard_on_player and self._hazard_tries < ABSORB_ATTEMPTS
+                and absorbed < ABSORB_CAP and hp_pct >= ABSORB_MIN_HP
                 and not s.get("adjacent_hostiles") and not s.get("near_hostiles")):
-            score = _score(self.profile, "rest", 15, bonus, True)
+            # Worth less the closer it gets to costing the run.
+            urgency = 15 - (100 - hp_pct) // 5
+            score = _score(self.profile, "rest", urgency, bonus, True)
             if score > 0:
                 self._hazard_tries += 1
                 candidates.append(("absorb_hazard", score, AgentAction("rest")))
 
         # ---- WEATHER CLEAR ----
+        # Weather is the second largest drain in the game after hazard tiles, and this
+        # scored a flat 3, so the agent stood in acrid haze taking chip damage for
+        # thousands of turns rather than spend one matter to stop it. Urgency now rises as
+        # the weather actually costs you.
         if s["weather_hazard"] and s["matter"]["total"] >= 1 and len(s.get("adjacent_hostiles", [])) == 0:
-            score = _score(self.profile, "rest", 3, bonus, True)
+            urgency = 3 + (100 - hp_pct) // 8
+            score = _score(self.profile, "rest", urgency, bonus, True)
             candidates.append(("clear_weather", score, AgentAction("interact")))
 
         # ---- FIGHT ----

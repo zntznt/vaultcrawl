@@ -880,5 +880,44 @@ pins the band rather than the value, so cutting it again requires re-running the
 Confirmed at two runs per agent: **3 of 6, 50%**, the middle of the 40-60% target band, with
 every emergence number from this pass held.
 
-**Still open:** the win path is unanimous (commune) for all three winners, and `artisan` and
-`exploiter` never win at all. Bimodality across profiles is the remaining balance problem.
+## The bimodality was a measurement artifact
+
+`artisan` and `exploiter` "never winning" was not a property of the game. **`run_agent` never
+varied anything**, so every run of one agent on one world was byte-identical. `--runs 100`
+played the same game a hundred times, and a per-agent win rate could only ever be 0% or 100%.
+Every win rate this project has ever reported, including the ones earlier in this document,
+was a binary dressed as a rate.
+
+`Game` now takes a `run_seed` that varies the run without touching the baked world, and
+`evaluate_agents` passes the run index. artisan wins on run seed 0 and loses on 2 and 3.
+
+First honest win rates, 5 runs per agent, clean state, `PYTHONHASHSEED=0`:
+
+| agent | win rate | avg floor | deepest |
+|---|---|---|---|
+| artisan | 20% | 16.0 | 26 |
+| cartographer | 0% | 7.0 | 12 |
+| emergent | 20% | 8.6 | 26 |
+| exploiter | 20% | 15.2 | 26 |
+| seeker | 40% | 20.8 | 26 |
+| whisper | 80% | 25.6 | 27 |
+
+Aggregate 30%. Five of six profiles win at least sometimes and every profile has reached floor
+26, so there is no bimodality left to fix. The win path also stopped being unanimous for the
+first time: escape 3, commune 6.
+
+Two environmental findings came out of the same investigation, because the first hypotheses
+were wrong. Combat is not what kills agents: artisan took 116 points of combat damage across an
+entire run and still died. Attributing every point of HP loss to its source shows **hazard
+tiles and weather are roughly ninety percent of it**, and combat a tenth. The `absorb_hazard`
+candidate was parking the agent on damaging tiles for an aspect, and `Game.absorb_aspect`
+refuses past three aspects, so once the budget was full it was paying HP for nothing at all.
+That is the same bug class as `deploy`, in its fourth variant. The candidate now respects the
+aspect cap, refuses below 55% HP, and scores lower the more the tile is costing. `clear_weather`
+scored a flat 3, so agents stood in acrid haze for thousands of turns rather than spend one
+matter; its urgency now rises with the damage taken.
+
+**Still open:** aggregate 30% sits below the 40-60% target band, and the earlier
+`DESCEND_MEND_DIV` sweep that chose 4 was run against the single deterministic scenario, so it
+needs redoing now that the harness can measure a distribution. `cartographer` at 0% with an
+average floor of 7 is the one genuine outlier left.

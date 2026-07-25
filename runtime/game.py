@@ -74,7 +74,7 @@ class _Place:
 class Game:
     def __init__(self, manifest: dict, width: int = MAP_W, height: int = MAP_H,
                  upheaval=None, systems=None, sandbox: bool = False,
-                 site_cache: str = None, sprawl: float = 1.0):
+                 site_cache: str = None, sprawl: float = 1.0, run_seed=None):
         self.site_cache = site_cache   # path for the grown-world cache (sandbox)
         self.sprawl = max(1.0, float(sprawl))
         self.m = manifest
@@ -89,7 +89,10 @@ class Game:
         self.announced: set = set()
         self._flavored: set = set()   # note ids whose flavor has been shown once
         self._truths_spent = 0        # read truths traded away via confide()
-        self.seed = manifest["seed"]
+        # `run_seed` varies the run without touching the world. The baked seed alone made
+        # every run of one agent on one world byte-identical, so a harness running the same
+        # game a hundred times was reporting a binary as though it were a rate.
+        self.seed = manifest["seed"] if run_seed is None else f"{manifest['seed']}:{run_seed}"
         self.width, self.height = width, height
         self.floor = 0
         self.max_floor = max((b["depth"] for b in manifest["bosses"]), default=1)

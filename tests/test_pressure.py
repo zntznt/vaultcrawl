@@ -451,3 +451,33 @@ def test_descent_mend_is_load_bearing():
     gained = g.player.hp - before
     assert gained > 0, "reaching a new floor must mend something"
     assert gained <= g.player.max_hp // 3, "but it must not refill the bar"
+
+
+# ---- the harness has to be able to measure a rate ---------------------------------
+
+def test_run_seed_varies_the_run_without_changing_the_world():
+    """Every run of one agent on one world used to be byte-identical.
+
+    run_agent never varied anything, so `--runs 100` played the same game a hundred times
+    and the reported win rate could only ever be 0% or 100%. The apparent bimodality
+    across profiles (two that "never win") was that artifact: artisan wins on run seed 0
+    and loses on 2 and 3.
+    """
+    from runtime.game import Game, load_manifest
+    m = load_manifest("examples/world.json")
+    a = Game(m, systems=[], run_seed=0)
+    b = Game(m, systems=[], run_seed=1)
+    c = Game(m, systems=[])
+    assert a.seed != b.seed, "different run seeds must produce different runs"
+    assert c.seed == m["seed"], "and no run seed leaves the baked world untouched"
+    assert str(m["seed"]) in str(a.seed), "the world is still the same world"
+
+
+def test_absorb_hazard_stops_when_it_can_no_longer_pay():
+    """Hazard tiles and weather are roughly ninety percent of all HP the player loses;
+    combat is a tenth. The agent parked in acid for an aspect it could no longer gain."""
+    from runtime.agent import ABSORB_CAP, ABSORB_MIN_HP
+    assert ABSORB_CAP >= 1 and ABSORB_MIN_HP > 0
+    code = _code_only(__import__("runtime.agent", fromlist=["x"]).UniversalBrain.decide)
+    assert "ABSORB_CAP" in code, "the candidate must respect the aspect budget"
+    assert "ABSORB_MIN_HP" in code, "and must not trade HP it cannot spare"

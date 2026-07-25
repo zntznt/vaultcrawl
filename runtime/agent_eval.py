@@ -67,7 +67,7 @@ class RunResult:
 
 def run_agent(world_json: str, agent_name: str,
               max_floor: int = DEFAULT_MAX_FLOOR,
-              max_turns_per_floor: int = 500) -> RunResult:
+              max_turns_per_floor: int = 500, run_seed=None) -> RunResult:
     """Run a single agent through a world descent and return the run's statistics.
 
     Args:
@@ -86,7 +86,7 @@ def run_agent(world_json: str, agent_name: str,
     _register_brains()
 
     manifest = load_manifest(world_json)
-    game = Game(manifest, systems=systems, sandbox=False)
+    game = Game(manifest, systems=systems, sandbox=False, run_seed=run_seed)
     game.player.brain = make_brain(game, game.player, name=agent_name)
     game.player.brain.name = agent_name
     game.starting_kit(agent_name)
@@ -294,8 +294,13 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
     t0 = time.monotonic()
 
     for agent_name in agent_names:
-        for _ in range(n_runs):
-            result = run_agent(world_json, agent_name, max_floor)
+        for run_idx_for_agent in range(n_runs):
+            # Vary the run, not the world. Without this every run of one agent on one world
+            # was byte-identical, so `--runs 100` played the same game a hundred times and
+            # the reported win rate could only ever be 0% or 100%. The apparent bimodality
+            # across profiles was that artifact, not a property of the game.
+            result = run_agent(world_json, agent_name, max_floor,
+                               run_seed=run_idx_for_agent)
             results[agent_name].append(result)
             run_idx += 1
             elapsed = time.monotonic() - t0
