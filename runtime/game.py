@@ -75,7 +75,8 @@ class _Place:
 class Game:
     def __init__(self, manifest: dict, width: int = MAP_W, height: int = MAP_H,
                  upheaval=None, systems=None, sandbox: bool = False,
-                 site_cache: str = None, sprawl: float = 1.0, run_seed=None):
+                 site_cache: str = None, sprawl: float = 1.0, run_seed=None,
+                 chronicle_out: bool = False):
         self.site_cache = site_cache   # path for the grown-world cache (sandbox)
         self.sprawl = max(1.0, float(sprawl))
         self.m = manifest
@@ -115,6 +116,9 @@ class Game:
         # Which of the four routes actually ended the run. `won` alone is a bool, which is
         # how a 90% win rate looked healthy while every single win was the same win.
         self.win_path: str = ""
+        # Whether this run hands its events to the next run on this world. Off by default
+        # so the evaluation harness cannot pick up cross-run state without asking for it.
+        self.chronicle_out: bool = chronicle_out
         # Whether the warden has been dealt with, either way. The last stair reads these.
         self._boss_felled: bool = False
         self._boss_communed: bool = False
@@ -502,7 +506,14 @@ class Game:
             with open(path, "r", encoding="utf-8") as fh:
                 data = j.load(fh)
             for entry in data.get(self.seed, []):
-                self._graves[tuple(entry["pos"])] = entry["text"]
+                # Accumulate, do not overwrite. The graves FILE already appends every
+                # death, but this assigned by position, so a tile that had killed you
+                # five times loaded as one record. `_animate_graves` scales the echo off
+                # `text.count("slain by")`, which meant `deaths` was pinned at 2 forever
+                # and the escalation its code describes could not happen.
+                pos = tuple(entry["pos"])
+                prior = self._graves.get(pos)
+                self._graves[pos] = (prior + "\n" + entry["text"]) if prior else entry["text"]
         except (OSError, ValueError, KeyError):
             pass
 
@@ -527,6 +538,30 @@ class Game:
             with open(path, "w", encoding="utf-8") as fh:
                 j.dump(data, fh)
         except OSError:
+            pass
+        self._close_chronicle()
+
+    def _close_chronicle(self):
+        """Hand this run's events to the next run on this world.
+
+        Opt-in: `chronicle_out` is None unless the caller asked for it, so the evaluation
+        harness stays clean-state and reproducible. Cross-run state leaking into the
+        benchmarks is the bug that invalidated a whole balance pass; this is the same
+        class of state, and it does not get to do that silently.
+        """
+        if not getattr(self, "chronicle_out", None):
+            return
+        try:
+            from .persistence import save_chronicle
+            fcs = self.system("factions")
+            if fcs is not None:
+                from .persistence import chronicle
+                for fid, standing in getattr(fcs, "standing", {}).items():
+                    chronicle().record_faction_end(fid, standing)
+            # The world's own seed, not the run-salted one: a chronicle belongs to a
+            # world, and `run_seed` exists to vary runs within it.
+            save_chronicle(str(self.m.get("seed", self.seed)))
+        except Exception:
             pass
             from .dungeon import Level
             level = Level(w=d["w"], h=d["h"],
@@ -730,6 +765,11 @@ class Game:
             if not free:
                 break
             self.actors.append(make_echo(note, *self.spot_for(note, free)))
+            try:
+                from runtime.attractors import tracker
+                tracker().record_ghost_seen()   # a lost note haunting the world it seeded
+            except Exception:
+                pass
 
         # arrival is a threshold, not a manual: the world's name, where you stand,
         # and ONE line in the note's own voice. Rules live in the sidebar/help.
@@ -1297,6 +1337,7 @@ class Game:
             return
         self.won = True
         self.win_path = path
+        self._close_chronicle()
 
     def egress_ready(self) -> tuple[bool, str]:
         """Whether the last stair will open, and what is missing if it will not.
@@ -1556,6 +1597,11 @@ class Game:
             if not free:
                 break
             self.actors.append(make_echo(note, *self.spot_for(note, free)))
+            try:
+                from runtime.attractors import tracker
+                tracker().record_ghost_seen()   # a lost note haunting the world it seeded
+            except Exception:
+                pass
             self.log(f"† The ruins of '{_title(note)}' stir here.")
 
         # Early-floor safety: no elite blocks the path to stairs
@@ -2081,8 +2127,12 @@ class Game:
             except Exception:
                 pass
         try:
-            from runtime.persistence import chronicle
-            chronicle().record_companion_recruited()
+            # This called `chronicle().record_companion_recruited()`. RunChronicle has no
+            # such method and never has, so it raised AttributeError straight into this
+            # except. The method lives on AttractorTracker, which is what `companion_flux`
+            # actually scores.
+            from runtime.attractors import tracker
+            tracker().record_companion_recruited()
         except Exception:
             pass
         if hasattr(self.player, '_base_max_hp'):
@@ -2860,6 +2910,11 @@ class Game:
                 chronicle().record_companion_death(actor.name, cause)
             except Exception:
                 pass
+            try:
+                from runtime.attractors import tracker
+                tracker().record_companion_died()
+            except Exception:
+                pass
         if hasattr(self.player, '_base_max_hp'):
             penalty = self._companion_penalty()
             self.player.max_hp = max(4, self.player._base_max_hp - penalty)
@@ -3517,7 +3572,11 @@ class Game:
                 continue
             if not self.level.walkable(*pos):
                 continue
-            deaths = text.count("slain by") + 1
+            # One record per death now that the loader accumulates. This was
+            # `count(...) + 1` against a record that could only ever hold one death, so
+            # it was the constant 2: every echo had the same HP, the same attack, the
+            # same two specials, no matter how many times that tile had killed you.
+            deaths = max(1, text.count("slain by"))
             if rng.random() < 0.08 * deaths:  # more deaths = higher chance
                 from .entities import Actor
                 echo = Actor(x=pos[0], y=pos[1], glyph="†", name=f"Echo of the Fallen",
@@ -3528,6 +3587,11 @@ class Game:
                 echo.quality = min(deaths, 4)
                 echo.flavor = text[:80]
                 self.actors.append(echo)
+                try:
+                    from runtime.attractors import tracker
+                    tracker().record_ghost_seen()
+                except Exception:
+                    pass
                 self.log(f"† A grave marker shudders — {echo.name} rises!", ambient=True)
 
     def compose_frame(self):

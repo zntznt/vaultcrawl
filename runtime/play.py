@@ -1208,6 +1208,8 @@ def main(argv=None) -> int:
     ap.add_argument("--floors", type=int, default=3, help="auto-demo: floors to descend")
     ap.add_argument("--evolve-from", metavar="OLD",
                     help="play `world` with the chronicle from OLD->world overlaid as live upheaval")
+    ap.add_argument("--no-chronicle", action="store_true",
+                    help="ignore what earlier runs on this world left behind, and record nothing")
     ap.add_argument("--width", type=int, default=56)
     ap.add_argument("--height", type=int, default=20)
     ap.add_argument("--no-systems", action="store_true",
@@ -1238,6 +1240,17 @@ def main(argv=None) -> int:
         from .upheaval import Upheaval
         events = evolve(load_manifest(a.evolve_from), manifest)
         upheaval = Upheaval.from_events(events)
+    elif not a.no_chronicle:
+        # The return arrow. What earlier runs on this world did comes back as live
+        # upheaval, without anyone editing a note or re-baking. `--evolve-from` still
+        # wins when given, because an explicit chronicle is a stronger statement than an
+        # accumulated one.
+        from .upheaval import Upheaval
+        from .persistence import load_chronicle_events
+        past = load_chronicle_events(str(manifest.get("seed", "")))
+        if past:
+            upheaval = Upheaval.from_events(past)
+            print(f"The vault remembers {upheaval.total} thing(s) from before.")
 
     systems = []
     if not a.no_systems:
@@ -1250,7 +1263,8 @@ def main(argv=None) -> int:
     sandbox = not headless and not a.descent
     game = Game(manifest, a.width, a.height, upheaval=upheaval, systems=systems,
                 sandbox=sandbox, sprawl=a.sprawl,
-                site_cache=(a.world + ".site.json") if sandbox else None)
+                site_cache=(a.world + ".site.json") if sandbox else None,
+                chronicle_out=not a.no_chronicle)
     game.debug = a.debug
 
     # Register the brain tiers (import = registration), then give the player its chosen
@@ -1279,8 +1293,15 @@ def main(argv=None) -> int:
         outcome = "WON" if game.won else ("DIED" if not game.alive else f"descended {cleared} floor(s)")
         print(f"\n=== {outcome} | reached floor {game.floor} | "
               f"{game.kills} kills | {game.items_taken} items ===")
+        # A run that neither dies nor wins still happened. Death and victory close the
+        # chronicle themselves; walking away has to close it too, or the only runs that
+        # reach the next world are the ones that ended badly.
+        game._close_chronicle()
         return 0
-    return interactive(game)
+    try:
+        return interactive(game)
+    finally:
+        game._close_chronicle()
 
 
 if __name__ == "__main__":

@@ -719,3 +719,279 @@ def test_burning_is_bounded():
         r.props.pop((foe.x + 1, foe.y), None)
         r.on_player_act(g)
     assert getattr(foe, "_burning", 0) == 0, "burning has to end by itself"
+
+
+# ---- D: closing the runaway loop -----------------------------------------------------
+
+def test_upheaval_survives_every_event_the_chronicle_can_produce():
+    """`from_events` did `e["kind"], e["note"]` unconditionally, and six of the ten kinds
+    `to_upheaval_events` produces carry no note key. Wiring the two halves together raised
+    KeyError on the first faction or terraforming event, which is why the circuit was
+    never closed."""
+    from runtime.persistence import chronicle, reset_chronicle
+    from runtime.upheaval import Upheaval
+
+    reset_chronicle()
+    c = chronicle()
+    c.record_lore("note-a"); c.record_lore("note-b"); c.record_lore("note-c")
+    for _ in range(3):
+        c.record_forge("region_1")
+    c.record_faction_end("faction_0", 6)
+    c.record_faction_end("faction_1", -6)
+    c.record_companion_death("Ally", "The Warden")
+    c.record_death((3, 4), 0, {}, "struck down", False, False, 9)
+    c.rest_count = 60
+    c.sacred_ground_ticks = 45
+
+    events = c.to_upheaval_events()
+    kinds = {e["kind"] for e in events}
+    assert len(kinds) >= 6, kinds
+    u = Upheaval.from_events(events)          # used to raise KeyError: 'note'
+    assert u.total > 0
+    assert "region_1" in u.forge_sanctums
+    assert "faction_0" in u.contested
+    reset_chronicle()
+
+
+def test_a_run_hands_its_events_to_the_next_run(tmp_path):
+    """The missing return arrow. `to_upheaval_events` had zero callers, so nothing play
+    produced could reach a later world: the only route was editing notes and re-baking."""
+    from runtime.persistence import (chronicle, reset_chronicle,
+                                     save_chronicle, load_chronicle_events)
+    from runtime.upheaval import Upheaval
+
+    store = str(tmp_path / "chronicle.json")
+    reset_chronicle()
+    for _ in range(3):
+        chronicle().record_forge("region_7")
+    assert save_chronicle("world-seed", store) > 0
+
+    reset_chronicle()
+    assert not chronicle().to_upheaval_events(), "the next run starts empty"
+    past = load_chronicle_events("world-seed", store)
+    assert Upheaval.from_events(past).forge_sanctums == {"region_7"}
+    reset_chronicle()
+
+
+def test_the_chronicle_is_bounded(tmp_path):
+    """A return arrow is not licence for unbounded growth. Repeated runs on one world
+    dedupe on event identity and the store is capped."""
+    from runtime.persistence import (chronicle, reset_chronicle, save_chronicle,
+                                     load_chronicle_events, CHRONICLE_MAX)
+    store = str(tmp_path / "chronicle.json")
+    for run in range(40):
+        reset_chronicle()
+        for _ in range(3):
+            chronicle().record_forge(f"region_{run}")
+        chronicle().record_forge("region_same")
+        chronicle().record_forge("region_same")
+        chronicle().record_forge("region_same")
+        save_chronicle("w", store)
+    stored = load_chronicle_events("w", store)
+    assert len(stored) <= CHRONICLE_MAX, len(stored)
+    keys = [(e.get("kind"), e.get("note")) for e in stored]
+    assert len(keys) == len(set(keys)), "the same event must not stack"
+    reset_chronicle()
+
+
+def test_graves_escalate():
+    """`_load_graves` assigned into a dict keyed by position, so N deaths on one tile
+    loaded as one record and `_animate_graves` read `deaths` as the constant 2 forever.
+    The ghost could never scale, however many times that tile had killed you."""
+    import json, os
+    from runtime.stack import build_systems
+    g = Game(load_manifest("examples/world.json"), systems=build_systems())
+    path = os.path.expanduser("~/.vaultcrawl/graves.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    prior = None
+    if os.path.exists(path):
+        prior = open(path, encoding="utf-8").read()
+    try:
+        entries = [{"pos": [4, 4], "text": f"Here lies you, slain by a foe number {i}."}
+                   for i in range(3)]
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({g.seed: entries}, fh)
+        g._graves = {}
+        g._load_graves()
+        text = g._graves[(4, 4)]
+        assert text.count("slain by") == 3, ("three deaths, three records", text)
+    finally:
+        if prior is None:
+            os.remove(path)
+        else:
+            open(path, "w", encoding="utf-8").write(prior)
+
+
+def test_the_attractor_tracker_is_one_object_per_run():
+    """`tracker()` returned a NEW AttractorTracker on every call, so anything recording
+    from inside the game wrote into a throwaway. That is the structural reason three of
+    the six scores were pinned at 0.0."""
+    from runtime.attractors import tracker, reset_tracker
+    reset_tracker()
+    a = tracker()
+    a.record_ghost_seen()
+    assert tracker() is a, "one tracker per run, not one per call"
+    assert tracker().ghosts_seen == 1
+    reset_tracker()
+    assert tracker().ghosts_seen == 0, "and reset between runs"
+
+
+def test_no_attractor_score_is_structurally_unreachable():
+    """Three of six were permanently 0.0 because their recorders had zero callers.
+    Drive each recorder and assert the score it feeds can actually move."""
+    from runtime.attractors import tracker, reset_tracker
+    reset_tracker()
+    t = tracker()
+    t.record_note_learned(); t.record_note_learned()
+    t.record_ghost_seen()
+    t.record_companion_recruited(); t.record_companion_died()
+    t.record_echo_fire(); t.record_echo_fire()
+    t.record_matter_collected(10); t.record_matter_forged(10)
+    t.record_floor(1, 0); t.record_floor(2, 0); t.record_floor(3, 0)
+    t.record_standing({"a": 5, "b": -5})
+    scores = t.scores()
+    dead = [k for k, v in scores.items() if v == 0.0]
+    assert not dead, ("every attractor must be reachable", dead, scores)
+    reset_tracker()
+
+
+def test_the_industrial_score_is_not_backwards():
+    """It divided by an end-of-run inventory residual as if it were cumulative
+    collection, so SPENDING matter shrank the denominator and pushed the score up."""
+    from runtime.attractors import tracker, reset_tracker
+    reset_tracker()
+    t = tracker()
+    t.record_matter_collected(100)
+    t.record_matter_forged(60)
+    low = t.scores()["industrial"]
+    t.record_matter_forged(40)          # forge more of the same intake
+    assert t.scores()["industrial"] > low, "forging more must raise the forge score"
+    reset_tracker()
+
+
+def test_collecting_matter_is_counted_where_it_happens():
+    """Inventory.add is the only place matter enters an inventory, so it is the only
+    honest place to count intake."""
+    from runtime.attractors import tracker, reset_tracker
+    from runtime.components import Inventory
+    reset_tracker()
+    inv = Inventory()
+    inv.add({"iron": 3, "brass": 2}, quality=1)
+    assert tracker().matter_collected == 5
+    inv.pay({"iron": 3})
+    assert tracker().matter_collected == 5, "spending is not un-collecting"
+    reset_tracker()
+
+
+# ---- D4: one loop with gain above 1 --------------------------------------------------
+
+def _faction_game():
+    from runtime.factions import FactionSystem
+    g = Game(load_manifest("examples/world.json"), systems=[FactionSystem()])
+    return g, g.system("factions")
+
+
+def _provoke(fcs, fac, n):
+    fcs.disturbance[fac] = fcs.disturbance.get(fac, 0) + n
+
+
+def test_repeated_provocation_escalates_instead_of_settling():
+    """Every loop in the codebase was capped or subcritical, which is why nothing ever
+    ran away. Four alert dispatched 1 to 2 hunters and killing both loudly returned 2, so
+    the loop gave back half of what it cost. Hunter tier read the floor and nothing else."""
+    from runtime.factions import PURSUIT_MAX
+    g, fcs = _faction_game()
+    region = g.region_for(g.floor) or {}
+    fac = region.get("factionId") or g._region_faction.get(region.get("id", ""), "")
+    if not fac:
+        return  # this world's first floor has no owning house
+
+    waves = []
+    for _ in range(PURSUIT_MAX + 1):
+        _provoke(fcs, fac, 4)
+        before = len([a for a in g.actors if getattr(a, "is_hunter", False)])
+        fcs.on_floor_enter(g)
+        after = len([a for a in g.actors if getattr(a, "is_hunter", False)])
+        waves.append(after - before)
+    assert waves[-1] > waves[0], ("a house that keeps having to come after you sends "
+                                  "more each time", waves)
+    assert fcs.pursuit[fac] == PURSUIT_MAX, "and the grudge is remembered"
+
+
+def test_the_alert_a_wave_costs_falls_as_the_grudge_deepens():
+    """This is the term that carries the loop past gain 1. A wave of N hunters returns N
+    disturbance when fought loudly; if the next wave costs less than N, it compounds."""
+    from runtime.factions import PURSUIT_MAX, _PURSUIT_FLOOR_ALERT
+    need = [max(_PURSUIT_FLOOR_ALERT, 4 - p) for p in range(PURSUIT_MAX + 1)]
+    # hunters dispatched at grudge p: rng.randint(1, 2) + p, so at least 1 + p
+    gain = [(1 + p) / need[p] for p in range(PURSUIT_MAX + 1)]
+    assert gain[0] < 1.0, ("an unprovoked house is still subcritical", gain[0])
+    assert max(gain) > 1.0, ("some depth of grudge has to be supercritical", gain)
+
+
+def test_leaving_the_country_cools_the_pursuit():
+    """Termination 1, and the one the plan named. A house can only hunt you where it can
+    find you."""
+    from runtime.factions import PURSUIT_DECAY
+    g, fcs = _faction_game()
+    region = g.region_for(g.floor) or {}
+    here = region.get("factionId") or g._region_faction.get(region.get("id", ""), "")
+    other = next((f for f in fcs.standing if f != here), "faction_absent")
+    fcs.pursuit[other] = 3
+    fcs.on_floor_enter(g)
+    assert fcs.pursuit[other] == 3 - PURSUIT_DECAY, "elsewhere, the grudge cools"
+
+
+def test_going_quiet_cools_the_pursuit():
+    """Termination 2. An environment kill is a thread the search loses, so the house
+    never learns there was anything to pursue."""
+    g, fcs = _faction_game()
+    foe = next((a for a in g.actors if a.allegiance == "monster"
+                and fcs.faction_of(getattr(a, "source", ""))), None)
+    if foe is None:
+        return
+    fac = fcs.faction_of(foe.source)
+    fcs.pursuit[fac] = 3
+    fcs.disturbance[fac] = 3
+    fcs._quiet_kill(g, foe)
+    assert fcs.pursuit[fac] == 2, "a kill nobody saw walks the grudge back"
+
+
+def test_peace_ends_the_grudge_not_just_the_wave():
+    """Termination 3. A friend calling the hunters off already existed; it cleared the
+    current wave and left the escalation running underneath."""
+    g, fcs = _faction_game()
+    region = g.region_for(g.floor) or {}
+    fac = region.get("factionId") or g._region_faction.get(region.get("id", ""), "")
+    if not fac:
+        return
+    friend = next((f for f in fcs.standing if f != fac), None)
+    if friend is None:
+        return
+    fcs.standing[friend] = 5
+    fcs.pursuit[fac] = 3
+    fcs.disturbance[fac] = 6
+    fcs.on_floor_enter(g)
+    assert fcs.pursuit[fac] == 0, "making peace ends it"
+
+
+def test_the_escalation_is_bounded():
+    """Termination 4. Gain above 1 with no ceiling is a crash, not a game."""
+    from runtime.factions import PURSUIT_MAX
+    g, fcs = _faction_game()
+    region = g.region_for(g.floor) or {}
+    fac = region.get("factionId") or g._region_faction.get(region.get("id", ""), "")
+    if not fac:
+        return
+    for _ in range(20):
+        _provoke(fcs, fac, 6)
+        fcs.on_floor_enter(g)
+    assert fcs.pursuit[fac] <= PURSUIT_MAX, fcs.pursuit[fac]
+
+
+def test_pursuit_reads_no_profile():
+    """Berlin: the escalation answers what you did, never who you are."""
+    from runtime.factions import FactionSystem
+    code = _code_only(FactionSystem.on_floor_enter)
+    for forbidden in ("brain", "profile", "artisan", "whisper", "_agent_name"):
+        assert forbidden not in code, f"on_floor_enter must not branch on {forbidden}"

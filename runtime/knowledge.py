@@ -66,6 +66,12 @@ class KnowledgeSystem(System):
             self._update_faction_insight(game, note_id)
         self.known.add(note_id)
         if direct:
+            if note_id not in self.learned:
+                try:
+                    from .attractors import tracker
+                    tracker().record_note_learned()
+                except Exception:
+                    pass
             self.learned.add(note_id)
         node = nodes.get(note_id)
         if not node:

@@ -1162,3 +1162,163 @@ write outside its own region), one end to end (a sandbox world can be built).
 
 It also revises F3. The suite was never "45 of 65 modules, 16 failing". It was: pytest collects
 265 tests, and it could not get through them.
+
+## Tranche D: closing the runaway loop
+
+The last open tranche, and the one the earlier audit was harshest about. Fourteen feedback
+loops existed and every one was capped or subcritical; the cross-run layer was a facade of
+thirty-three fields with no external readers; and the bake-to-play-to-bake circuit was
+structurally open, because `bake.py` reads one input, the markdown directory, so nothing play
+produced could reach a later world.
+
+### D1. The circuit has a return arrow
+
+`to_upheaval_events()` had zero callers, and wiring it up would have crashed:
+`Upheaval.from_events` did `e["kind"], e["note"]` unconditionally while **six of the ten kinds
+the producer emits carry no note key**. `from_events` now uses `e.get("note", "")`, and the
+producer carries a note wherever a consumer keys on one.
+
+The arrow itself is deliberately the small version: a run appends its events to
+`~/.vaultcrawl/chronicle.json` under its world's seed, and the next run on that world loads
+them as its Upheaval. The bake is untouched, so the deterministic skeleton is untouched.
+
+Two runs, cold state, no notes edited and nothing re-baked:
+
+```
+=== descended 6 floor(s) | reached floor 7 | 1 kills | 0 items ===
+--- run 2 ---
+The vault remembers 1 thing(s) from before.
+  ccee0b8af9afe4f7  1 events: ['forge_grown']
+```
+
+**That is the first Upheaval event this project has ever produced by playing it.**
+
+Three things are load-bearing and each has a test:
+
+- **It is bounded.** Events dedupe on identity and the store is capped at `CHRONICLE_MAX`, so a
+  hundred runs on one world cannot accumulate a hundred ascended notes. A return arrow is not
+  licence for unbounded growth.
+- **It is opt-in.** `Game(chronicle_out=...)` defaults to False and the evaluation harness never
+  turns it on. Cross-run state leaking into the benchmarks is the bug that invalidated an entire
+  balance pass; this is the same class of state and it does not get to do that silently.
+  `--no-chronicle` turns it off for play too.
+- **Walking away counts as an ending.** Death and victory close the chronicle themselves, and a
+  session that simply stops now closes it as well. The first version only recorded runs that
+  ended badly, which was visible immediately: a six-floor demo wrote nothing at all.
+
+### D2. Graves can escalate
+
+The graves *file* has always appended every death. `_load_graves` assigned into a dict keyed by
+position, so five deaths on one tile loaded as one record, and `_animate_graves` reads its scale
+off `text.count("slain by") + 1`. **`deaths` was the constant 2, forever**: same HP, same attack,
+same two specials, no matter how many times that tile had killed you. The loader accumulates now
+and the count is exact.
+
+### D3. The attractor frame is resolved rather than left half-built
+
+The root cause was one line. `tracker()` was a factory returning a **new** `AttractorTracker` on
+every call, so anything recording from inside the game wrote into a throwaway and dropped it.
+That is why three of six scores were structurally 0.0: their recorders had nowhere to write even
+if someone had called them. It is now a per-run singleton on the same pattern as
+`persistence.chronicle()`, cleared by `reset_run_state()`.
+
+With somewhere to write, the four dead recorders are wired: `record_note_learned` from
+`knowledge._reveal`, `record_ghost_seen` from both ghost sources, `record_companion_died` from
+`Game.kill`, `record_echo_fire` from the Echo sigil's death-save.
+
+`record_companion_recruited` was worse than uncalled. It was called, on
+`chronicle()`, and **RunChronicle has never had that method**, so it raised AttributeError into
+a silent except from the day it was written. The method is on `AttractorTracker`, which is what
+`companion_flux` actually scores.
+
+`industrial` was directionally backwards. It divided by `inventory.total()` read at the end of
+the run, which is a **residual**, so spending matter shrank the denominator and pushed the score
+*up*. Intake is now counted cumulatively in `Inventory.add`, the only place matter enters an
+inventory, and the forge records what it actually consumed rather than the harness guessing
+`sigils_forged * 3` afterwards. Measured on one run: 171 collected, 56 forged, ratio 0.33.
+
+`Dampener` is deleted. Both methods had zero callers and one was a declared no-op.
+
+### D4. One loop with gain above 1
+
+The alert track was the clearest subcritical case in the codebase. Four disturbance dispatched
+1 to 2 hunters; killing both loudly returned 2 disturbance, so the loop gave back half of what
+it cost and always died out. Hunter tier read the floor and nothing else, so provoking a house
+repeatedly in its own country produced the same two guards forever.
+
+`pursuit` is a per-faction memory of how many times that house has had to come after you. Each
+dispatch deepens it, and a deeper grudge sends **more** hunters while needing **less** alert to
+send them:
+
+| grudge | hunters dispatched | alert needed | loop gain |
+|---|---|---|---|
+| 0 | 1 to 2 | 4 | 0.38 |
+| 1 | 2 to 3 | 3 | 0.83 |
+| 2 | 3 to 4 | 2 | **1.75** |
+| 3 | 4 to 5 | 2 | **2.25** |
+| 4 | 5 to 6 | 2 | **2.75** |
+
+Past grudge 2 a wave returns more disturbance than the next wave costs. It compounds instead of
+settling, and it reaches that depth in real play: one 26-floor run produced **16 waves and 71
+hunters against roughly 24 under the old rule**, hitting the ceiling. (The 24 is the old rule's expected value over the same 16 waves,
+`randint(1, 2)`, not a second measured run.)
+
+Gain above 1 with no exit is a crash, not a game, so it terminates four ways and all four are
+the player's to reach:
+
+1. **Leave.** Pursuit decays every floor spent outside that house's country.
+2. **Go quiet.** An environment kill is a thread the search loses, so it cools the grudge as
+   well as the alert. The house cannot pursue what it never saw.
+3. **Make peace.** A friend calling the hunters off already existed; it cleared the current wave
+   and left the escalation running underneath. It now ends the grudge.
+4. **A ceiling**, so a player who does none of the above still meets something finite.
+
+Berlin holds: the escalation answers what you did, never who is playing, and a test asserts
+`on_floor_enter` branches on no profile.
+
+### What it cost, measured
+
+8 runs per agent, clean state, `PYTHONHASHSEED=0`:
+
+| agent | post-C | post-D | win paths after D |
+|---|---|---|---|
+| artisan | 50% | 50% | commune 2, boss_killed 1, escape 1 |
+| cartographer | 50% | 37.5% | escape 3 |
+| emergent | 12.5% | **25%** | commune 1, escape 1 |
+| exploiter | 37.5% | **12.5%** | commune 1 |
+| seeker | 50% | 62.5% | commune 5 |
+| whisper | 87.5% | 75% | escape 3, commune 3 |
+
+**Aggregate 21 of 48, 43.75%, still inside the 40-60% band**, and the spread tightened at both
+ends: the best profile came down from 87.5% and the worst came up from 12.5%. Emergent, flagged
+last pass as the next profile to sweep, **doubled without being touched**: the escalation gave
+the profile that fights everything something worth fighting. Event kinds per run went 12 to 13.
+
+The cost lands on exploiter, 37.5% down to 12.5%. That is the profile that fights loud and stays
+put, which is exactly the behaviour the escalation is built to punish, and its own weights put
+every de-escalation tool near zero (`commune` 0, `parley` 1, `becalm` 1). Berlin-legal, since
+those are preferences and not locks, but it undoes half of the previous pass's fix.
+
+The obvious knob does not fix it. Sweeping the ceiling against exploiter over eight run seeds:
+
+| `PURSUIT_MAX` | exploiter | peak loop gain |
+|---|---|---|
+| 4 | 1 of 8 | 2.75 |
+| 3 | 1 of 8 | 2.25 |
+| 2 | 2 of 8 | 1.75 |
+
+Dropping to 2 buys back one win and costs the loop a third of its headroom. The ceiling is not
+the lever, so it stays at 4 and exploiter goes on the open list rather than being papered over.
+
+## Still open after D
+
+- **Exploiter at 1 of 8** under the escalation. The lever is not the pursuit ceiling; the
+  candidate is its own starting state again, or giving the loud playstyle a de-escalation route
+  it will actually take.
+- **The eighteen failing tests** are still the eighteen failing tests. They fail identically on
+  every commit checked, including the one before this work began.
+- **`arch/vaults.py`** still has zero callers and a data path resolving to a file that does not
+  exist (plan item B5, deferred).
+- **The bake still reads one input.** D1 closes the play-to-play circuit, not the play-to-bake
+  one. Whether a chronicle should be able to change a bake is a design question, not a bug, and
+  it is the one place the deterministic skeleton would actually be at risk.

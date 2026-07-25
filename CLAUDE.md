@@ -23,7 +23,7 @@ python3 -m runtime.play examples/world.json                       # interactive 
 python3 -m runtime.play examples/world.json --auto --brain seeker # headless agent
 python3 -m runtime.agent_eval examples/world.json --runs 20       # evaluation harness
 python3 run_agents.py                                             # multi-agent runner
-python3 -m pytest tests/ -q                                       # 45 of 65 modules
+python3 -m pytest tests/ -q                                       # 265 tests, 45 of 65 modules
 PYTHONPATH=. python3 tests/test_integration.py                    # the other 20 are scripts
 ```
 
@@ -83,10 +83,13 @@ The agent communicates with the game via a 14-verb `AgentAction` vocabulary
 4. **Determinism first.** No `random.seed()`, no `hash()`-seeded ordering, no wall-clock
    in the bake path. Seed RNG from SHA-256 of stable keys.
 5. **The suite is split, and pytest only sees half of it.** `python3 -m pytest tests/ -q`
-   collects 45 of 65 modules. The other 20, including `test_integration.py` and the whole
-   brain ladder, use a `main()` plus `if __name__` script style pytest cannot discover;
-   run those as `PYTHONPATH=. python3 tests/<name>.py`. Sixteen collected tests currently
-   fail (see `guidance/PROJECT_ASSESSMENT.md` F3). Nothing runs any of this in CI.
+   collects 265 tests across 45 of 65 modules and runs in about a minute. The other 20,
+   including `test_integration.py` and the whole brain ladder, use a `main()` plus
+   `if __name__` script style pytest cannot discover; run those as
+   `PYTHONPATH=. python3 tests/<name>.py`. **18 collected tests currently fail**, and they
+   fail identically on every commit checked back to before the assessment work began (see
+   `guidance/PROJECT_ASSESSMENT.md` F3). Nothing runs any of this in CI.
+   Do not run the suite concurrently with `agent_eval`: together they OOM.
 6. `ponytail:` comments mark deliberate shortcuts. Prefer deleting over adding.
    (There are currently zero in the codebase.)
 7. **Balance changes must be measured, not argued.** `runtime/pressure.py` reports decision

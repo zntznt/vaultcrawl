@@ -160,6 +160,14 @@ class ForgeSystem(System):
         if not player_inv.can_pay(cost):
             return False
 
+        try:
+            # What the forge actually consumed, not `sigils_forged * 3` guessed after
+            # the fact by the harness.
+            from .attractors import tracker
+            tracker().record_matter_forged(sum(cost.values()))
+        except Exception:
+            pass
+
         sigil = {
             "note": "forged",
             "role": _ABILITY_ROLE.get(ability, ""),

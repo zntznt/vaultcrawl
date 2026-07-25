@@ -55,10 +55,23 @@ class Inventory:
         self.qual: dict = {}     # material -> best quality tier banked (for the forge floor)
 
     def add(self, comps: dict, quality: int = 0):
+        gained = 0
         for m, q in (comps or {}).items():
             self.comp[m] = self.comp.get(m, 0) + q
+            gained += q
             if quality > self.qual.get(m, 0):
                 self.qual[m] = quality
+        if gained:
+            # The `industrial` attractor scores forged-over-collected. It was reading
+            # `inventory.total()` at the end of the run, which is the RESIDUAL, so
+            # spending matter shrank the denominator and pushed the score UP: it was
+            # directionally backwards. Collection is cumulative and this is the only
+            # place matter enters an inventory.
+            try:
+                from .attractors import tracker
+                tracker().record_matter_collected(gained)
+            except Exception:
+                pass
 
     def quality_of(self, material) -> int:
         return self.qual.get(material, 0)

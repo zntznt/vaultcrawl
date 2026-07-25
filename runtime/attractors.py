@@ -145,28 +145,29 @@ class AttractorTracker:
         return " ".join(parts) + "."
 
 
-# module-level factory
+# --------------------------------------------------------------------------- #
+# one tracker per run
+# --------------------------------------------------------------------------- #
+#
+# This was a factory returning a NEW AttractorTracker on every call, so anything that
+# reached for `tracker()` from inside the game wrote its record into a throwaway object
+# and dropped it. That is the structural reason three of the six scores were pinned at
+# 0.0: `record_ghost_seen`, `record_note_learned`, `record_companion_died` and
+# `record_echo_fire` had nowhere to write even if someone had called them.
+#
+# Same shape as `persistence.chronicle()`: a per-run singleton, reset by
+# `stack.reset_run_state()` at the start of every run so a harness batch cannot carry
+# one run's attractors into the next.
+_tracker: AttractorTracker | None = None
+
+
 def tracker() -> AttractorTracker:
-    return AttractorTracker()
+    global _tracker
+    if _tracker is None:
+        _tracker = AttractorTracker()
+    return _tracker
 
 
-class Dampener:
-    @staticmethod
-    def compute_mods(scores: dict) -> dict:
-        """Attractor tracking only — no automated parameter modification.
-        Terraforming must be lateral (different content, same difficulty)."""
-        return {"_total_mods": 0, "_tracked_scores": scores}
-
-    @staticmethod
-    def compute_terraforming_velocity(prev_scores: dict, curr_scores: dict) -> float:
-        """Rate of change between two runs' attractor scores.
-        Returns 0.0-1.0 where higher = faster change."""
-        if not prev_scores:
-            return 0.0
-        total = 0.0
-        count = 0
-        for key in curr_scores:
-            if key in prev_scores:
-                total += abs(curr_scores[key] - prev_scores[key])
-                count += 1
-        return total / max(1, count) if count else 0.0
+def reset_tracker():
+    global _tracker
+    _tracker = AttractorTracker()

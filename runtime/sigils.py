@@ -509,6 +509,11 @@ class SigilSystem(System):
         else:
             p.hp = 2 if _prop(echo, "twin") else 1
         game.log("An echo of you takes the blow.")
+        try:
+            from .attractors import tracker
+            tracker().record_echo_fire()
+        except Exception:
+            pass
         self._consume(game, echo)
 
     def _corrode(self, game):

@@ -78,7 +78,7 @@ def run_agent(world_json: str, agent_name: str,
     """
     from collections import deque
     from runtime.agent_action import AgentAction, dispatch
-    from runtime.attractors import AttractorTracker
+    from runtime.attractors import tracker as attractor_tracker
 
     from runtime.stack import reset_run_state
     reset_run_state()
@@ -97,7 +97,10 @@ def run_agent(world_json: str, agent_name: str,
     hp_samples: list[float] = []
     floors_cleared = 0
     turns_total = 0
-    tracker = AttractorTracker()
+    # The shared per-run tracker, not a private one. Four of the recorders fire from
+    # deep inside the game (knowledge, sigils, forge, graves); a local instance could
+    # never see them. reset_run_state() clears it at the top of every run.
+    tracker = attractor_tracker()
     decisions = DecisionLog()
     emergence = EmergenceLog()
     # Watch the bus and the verbs for this run. A 28-system game whose systems never touch
@@ -211,10 +214,8 @@ def run_agent(world_json: str, agent_name: str,
     fcs = game.system("factions")
     if fcs:
         tracker.record_standing(dict(getattr(fcs, "standing", {})))
-    tracker.record_matter_forged(sigils_forged * 3)  # rough: each sigil costs ~3 matter
-    salvage = game.system("salvage")
-    if salvage:
-        tracker.record_matter_collected(salvage.inventory(game).total())
+    # matter collected and forged are now recorded where they actually happen, in
+    # Inventory.add and ForgeSystem, so nothing is guessed or re-read here.
 
     return RunResult(
         agent=agent_name,

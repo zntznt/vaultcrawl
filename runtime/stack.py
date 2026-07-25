@@ -96,3 +96,8 @@ def reset_run_state() -> None:
         reset_metrics()
     except Exception:
         pass
+    try:
+        from .attractors import reset_tracker
+        reset_tracker()
+    except Exception:
+        pass
