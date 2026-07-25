@@ -501,3 +501,27 @@ def test_profile_weights_below_state_urgency_are_inert():
     calm = 1
     assert _score(hi, "flee", calm, 0) > _score(lo, "flee", calm, 0), (
         "above it, the weight is what decides")
+
+
+def test_every_profile_starts_with_a_way_out():
+    """The brain's panic branch has exactly one escape: cast a Phase sigil.
+
+    Cartographer was the only profile that started with no sigil at all, and one of only
+    two with a negative `fight` weight. The one profile that refuses to fight was the one
+    with no way out of a fight, and it was the only profile that never won a run. Measured
+    over four run seeds: 0 of 4 without a sigil, 3 of 4 with Phase.
+
+    Berlin: the fix is starting state, which is the legal lever. Nothing here branches on
+    the profile at decision time.
+    """
+    from runtime.stack import build_systems
+    for name in ("artisan", "cartographer", "emergent", "exploiter", "seeker", "whisper"):
+        g = Game(load_manifest("examples/world.json"), systems=build_systems())
+        g.starting_kit(name)
+        sigs = g.system("sigils")
+        abilities = [s.get("ability") for s in sigs.slots]
+        fight = __import__("runtime.agent", fromlist=["x"]).PROFILES[name].get("fight", 0)
+        assert abilities, (name, "every profile starts with at least one sigil")
+        if fight < 0:
+            assert "Phase" in abilities, (
+                name, "a profile that refuses combat needs the panic escape", abilities)

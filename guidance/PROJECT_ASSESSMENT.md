@@ -934,15 +934,56 @@ Final, 4 runs per agent, clean state, `PYTHONHASHSEED=0`:
 
 Aggregate 33%. Win paths: commune 6, escape 2.
 
-**One profile still does not win, and one attempt to fix it failed informatively.**
-`cartographer` has `fight: -5`, so it refuses combat, and `flee: 3`, below average. A pacifist
-that will not run. Raising its flee weight to 6 and then 8 produced **byte-identical runs**,
-which exposes a property of the scoring formula worth knowing before anyone tunes a profile:
-`score = max(profile_floor, state_urgency) + turn_bonus`, so **a profile weight beneath the
-typical state urgency for its candidate is inert**. Most of cartographer's weights are in that
-dead zone. Fixing it means either raising the weights above the urgencies they compete with, or
-changing its starting kit, which is the Berlin-legal lever for differentiating a profile. A
-test now documents the inert-weight property.
+## Cartographer had no way out of a fight
 
-**Still open:** aggregate 33% sits below the 40-60% band, and the mend is no longer the lever
-that moves it. `cartographer` at 0%.
+The last profile that never won. Two attempts, and the failed one is as informative as the fix.
+
+**Raising its `flee` weight did nothing.** From 3 to 6 to 8 produced byte-identical runs. That
+exposes a property of the scoring formula worth knowing before anyone tunes a profile:
+`score = max(profile_floor, state_urgency) + turn_bonus`, so **a profile weight beneath the
+typical state urgency for its candidate is inert**. Most of cartographer's weights sit in that
+dead zone. A test documents it.
+
+**The starting kit was the real gap.** Laying the six kits side by side:
+
+| profile | escape sigil | DEF | fight weight |
+|---|---|---|---|
+| artisan | Recall | | 1 |
+| **cartographer** | **none** | | **-5** |
+| emergent | | +2 | 15 |
+| exploiter | Phase + Ward | | 10 |
+| seeker | Recall | | 8 |
+| whisper | **Phase** | | **-5** |
+
+The brain's panic branch has exactly one escape: cast a Phase sigil. Cartographer was the only
+profile that started with **no sigil at all**, and one of only two whose `fight` weight is
+negative. So the one profile that refuses to fight was also the one with no way out of a fight.
+The other pacifist, whisper, starts with Phase and wins most of its runs.
+
+Measured over four run seeds: no sigil wins 0 of 4, adding Phase wins 3 of 4. The +8 max HP it
+used to carry was compensating for the missing escape and bought nothing once the escape
+existed (+8 and +4 give byte-identical runs), so it is trimmed to +4, matching seeker's shape
+of a sigil plus a modest stat. This is starting state, which is the Berlin-legal lever; nothing
+branches on the profile at decision time, and a test asserts every profile starts with a sigil
+and that every combat-refusing profile starts with the panic escape.
+
+## Final
+
+4 runs per agent, clean state, `PYTHONHASHSEED=0`:
+
+| agent | win rate | avg floor | contested | labels | win paths |
+|---|---|---|---|---|---|
+| artisan | 25% | 19.3 | 29% | 28 | commune 1 |
+| cartographer | 75% | 21.3 | 72% | 26 | escape 2, commune 1 |
+| emergent | 25% | 9.8 | 30% | 25 | commune 1 |
+| exploiter | 25% | 15.3 | 28% | 26 | commune 1 |
+| seeker | 50% | 20.0 | 45% | 29 | commune 2 |
+| whisper | 75% | 25.3 | 38% | 29 | escape 2, commune 1 |
+
+**Aggregate 46%, inside the 40-60% target band for the first time.** Every profile wins
+sometimes. Win paths are spread across escape 4 and commune 7. Contested decisions run 28-72%
+against the 1-11% this work started from, and 25-29 of the 27-plus candidate labels are in use
+per profile against three labels owning 80% of turns at the start.
+
+The one profile change did not disturb any other: artisan, emergent, exploiter, seeker and
+whisper report numbers identical to the previous run.

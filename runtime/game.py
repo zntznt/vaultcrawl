@@ -214,11 +214,29 @@ class Game:
                 if len(bridge) >= 2:
                     know._reveal(self, bridge[0])
                     know._reveal(self, bridge[1])
-            self.player.max_hp += 8
-            self.player.hp += 8
+            # A Phase sigil, and less raw HP than before.
+            #
+            # Cartographer was the only profile that started with no sigil at all, and one
+            # of only two whose `fight` weight is negative. The brain's panic branch has
+            # exactly one escape: cast Phase. So the one profile that refuses to fight was
+            # also the one with no way out of a fight, and it was the only profile that
+            # never won a single run. whisper, the other pacifist, starts with Phase and
+            # wins most of its runs.
+            #
+            # Measured over four run seeds: no sigil wins 0 of 4, adding Phase wins 3 of 4.
+            # The +8 max HP it used to carry was compensating for the missing escape and
+            # bought nothing once the escape existed: +8 and +4 give byte-identical runs.
+            # Trimmed to +4, which matches seeker's shape of a sigil plus a modest stat.
+            self.player.max_hp += 4
+            self.player.hp += 4
+            sigs = self.system("sigils")
+            if sigs and len(sigs.slots) < sigs.max_slots(self):
+                sigs.slots.append({"ability": "Phase", "base": "Phase",
+                                   "durability": 2, "note": "forged", "role": "bridge"})
             self.player._known_recipes.add("prophecy_ink")
             self.player._known_recipes.add("lantern_oil")
-            self.log("You feel the resilience of countless maps and Prophecy Ink + Lantern Oil recipes.")
+            self.log("You start with a Phase sigil, a mapmaker's resilience, and "
+                     "Prophecy Ink + Lantern Oil recipes.")
             ms = self.system("marginalia")
             if ms:
                 ms.read = getattr(ms, "read", 0) + 1
