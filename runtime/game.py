@@ -27,6 +27,19 @@ BECALM_COST = 2      # matter per tier to placate a lesser hostile
 LEASH = 3            # sandbox: a creature's territory (and pursuit range) around home
 TENSION_ALERT = 200  # complacency at which the vault notices you and sends something
 TENSION_REST_CAP = 300  # above this, holding still stops restoring anything
+# Fraction of max HP mended on reaching a new floor.
+#
+# A previous pass cut this from //5 to //10 on the argument that it was the largest heal
+# in the game and was handed to the exact action that wins. That argument was incomplete.
+# The player has no power curve at all (entities.py: "the player never gains stats during
+# a run"), so this is the only resource in the game that scales with depth, and halving it
+# made a twenty-six floor descent unsurvivable: win rate fell 3 to 2 to 1 of 6 across
+# three passes while every other number improved.
+#
+# Swept against the harness, one run per agent: //10 and //6 both win 1 of 6, //4 wins 3
+# of 6, //3 wins 4 of 6. //4 sits in the middle of the 40-60% target band, so the descent
+# pays for itself and not much more.
+DESCEND_MEND_DIV = 4
 EGRESS_TRUTHS_MAX = 8   # ceiling for the truths route on a large vault
 EGRESS_TRUTHS_MIN = 3   # floor, so a tiny vault still asks for something
 EGRESS_STANDING = 3     # standing with the warden's house that opens it instead
@@ -1342,7 +1355,7 @@ class Game:
             # strategy was also the largest heal in it. Halved: descending still relieves,
             # but it no longer pays for the whole descent.
             self.player.hp = min(self.player.max_hp,
-                                 self.player.hp + self.player.max_hp // 10)
+                                 self.player.hp + self.player.max_hp // DESCEND_MEND_DIV)
         penalty = self._companion_penalty()
         self.player.max_hp = max(4, self.player._base_max_hp - penalty)
         self.player.hp = min(self.player.hp, self.player.max_hp)

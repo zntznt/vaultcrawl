@@ -850,8 +850,35 @@ now scoped to Keepers the dialogue system actually owns.
 | `Game.emit` non-broadcast lines | 90 | 0 |
 | dialogue tree activations per run | 0 | 13 |
 
-**Open, and a regression:** win rate fell from 2 of 6 to 1 of 6. Talking to Keepers costs turns
-and the current payoff does not cover them, and the trend across the last three passes is
-downward (3, then 2, then 1) as free resources have been removed without the rest of the
-economy being re-priced against them. That is now the most important balance question, and it
-should be answered before any further content is wired.
+## The win-rate regression, diagnosed and fixed
+
+Win rate had fallen 3, then 2, then 1 of 6 across three passes while every other number
+improved. The first hypothesis, that talking to Keepers costs turns, was wrong: disabling the
+keeper candidate entirely changes nothing (identical floors for all six profiles), because
+Keepers are rarely adjacent. The second, that healing had been over-tightened, was also wrong:
+artisan healed 1,119 HP over a run and still died on floor 12, with rests refused only 31 times
+out of 351.
+
+The actual cause is structural. `entities.py` is explicit that **the player never gains stats
+during a run**, so there is no power curve at all. The floor-enter mend is the only resource in
+the game that scales with depth. A previous pass halved it from `max_hp//5` to `//10` on the
+argument that it was the largest heal in the game and was handed to the exact action that wins.
+That argument was correct in isolation and incomplete in context: with no power curve, halving
+it made a twenty-six floor descent unsurvivable.
+
+Swept against the harness, one run per agent:
+
+| mend | wins |
+|---|---|
+| `max_hp//10` | 1 of 6 |
+| `max_hp//6` | 1 of 6 |
+| `max_hp//4` | **3 of 6** |
+| `max_hp//3` | 4 of 6 |
+
+`DESCEND_MEND_DIV = 4` is now a named constant with the sweep recorded next to it, and a test
+pins the band rather than the value, so cutting it again requires re-running the sweep.
+Confirmed at two runs per agent: **3 of 6, 50%**, the middle of the 40-60% target band, with
+every emergence number from this pass held.
+
+**Still open:** the win path is unanimous (commune) for all three winners, and `artisan` and
+`exploiter` never win at all. Bimodality across profiles is the remaining balance problem.

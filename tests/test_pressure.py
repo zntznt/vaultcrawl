@@ -95,7 +95,7 @@ def test_descending_does_not_refund_a_fifth_of_max_hp():
     before = g.player.hp
     g.descend()
     gained = g.player.hp - before
-    assert gained <= g.player.max_hp // 10, (
+    assert gained <= g.player.max_hp // 3, (
         "descending mends a little; it must not pay for the whole descent", gained)
 
 
@@ -422,3 +422,32 @@ def test_scent_system_is_load_bearing():
     from runtime import behavior, recipes
     assert 'system("scent")' in inspect.getsource(behavior)
     assert 'system("scent")' in inspect.getsource(recipes)
+
+
+# ---- the descent has to be survivable ---------------------------------------------
+
+def test_descent_mend_is_load_bearing():
+    """The only resource in the game that scales with depth.
+
+    entities.py is explicit that the player never gains stats during a run, so there is no
+    power curve; the floor-enter mend is the whole of it. A previous pass cut this from
+    max_hp//5 to //10 on the argument that it was a free heal handed to the winning action,
+    and the win rate fell 3 to 2 to 1 of 6 over three passes while every other number
+    improved. Swept against the harness: //10 and //6 win 1 of 6, //4 wins 3 of 6, //3 wins
+    4 of 6.
+
+    This test does not pin the exact value. It pins the reasoning: cutting it again without
+    re-running the sweep is how the descent became unsurvivable the first time.
+    """
+    from runtime.game import DESCEND_MEND_DIV
+    assert 3 <= DESCEND_MEND_DIV <= 5, (
+        "outside the swept band; re-measure win rate before changing this",
+        DESCEND_MEND_DIV)
+
+    g = _game()
+    g.player.hp = 10
+    before = g.player.hp
+    g.descend()
+    gained = g.player.hp - before
+    assert gained > 0, "reaching a new floor must mend something"
+    assert gained <= g.player.max_hp // 3, "but it must not refill the bar"
