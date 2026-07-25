@@ -169,6 +169,32 @@ class FactionSystem(System):
 
     # ---- kills feed the diplomacy graph (via the bus) -------------------------
     def on_event(self, game, etype, data):
+        if etype == "communed":
+            # Every house notes a communion. This wrote self.standing directly from inside
+            # Game.emit and did NOT emit standing_changed, so terrain_mod never saw it:
+            # one code path silently outside the bus while every other standing change
+            # announced itself.
+            self._build(game)
+            for fac in list(self.standing.keys()):
+                self.standing[fac] = self.standing.get(fac, 0) + 1
+                game.emit("standing_changed", faction=fac,
+                          standing=self.standing[fac], cause="communed")
+            game.log("The world stills. Every faction felt that.")
+            return
+        if etype == "becalmed":
+            # Violence subsides around a pacified creature. Rewriting allegiance and
+            # nulling brains from inside the bus dispatcher is exactly what
+            # SYSTEMS_SPEC says a system must not have done to it by Game.
+            calmed = 0
+            for a in list(game.actors):
+                if a.allegiance == "monster" and max(abs(a.x - game.player.x),
+                                                     abs(a.y - game.player.y)) <= 8:
+                    a.allegiance = "wild"
+                    a.brain = None
+                    calmed += 1
+            if calmed:
+                game.log("The violence subsides. Nearby creatures lose their taste for blood.")
+            return
         if etype != "enemy_killed":
             return
         self._build(game)

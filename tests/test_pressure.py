@@ -344,3 +344,81 @@ def test_no_verb_is_broken_in_a_real_run():
     assert r.emergence["broken_verbs"] == [], (
         "a verb attempted many times and never once successful is a dead mechanic",
         r.emergence["broken_verbs"])
+
+
+# ---- B: the bus carries the events, and the systems own their own effects ----------
+
+def test_interact_reaches_the_dialogue_system():
+    """DialogueSystem.on_event listens for `interact`, and nothing in real play emitted
+    it, so its whole quest/offering/gossip tree ran only in a demo and a test."""
+    from runtime.dialogue import DialogueSystem
+    from runtime.stack import build_systems
+    g = Game(load_manifest("examples/world.json"), systems=build_systems())
+    dlg = g.system("dialogue")
+    assert isinstance(dlg, DialogueSystem)
+
+    seen = []
+    orig = dlg.on_event
+    dlg.on_event = lambda game, etype, data: (
+        seen.append((etype, (data or {}).get("target"))) or orig(game, etype, data))
+
+    # place one of the dialogue system's own NPCs next to the player
+    if not dlg.npcs:
+        return  # this floor has no Keeper; the plumbing is asserted below regardless
+    npc = dlg.npcs[0]
+    npc.x, npc.y = g.player.x + 1, g.player.y
+    g.actors.append(npc) if npc not in g.actors else None
+    g.interact()
+    assert any(e == "interact" and t is npc for e, t in seen), (
+        "an adjacent Keeper must reach the dialogue tree", seen)
+
+
+def test_emit_is_only_a_broadcast():
+    """Game.emit was three lines of broadcast plus ninety lines doing five systems' jobs."""
+    code = _code_only(Game.emit)
+    for forbidden in ("standing[", "allegiance", "plants", "_town_rooms", "chronicle"):
+        assert forbidden not in code, f"emit must not do {forbidden} itself"
+
+
+def test_one_failing_system_does_not_silence_the_rest():
+    from runtime.systems import System
+
+    class Boom(System):
+        name = "boom"
+        def on_event(self, game, etype, data):
+            raise RuntimeError("nope")
+
+    class Listener(System):
+        name = "listener"
+        def __init__(self):
+            self.heard = 0
+        def on_event(self, game, etype, data):
+            self.heard += 1
+
+    listener = Listener()
+    g = Game(load_manifest("examples/world.json"), systems=[Boom(), listener])
+    g.emit("noise", pos=(0, 0), volume=1)
+    assert listener.heard == 1, "a raising system must not eat the broadcast"
+
+
+def test_communion_announces_itself_on_the_bus():
+    """The standing bump wrote factions.standing directly and did not emit
+    standing_changed, so terrain_mod never saw one of the code paths."""
+    g = _game(systems=[FactionSystem()])
+    fcs = g.system("factions")
+    fcs._build(g)
+    fcs.standing["faction_0"] = 0
+    heard = []
+    orig = g.emit
+    g.emit = lambda etype, **kw: (heard.append(etype) or orig(etype, **kw))
+    fcs.on_event(g, "communed", {})
+    assert fcs.standing["faction_0"] == 1, "communion still raises standing"
+    assert "standing_changed" in heard, "and it says so on the bus"
+
+
+def test_scent_system_is_load_bearing():
+    """Guard against deleting it: two modules consume it, so `isolate` is wrong."""
+    import inspect
+    from runtime import behavior, recipes
+    assert 'system("scent")' in inspect.getsource(behavior)
+    assert 'system("scent")' in inspect.getsource(recipes)

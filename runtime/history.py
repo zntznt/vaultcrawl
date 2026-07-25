@@ -204,6 +204,29 @@ class HistorySystem(System):
         x, y = rng.choice(free)
         self.ground[(x, y)] = self.lore[self.read]  # the next unread line
 
+    def on_event(self, game, etype, data):
+        """Reading the vault is what teaches recipes and what the chronicle remembers.
+
+        Both lived inside Game.emit, so HistorySystem raised `lore_read` and then had no
+        listener for it.
+        """
+        if etype != "lore_read":
+            return
+        note_id = (data or {}).get("note", "")
+        try:
+            from runtime.persistence import chronicle
+            chronicle().record_lore(note_id)
+        except Exception:
+            pass
+        try:
+            from runtime.recipes import discover_from_lore
+            recipe = discover_from_lore(game)
+            if recipe:
+                game.player._known_recipes.add(recipe)
+                game.log(f"Your studies reveal the craft of {recipe}.")
+        except Exception:
+            pass
+
     def on_player_act(self, game):
         tile = (game.player.x, game.player.y)
         line = self.ground.pop(tile, None)

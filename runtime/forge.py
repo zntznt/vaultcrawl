@@ -197,6 +197,25 @@ class ForgeSystem(System):
         ptracker().exercise(ability)
         return True
 
+    def on_event(self, game, etype, data):
+        """The forge is loud, and its work persists between runs.
+
+        Both of these used to live in an if/elif inside Game.emit, so ForgeSystem had no
+        listener at all and the event it raised was serviced by someone else.
+        """
+        if etype != "forge_used":
+            return
+        data = data or {}
+        pos = data.get("pos", (game.player.x, game.player.y))
+        game.emit("noise", pos=pos, volume=6)
+        try:
+            from runtime.persistence import chronicle
+            r = game.region_for(game.floor)
+            if r:
+                chronicle().record_forge(r["id"])
+        except Exception:
+            pass
+
     # ---- auto-forge ---------------------------------------------------------
     # Off by default. The interactive UI already disabled it so the `f` key was a real
     # choice; the headless harness did not, so every balance number was measured against a

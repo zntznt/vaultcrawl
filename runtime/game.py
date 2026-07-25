@@ -1214,99 +1214,25 @@ class Game:
         return None
 
     def emit(self, etype: str, **data):
-        """Broadcast a semantic event to every system's on_event hook."""
-        for s in self.systems:
-            s.on_event(self, etype, data)
-        if etype == "forge_used":
-            pos = data.get("pos", (self.player.x, self.player.y))
-            self.emit("noise", pos=pos, volume=6)
-            # Chronicle: forge activity persists between runs (Upheaval sanctums)
-            try:
-                from runtime.persistence import chronicle
-                r = self.region_for(self.floor)
-                if r:
-                    chronicle().record_forge(r["id"])
-            except Exception:
-                pass
-        elif etype == "corpse_spawned":
-            pos = data.get("pos")
-            if pos:
-                self.emit("noise", pos=pos, volume=4)
-        elif etype == "lore_read":
-            note_id = data.get("note", "")
-            # Chronicle: lore-reading creates ghosts in future runs
-            try:
-                from runtime.persistence import chronicle
-                chronicle().record_lore(note_id)
-            except Exception:
-                pass
-            # Recipe discovery from lore study
-            try:
-                from runtime.recipes import discover_from_lore
-                recipe = discover_from_lore(self)
-                if recipe:
-                    self.player._known_recipes.add(recipe)
-                    self.log(f"Your studies reveal the craft of {recipe}.")
-            except Exception: pass
-            if note_id and droll(f"{self.seed}:{self.turn}:lore_chain", 100) < 30:
-                know = self.system("knowledge")
-                if know:
-                    nodes = self.m.get("graph", {}).get("nodes", {})
-                    if note_id in nodes:
-                        neighbors = nodes[note_id].get("neighbors", [])
-                        unrevealed = [n for n in neighbors if not know.is_known(n)]
-                        if unrevealed:
-                            choice_idx = droll(f"{self.seed}:{self.turn}:lore_chain:{note_id}", len(unrevealed))
-                            choice = unrevealed[choice_idx]
-                            know.reveal(choice)
+        """Broadcast to every system. Nothing else.
 
-        # ---- Orphaned event listeners (Phase 1d: wire dormant hooks) ----
-        elif etype == "communed":
-            # Faction celebration: all factions note the communion
-            fcs = self.system("factions")
-            if fcs:
-                for fac in list(getattr(fcs, "standing", {}).keys()):
-                    try:
-                        fcs.standing[fac] = fcs.standing.get(fac, 0) + 1
-                    except Exception:
-                        pass
-            self.log("The world stills. Every faction felt that.")
-        elif etype == "becalmed":
-            # Creatures nearby flee from the pacified one
-            for a in list(self.actors):
-                if a.allegiance == "monster" and max(abs(a.x - self.player.x), abs(a.y - self.player.y)) <= 8:
-                    a.allegiance = "wild"
-                    a.brain = None
-            self.log("The violence subsides. Nearby creatures lose their taste for blood.")
-        elif etype == "recruited":
-            # Room becomes settled ground when a companion joins
-            idx = self.room_at(self.player.x, self.player.y)
-            if idx is not None:
-                self._town_rooms.add(idx)
-                for tile in self.room_tiles(idx) if hasattr(self, 'room_tiles') else []:
-                    self._town_tiles.add(tile)
-            self.log("The room settles around your new bond.")
-        elif etype == "aspect_absorbed":
-            # Weather clears in a radius around the absorption
-            if hasattr(self, '_weather_suppressed'):
-                px, py = self.player.x, self.player.y
-                for y in range(max(0, py - 3), min(self.level.h, py + 4)):
-                    for x in range(max(0, px - 3), min(self.level.w, px + 4)):
-                        self._weather_suppressed[(x, y)] = 30
-            self.log("The weather recoils from what you have become.")
-        elif etype == "weather_cleared":
-            # Flora regrows when weather clears
-            flora = self.system("flora")
-            if flora and hasattr(flora, 'plants'):
-                px, py = self.player.x, self.player.y
-                for y in range(max(0, py - 3), min(self.level.h, py + 4)):
-                    for x in range(max(0, px - 3), min(self.level.w, px + 4)):
-                        if self.level.walkable(x, y):
-                            try:
-                                flora.plants.add((x, y))
-                            except Exception:
-                                pass
-            self.log("The clearing air invites life back.")
+        This used to be three lines of broadcast followed by ninety lines of if/elif doing
+        five systems' jobs: writing faction standing directly, rewriting actor allegiance
+        and nulling brains, adding town tiles, and reaching into flora.plants, all behind
+        silent excepts. Six of thirteen event types had no system listener at all and were
+        serviced only from here. They are listeners now, which is what makes them show up
+        in the composition graph.
+
+        One system raising must not silence the systems after it. The old loop was
+        unguarded, which is the opposite of the policy `on_interact` uses.
+        """
+        for s in self.systems:
+            try:
+                s.on_event(self, etype, data)
+            except Exception:
+                if getattr(self, "debug", False):
+                    raise
+                self.log(f"({getattr(s, 'name', 'a system')} failed on {etype})")
 
     # ---- floor lifecycle ----
     def _win(self, path: str):
@@ -2086,6 +2012,14 @@ class Game:
         target._home = None                    # its road is yours now
         from .sense import make_brain
         target.brain = make_brain(self, target, name="companion")
+        # A bond settles the ground it was made on. This is Game's own town state, so it
+        # belongs at the emit site rather than in a listener reaching back into Game.
+        idx = self.room_at(self.player.x, self.player.y)
+        if idx is not None:
+            self._town_rooms.add(idx)
+            for tile in (self.room_tiles(idx) if hasattr(self, "room_tiles") else []):
+                self._town_tiles.add(tile)
+            self.log("The room settles around your new bond.")
         self.emit("recruited", actor=target, pos=(target.x, target.y))
         fcs = self.system("factions")
         faction = getattr(target, "faction", "")
@@ -2272,6 +2206,30 @@ class Game:
             s.on_player_act(self)
 
     def interact(self):
+        # Speaking to whoever is beside you comes first. DialogueSystem.on_event listens
+        # for `interact` and nothing in real play ever emitted it, so its entire quest,
+        # offering and gossip tree ran only in a demo and a test. Eight-directional,
+        # because the rest of the game is, and ahead of the weather and corpse branches
+        # below because a person standing next to you outranks the weather.
+        # Only a Keeper the dialogue system actually owns. Any creature pacified by a
+        # parley also carries allegiance "npc", and preempting on those hijacked the other
+        # things `interact` does, most visibly clearing weather, and cost every profile
+        # its run.
+        dlg = self.system("dialogue")
+        keepers = set(id(n) for n in getattr(dlg, "npcs", []) or [])
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                who = self.actor_at(self.player.x + dx, self.player.y + dy)
+                if who is not None and id(who) in keepers:
+                    self.emit("interact", target=who)
+                    self.turn += 1
+                    self._tick_effects()
+                    self.enemies_act()
+                    for s in self.systems:
+                        s.on_player_act(self)
+                    return
         """Contextual interaction with what's underfoot: flora, structures, decay, etc.
         Iterates all systems, collects handlers, and consumes the turn if any fire."""
         if not self.alive or self.won:

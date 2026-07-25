@@ -723,13 +723,21 @@ third and fourth.
   communed 5, lore_read 4, aspect_absorbed 3, standing_changed 2 in an entire 27-floor descent.
 - **17 of 28 systems never receive a bus event.** **11 have in-degree 0** in the
   `game.system("x")` graph, so nothing in the game can observe them.
-- `scent.py` and `portals.py` are total isolates; ScentSystem duplicates a scent map already in
-  `senses.py:288-317`, and the duplicate is the one wired to perception.
+- `portals.py` has no bus traffic and no queries in either direction.
+  (**Correction:** an earlier draft of this section called `scent.py` a total isolate too and
+  proposed deleting it. That was wrong. `behavior.py:73` uses it for creature tracking and
+  `recipes.py:105` for the scent-mask consumable. It does duplicate a scent map in
+  `senses.py:288-317`, which is worth reconciling, but it is load-bearing and a test now
+  guards against deleting it.)
 - `dialogue.py` is fully authored and unreachable: its `on_event` fires only on `"interact"`,
   which nothing in real play emits.
 - **6 of 13 event types have zero system listeners**, serviced by a 90-line if/elif inside
   `Game.emit` that writes faction standing directly, nulls monster brains, and reaches into
-  `flora.plants`, behind five silent excepts and one guard on an attribute never initialized.
+  `flora.plants`, behind five silent excepts.
+  (**Correction:** an earlier draft called the `aspect_absorbed` handler dead because it guards
+  on `_weather_suppressed`. That attribute is lazily initialized in three places
+  (`game.py:2963,3039`, `machines.py:237`), so the handler ran whenever absorption had
+  happened first. It now lives in WeatherSystem, which is whose state it was writing.)
 - **Chemistry: 2 of 15 element pairs interact.** Affinity covers 8 of 24 cells, and half the
   opposite-pairs are unreachable because ice and sacred deal no damage. **Nothing carries an
   element**: every `ignite()` writes to a tile, never to an actor.
@@ -800,3 +808,50 @@ aim for a split rather than a different monoculture.
   forge proficiency gate, previously masked by the leak, is the likeliest cause and is worth
   re-pricing now that it is visible.
 - The win path is unanimous again, in the other direction. See above.
+
+
+## Emergence pass: the bus
+
+`Game.emit` is now a broadcast and nothing else. The ninety lines of if/elif that followed the
+three-line dispatch moved to the systems whose state they were writing:
+
+| event | now owned by | what it does |
+|---|---|---|
+| `forge_used` | ForgeSystem | its own noise, and the chronicle write |
+| `corpse_spawned` | DecaySystem | the noise, at the site that already announced the corpse |
+| `lore_read` | HistorySystem | chronicle, and recipe discovery |
+| `lore_read` | KnowledgeSystem | the neighbour-reveal chain |
+| `communed` | FactionSystem | the standing bump, and it now emits `standing_changed` |
+| `becalmed` | FactionSystem | pacifying nearby creatures |
+| `weather_cleared` | WeatherSystem | flora regrowth, by asking flora rather than writing its set |
+| `aspect_absorbed` | WeatherSystem | weather suppression, which was always its state |
+
+`recruited` settles its room at the emit site, because town tiles are Game's own state and a
+listener reaching back into Game would be the same mistake in the other direction.
+
+The broadcast loop is guarded per system. It was unguarded, so one system raising silenced
+every system after it in the list, which is the opposite of the policy `on_interact` uses.
+
+**`dialogue` is reachable for the first time.** Its `on_event` listens for `interact`, and
+nothing in play emitted it. `Game.interact` now speaks to an adjacent Keeper before anything
+else, and the brain has a `keeper` candidate scored off the existing `parley` weight, so whisper
+reaches for it and emergent rarely does, by preference rather than by any lock. Measured: 5
+quests and 8 offerings per run in a tree that had never once executed outside a demo.
+
+Scoping matters here and cost a measurement: the first version preempted on any actor with
+allegiance `npc`, which includes every creature pacified by a parley. That hijacked the other
+things `interact` does, most visibly clearing weather, and took the win rate to 0 of 6. It is
+now scoped to Keepers the dialogue system actually owns.
+
+| metric | before pass | after |
+|---|---|---|
+| event kinds per run | 11 | 13 |
+| systems with a live `on_event` | 11 | 15 |
+| `Game.emit` non-broadcast lines | 90 | 0 |
+| dialogue tree activations per run | 0 | 13 |
+
+**Open, and a regression:** win rate fell from 2 of 6 to 1 of 6. Talking to Keepers costs turns
+and the current payoff does not cover them, and the trend across the last three passes is
+downward (3, then 2, then 1) as free resources have been removed without the rest of the
+economy being re-priced against them. That is now the most important balance question, and it
+should be answered before any further content is wired.

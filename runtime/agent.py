@@ -255,6 +255,26 @@ class UniversalBrain(Brain):
                         candidates.append(("parley", score, AgentAction("negotiate", target=h["name"])))
                     break
 
+        # ---- KEEPER (an NPC standing beside you is someone to talk to) ----
+        # DialogueSystem exposes Keeper tiles as points of interest, so the agent already
+        # walks to them, but no candidate ever spoke on arrival: the quest, offering and
+        # gossip tree had a path to its door and no hand to knock. Scored off the same
+        # `parley` weight as negotiating with a hostile, so whisper reaches for it and
+        # emergent rarely does, by preference rather than by any lock.
+        _dlg = game.system("dialogue")
+        _keepers = set(id(n) for n in getattr(_dlg, "npcs", []) or [])
+        keeper_near = bool(_keepers) and any(
+            id(game.actor_at(actor.x + dx, actor.y + dy)) in _keepers
+            for dx in (-1, 0, 1) for dy in (-1, 0, 1) if (dx, dy) != (0, 0)
+        )
+        if keeper_near:
+            state = 12
+            if s["knowledge"]["truths_read"] >= 2 or s["matter"]["total"] >= 2:
+                state += 6      # you have something to offer, so the door is worth knocking on
+            score = _score(self.profile, "parley", state, bonus, True)
+            if score > 0:
+                candidates.append(("keeper", score, AgentAction("interact")))
+
         # ---- BECALM (score higher than fight when resources available) ----
         adj_hostiles = s.get("adjacent_hostiles", [])
         truths_avail = s["knowledge"]["truths_read"]

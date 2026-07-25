@@ -88,6 +88,36 @@ class WeatherSystem(System):
         game.player.speed = 1.0
 
     # ---- per-turn ambient process ----
+    def on_event(self, game, etype, data):
+        """Clear air invites life back.
+
+        This reached into `flora.plants` from inside Game.emit, one system writing another
+        system's private set through the service locator. It asks flora now.
+        """
+        if etype == "aspect_absorbed":
+            # Taking a hazard into yourself pushes the weather back around you. This lived
+            # in Game.emit and wrote game._weather_suppressed, which is this system's
+            # concern; WeatherSystem had no listener for the event at all.
+            if not hasattr(game, "_weather_suppressed"):
+                game._weather_suppressed = {}
+            px, py = game.player.x, game.player.y
+            for y in range(max(0, py - 3), min(game.level.h, py + 4)):
+                for x in range(max(0, px - 3), min(game.level.w, px + 4)):
+                    game._weather_suppressed[(x, y)] = 30
+            game.log("The weather recoils from what you have become.")
+            return
+        if etype != "weather_cleared":
+            return
+        flora = game.system("flora")
+        if flora is None or not hasattr(flora, "plants"):
+            return
+        px, py = game.player.x, game.player.y
+        for y in range(max(0, py - 3), min(game.level.h, py + 4)):
+            for x in range(max(0, px - 3), min(game.level.w, px + 4)):
+                if game.level.walkable(x, y):
+                    flora.plants.add((x, y))
+        game.log("The clearing air invites life back.")
+
     def on_player_act(self, game):
         if self.rng is None or not getattr(game, "alive", True) or getattr(game, "won", False):
             return
