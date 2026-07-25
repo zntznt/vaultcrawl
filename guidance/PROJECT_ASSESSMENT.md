@@ -917,7 +917,32 @@ aspect cap, refuses below 55% HP, and scores lower the more the tile is costing.
 scored a flat 3, so agents stood in acrid haze for thousands of turns rather than spend one
 matter; its urgency now rises with the damage taken.
 
-**Still open:** aggregate 30% sits below the 40-60% target band, and the earlier
-`DESCEND_MEND_DIV` sweep that chose 4 was run against the single deterministic scenario, so it
-needs redoing now that the harness can measure a distribution. `cartographer` at 0% with an
-average floor of 7 is the one genuine outlier left.
+The mend was re-swept against a distribution rather than the one scenario: //4 gives 33%,
+//3 gives 38%, //2 also gives 38%. It saturates at //3, so anything more generous buys nothing.
+`DESCEND_MEND_DIV` is 3.
+
+Final, 4 runs per agent, clean state, `PYTHONHASHSEED=0`:
+
+| agent | win rate | avg floor | deepest | contested | labels |
+|---|---|---|---|---|---|
+| artisan | 25% | 19.3 | 26 | 29% | 28 |
+| cartographer | 0% | 9.8 | 18 | 77% | 20 |
+| emergent | 25% | 9.8 | 26 | 30% | 25 |
+| exploiter | 25% | 15.3 | 26 | 26% | 26 |
+| seeker | 50% | 20.0 | 26 | 45% | 29 |
+| whisper | 75% | 25.3 | 27 | 38% | 29 |
+
+Aggregate 33%. Win paths: commune 6, escape 2.
+
+**One profile still does not win, and one attempt to fix it failed informatively.**
+`cartographer` has `fight: -5`, so it refuses combat, and `flee: 3`, below average. A pacifist
+that will not run. Raising its flee weight to 6 and then 8 produced **byte-identical runs**,
+which exposes a property of the scoring formula worth knowing before anyone tunes a profile:
+`score = max(profile_floor, state_urgency) + turn_bonus`, so **a profile weight beneath the
+typical state urgency for its candidate is inert**. Most of cartographer's weights are in that
+dead zone. Fixing it means either raising the weights above the urgencies they compete with, or
+changing its starting kit, which is the Berlin-legal lever for differentiating a profile. A
+test now documents the inert-weight property.
+
+**Still open:** aggregate 33% sits below the 40-60% band, and the mend is no longer the lever
+that moves it. `cartographer` at 0%.

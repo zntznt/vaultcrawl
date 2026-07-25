@@ -36,10 +36,11 @@ TENSION_REST_CAP = 300  # above this, holding still stops restoring anything
 # made a twenty-six floor descent unsurvivable: win rate fell 3 to 2 to 1 of 6 across
 # three passes while every other number improved.
 #
-# Swept against the harness, one run per agent: //10 and //6 both win 1 of 6, //4 wins 3
-# of 6, //3 wins 4 of 6. //4 sits in the middle of the 40-60% target band, so the descent
-# pays for itself and not much more.
-DESCEND_MEND_DIV = 4
+# Swept twice. The first sweep ran against a single deterministic scenario, before the
+# harness could vary a run, so it was reading a binary rather than a rate. Re-swept over
+# three run seeds per agent: //4 gives 33%, //3 gives 38%, //2 also gives 38%. It
+# saturates at //3, so anything more generous is free healing bought for nothing.
+DESCEND_MEND_DIV = 3
 EGRESS_TRUTHS_MAX = 8   # ceiling for the truths route on a large vault
 EGRESS_TRUTHS_MIN = 3   # floor, so a tiny vault still asks for something
 EGRESS_STANDING = 3     # standing with the warden's house that opens it instead

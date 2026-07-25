@@ -481,3 +481,23 @@ def test_absorb_hazard_stops_when_it_can_no_longer_pay():
     code = _code_only(__import__("runtime.agent", fromlist=["x"]).UniversalBrain.decide)
     assert "ABSORB_CAP" in code, "the candidate must respect the aspect budget"
     assert "ABSORB_MIN_HP" in code, "and must not trade HP it cannot spare"
+
+
+def test_profile_weights_below_state_urgency_are_inert():
+    """A documented consequence of the scoring formula, found while trying to fix one
+    profile by raising a weight.
+
+    score = max(profile_floor, state_urgency) + turn_bonus. So a profile weight beneath the
+    typical state urgency for its candidate does nothing at all. Raising cartographer's
+    flee weight from 3 to 6 to 8 produced byte-identical runs. Anyone tuning a profile
+    should know the weight only bites where it exceeds the situation.
+    """
+    from runtime.agent import _score
+    lo = {"flee": 3}
+    hi = {"flee": 8}
+    urgent = 20
+    assert _score(lo, "flee", urgent, 0) == _score(hi, "flee", urgent, 0), (
+        "below the state urgency, the weight is inert")
+    calm = 1
+    assert _score(hi, "flee", calm, 0) > _score(lo, "flee", calm, 0), (
+        "above it, the weight is what decides")
