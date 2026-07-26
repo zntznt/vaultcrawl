@@ -2021,3 +2021,60 @@ The next thing to look at is not seeker's kit but the `commune_pull` in the stai
 which adds 20 to 38 to the score of descending once `commune_ready` is true, a bonus far larger
 than any profile weight in the table. That is a global scoring term, it will move every profile,
 and it has not been swept.
+
+## Sweeping the commune pull: seeker fixed, and the monoculture moved
+
+The last section left seeker winning one way and named the reason: `commune_pull` adds
+`COMMUNE_PULL_BASE` plus 2 per floor of closeness to the stairs candidate once the warden is
+reachable. At base 20 that is **20 to 38, against a table whose largest profile weight is 15**.
+Once commune came online, nothing any profile wanted could outbid descending.
+
+Swept over 8 seeds per agent across all six profiles, judged on route diversity first:
+
+| base | aggregate | profiles winning 2+ ways | win mix |
+|---|---|---|---|
+| 20 (old) | 22/48 (45.8%) | 4 of 6 | commune 11, escape 10, boss 1 |
+| **12** | **25/48 (52.1%)** | **6 of 6** | commune 9, escape 16 |
+| 6 | 22/48 (45.8%) | 6 of 6 | commune 6, escape 14, boss 2 |
+| 0 | 21/48 (43.8%) | 4 of 6 | commune 8, escape 13 |
+
+**12 is taken: the only arm that is simultaneously highest on aggregate and unanimous on route
+diversity.** Removing the pull entirely is worse than halving it, and for a legible reason: at
+base 0 the fight-first profile stops descending at all and wins **nothing**. The pull was never
+a bug, it was just louder than every identity in the table.
+
+### Confirmed
+
+8 runs per agent, clean state, `PYTHONHASHSEED=0`:
+
+| agent | win rate | win paths |
+|---|---|---|
+| artisan | 50% | escape 3, commune 1 |
+| cartographer | 62.5% | escape 4, commune 1 |
+| emergent | 37.5% | commune 2, escape 1 |
+| exploiter | 50% | escape 2, commune 2 |
+| seeker | 62.5% | **escape 3, commune 2** |
+| whisper | 62.5% | escape 4, commune 1 |
+
+**26 of 48, 54.2 percent, and every one of the six profiles wins by two different routes.**
+Seeker's top choice is `locus` again at 18 percent, where the previous baseline had it spending
+**22 percent of every turn steering at the warden**. That is the fix, and it is visible in what
+the profile spends its turns on rather than only in the outcome column.
+
+### What this did not fix, stated plainly
+
+**The monoculture moved rather than disappeared.** The win mix went commune 16 / escape 9 before
+the warden was priced, to commune 11 / escape 10 after it, to **escape 17 / commune 9** now.
+Escape is the dominant route today at about two thirds, where commune was at about two thirds
+before. Both routes are healthy in absolute terms and every profile uses both, which is the
+property that was asked for, but a third of wins on one route and two thirds on another is not
+a balanced game, it is a differently-tilted one.
+
+The reason is structural and worth stating for whoever picks this up: `escape` is the *default*
+outcome of a completed descent, since it fires whenever the last stair opens by any means and
+the player walks through it. Commune and boss-kill are things you must specifically do. So a
+tilt toward escape is what you get whenever the other two are priced at all, and the honest
+next question is not "how do we rebalance the mix" but "should `escape` be a route at all, or
+is it the absence of one".
+
+`pytest` remains at 16 failures, down from the 18 that stood for this whole pass.

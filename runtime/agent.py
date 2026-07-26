@@ -22,6 +22,28 @@ ABSORB_CAP = 3
 ABSORB_MIN_HP = 55
 # Rest stops restoring at Game.TENSION_REST_CAP, so urgency to act should climb before it.
 TENSION_PRESSURE_AT = 100
+# How hard `commune_ready` pulls the agent down the stairs toward the warden.
+#
+# Was a flat 20 plus 2 per floor of closeness, so 20 to 38, against a table whose largest
+# profile weight is 15. Once commune was available nothing else could outbid descending,
+# which is why one profile spent 22 percent of all its turns steering at the warden and won
+# by commune in 8 runs of 8.
+#
+# Swept over 8 seeds per agent across all six profiles, judged on route diversity first:
+#
+#   base  aggregate       profiles winning 2+ ways   win mix
+#    20   22/48  45.8%           4 of 6             commune 11, escape 10, boss 1
+#    12   25/48  52.1%           6 of 6             commune  9, escape 16
+#     6   22/48  45.8%           6 of 6             commune  6, escape 14, boss 2
+#     0   21/48  43.8%           4 of 6             commune  8, escape 13
+#
+# 12 is taken: it is the peak on BOTH axes at once, the only arm that is both highest on
+# aggregate and unanimous on route diversity. Removing the pull entirely is worse than
+# halving it, and for a legible reason: at 0 the fight-first profile stops descending at
+# all and wins nothing. The pull is not a bug, it was just louder than every identity in
+# the table.
+COMMUNE_PULL_BASE = 12
+COMMUNE_PULL_STEP = 2
 
 
 FATIGUE_STEP = 3.0      # score penalty added each time one objective is re-chosen
@@ -699,7 +721,8 @@ class UniversalBrain(Brain):
             boss_floor = s["position"].get("boss_floor", 99)
             distance = boss_floor - s["position"]["floor"]
             if distance > 0 and distance <= 10:
-                commune_pull = 20 + (10 - distance) * 2  # stronger pull when closer
+                # stronger pull when closer
+                commune_pull = COMMUNE_PULL_BASE + (10 - distance) * COMMUNE_PULL_STEP
         stuck_pull = 5 if no_targets else 0
         if s["position"]["on_stairs"]:
             candidates.append(("descend", _score(self.profile, "stairs", 2 + commune_pull + stuck_pull, bonus, True),

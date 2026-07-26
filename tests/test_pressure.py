@@ -1329,3 +1329,35 @@ def test_the_truths_threshold_stays_bounded():
     g = _game()
     need = g.egress_truths_needed()
     assert EGRESS_TRUTHS_MIN <= need <= EGRESS_TRUTHS_MAX
+
+
+def test_the_commune_pull_does_not_drown_out_every_identity():
+    """`commune_ready` adds COMMUNE_PULL_BASE plus 2 per floor of closeness to the stairs
+    candidate. At 20 that is 20 to 38, against a table whose largest profile weight is 15,
+    so once the warden was reachable nothing any profile wanted could outbid descending:
+    seeker spent 22 percent of all its turns steering at the warden and won by commune in
+    8 runs of 8.
+
+    The property, not the number: at its weakest the pull must not already exceed every
+    weight in the table, or profile identity stops meaning anything the moment commune
+    comes online. It is still allowed to dominate when the warden is one floor away, which
+    is the point of a pull.
+    """
+    from runtime.agent import COMMUNE_PULL_BASE, COMMUNE_PULL_STEP, PROFILES
+    strongest = max(max(w.values()) for w in PROFILES.values())
+    weakest_pull = COMMUNE_PULL_BASE                      # ten floors out
+    strongest_pull = COMMUNE_PULL_BASE + 10 * COMMUNE_PULL_STEP
+    assert weakest_pull <= strongest, (
+        "far from the warden, the pull must not already outbid the strongest identity "
+        "in the table", weakest_pull, strongest)
+    assert strongest_pull > strongest, (
+        "standing on the warden's floor it should still win", strongest_pull)
+
+
+def test_the_warden_commune_is_priced_like_any_other():
+    """It was the one commune in the game that was free, and it was the run-winning one.
+    Two long-failing tests in test_commune.py were asserting this all along."""
+    from runtime.game import BOSS_COMMUNE_TRUTHS, COMMUNE_TRUTHS
+    assert BOSS_COMMUNE_TRUTHS == COMMUNE_TRUTHS, (
+        "the warden is an elite like the others; a special case here is what made commune "
+        "take 16 of 26 wins")
