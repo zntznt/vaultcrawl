@@ -1940,3 +1940,84 @@ sample-size artifact already characterised, and seeker's is the genuine one stil
 For the record, where the four egress routes now stand across 47 snapshots: standing 32,
 warden 16, truths 6. The truths route is no longer a rounding error, and it is still the
 expensive one, which is the right shape for a route whose price is paid in detours.
+
+## The warden commune was free, and that is why one profile won one way
+
+Seeker won by `commune` in 8 runs of 8. The first instinct was a seeker problem, and the
+levers that follow from that reading were swept and did almost nothing:
+
+| arm | wins | routes |
+|---|---|---|
+| baseline | 5/8 | commune 5 |
+| a point of starting standing | 5/8 | commune 5 |
+| `becalm` 3 to 6 | 5/8 | commune 4, escape 1 |
+| `parley` 3 to 6 | 5/8 | commune 5 |
+
+The standing arm is byte-identical to baseline, which is its own small lesson: `FactionSystem`
+builds its standing dict lazily on the first floor, so a starting kit that writes standing
+before that runs writes into an empty dict. The measurement that mattered was the other column:
+**seeker's standing at end of run reads 7, 3, 8, 0, 4, 5, 19, 0.** It builds standing perfectly
+well. It never *needs* it.
+
+### Why
+
+`Game.commune`, on the final boss, said so in its own comment: the win condition was
+labelled **always free**, on the grounds that reaching the boss is enough.
+
+Every other commune in the game is priced at `COMMUNE_TRUTHS` with a standing discount, or paid
+in matter. **The single commune that ends the run was the one exception.** Walk adjacent to the
+warden, and you have won. That is why commune took 16 of 26 wins, and why the profile that most
+reliably reaches the warden won that way every time: not a preference, just the cheapest thing
+on the board being free.
+
+**Two of the eighteen long-standing test failures were flagging exactly this.**
+`test_commune.py::test_unknown_refuses` asserts `commune()` returns **False** with no truths and
+no matter. `test_offering_path_spends_matter` asserts it spends `COMMUNE_COST`. Both had been
+failing since before this work began. The free path was not a design choice, it was a
+regression against a design the test file still documents.
+
+### Fixed
+
+The warden is priced like any other elite. The standing discount still applies, so a house that
+vouches for you can still make it free, which is the intended shape. The discount and the
+payment are now shared helpers rather than duplicated, so there is no longer a second place for
+the two to drift apart.
+
+The value is not a free parameter: `test_truths_path_wins_without_a_kill` wins on exactly 3
+truths, which at the standing-0 discount pins `BOSS_COMMUNE_TRUTHS` at **2**. The test file
+chose the number; the sweep only confirmed it sits in band.
+
+**`pytest` goes 18 failures to 16.** That is the first time in this entire pass that the count
+has moved.
+
+### Measured
+
+8 runs per agent, clean state, `PYTHONHASHSEED=0`. The confirming eval reproduces the sweep
+exactly:
+
+| agent | win rate | win paths |
+|---|---|---|
+| artisan | 50% | escape 3, boss_killed 1 |
+| cartographer | 50% | escape 2, commune 2 |
+| emergent | 50% | escape 2, commune 2 |
+| exploiter | 37.5% | commune 2, boss_killed 1 |
+| seeker | 37.5% | **commune 3** |
+| whisper | 62.5% | escape 3, commune 2 |
+
+**23 of 48, 47.9 percent**, in band and nearer its middle than before. The win mix moved from
+commune 16 / escape 9 / boss 1 to **escape 10 / commune 11 / boss 2**, which is near parity
+where it used to be a monoculture, and **five of six profiles now win by two routes** where
+four did.
+
+### Seeker is still not fixed, and this is why
+
+It is the one profile the change did not move, and the eval says why in a column that was not
+there before: **seeker's top choice is now `commune` at 22 percent of all turns.** It does not
+merely accept the commune win when it arrives, it spends a fifth of its decisions steering
+toward the warden. Pricing the destination does not deter something that wants the destination
+that much.
+
+The next thing to look at is not seeker's kit but the `commune_pull` in the stairs candidate,
+which adds 20 to 38 to the score of descending once `commune_ready` is true, a bonus far larger
+than any profile weight in the table. That is a global scoring term, it will move every profile,
+and it has not been swept.

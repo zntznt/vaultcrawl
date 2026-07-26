@@ -23,6 +23,18 @@ ROOM_NOUN = {"hub": "Hall", "bridge": "Gallery", "orphan": "Sealed Alcove",
 # communion with the deepest thought: either path resolves the run without violence
 COMMUNE_TRUTHS = 2   # marginalia + lore fragments read
 COMMUNE_COST = 4     # total salvaged matter, any mix
+# What communing with the WARDEN costs, in truths, before the standing discount.
+#
+# It used to be nothing. The code said so: "always free, reaching the boss is enough". Every
+# other commune in the game is priced at COMMUNE_TRUTHS with a standing discount, or paid in
+# matter, and the single commune that ENDS THE RUN was the one exception. That is why it took
+# 16 of 26 wins, and why the profile that most reliably walks up to the warden won that way
+# in 8 runs of 8 and no other way at all: not a preference, just the cheapest thing on the
+# board being free.
+#
+# Priced like any other elite now. The standing discount still applies, so a house that
+# vouches for you can still make it free, which is the intended shape.
+BOSS_COMMUNE_TRUTHS = 2
 BECALM_COST = 2      # matter per tier to placate a lesser hostile
 LEASH = 3            # sandbox: a creature's territory (and pursuit range) around home
 TENSION_ALERT = 200  # complacency at which the vault notices you and sends something
@@ -1905,6 +1917,33 @@ class Game:
                 return True
         return None
 
+    def _commune_discount(self, target) -> int:
+        """Truths knocked off a commune by standing with the target's house.
+
+        Factored out of the elite path so the warden is priced by the same rule rather
+        than by a special case that made the run-winning commune the only free one.
+        """
+        fcs = self.system("factions")
+        faction = getattr(target, "faction", "")
+        standing = 0
+        if fcs and faction:
+            try:
+                standing = fcs.standing.get(faction, 0)
+            except Exception:
+                standing = 0
+        return 1 if standing >= 4 else (0 if standing >= 2 else -1)
+
+    def _spend_commune(self, needed: int, bag) -> None:
+        """Pay a commune: truths first, marginalia before history, then matter."""
+        spent = 0
+        for sys_name in ("marginalia", "history"):
+            ms = self.system(sys_name)
+            while ms and getattr(ms, "read", 0) > 0 and spent < needed:
+                ms.read -= 1
+                spent += 1
+        if spent < needed and bag is not None and bag.total() >= COMMUNE_COST:
+            _spend_matter(bag, COMMUNE_COST)
+
     def commune(self):
         """Commune with a creature. Final boss: win. Any elite: lower guard, gain standing."""
         p = self.player
@@ -1913,10 +1952,16 @@ class Game:
         salv = self.system("salvage")
         bag = salv.inventory(self) if salv is not None else None
 
-        # Final boss commune: win condition (always free — reaching the boss is enough)
+        # Final boss commune: the win condition, and now priced like every other commune.
         boss = next((a for a in self.actors if a.is_boss
                       and a.source == self.final_boss_source), None)
         if boss and max(abs(boss.x - p.x), abs(boss.y - p.y)) <= 1:
+            need = max(0, BOSS_COMMUNE_TRUTHS - self._commune_discount(boss))
+            if truths < need and (bag is None or bag.total() < COMMUNE_COST):
+                self.log(f"The deepest thought does not know you yet: {need} truths, "
+                         f"or {COMMUNE_COST} matter as an offering.")
+                return False
+            self._spend_commune(need, bag)
             self.actors.remove(boss)
             self._boss_communed = True
             self._win("commune")
@@ -1934,28 +1979,13 @@ class Game:
         # Standing discount: high-favor factions demand fewer truths
         faction = getattr(elite, "faction", "")
         fcs = self.system("factions")
-        faction_standing = 0
-        if fcs and faction:
-            try:
-                faction_standing = fcs.standing.get(faction, 0)
-            except Exception:
-                pass
-        discount = 1 if faction_standing >= 4 else (0 if faction_standing >= 2 else -1)
-        needed = max(0, COMMUNE_TRUTHS - discount)  # 2, 1, or 0 based on standing
+        needed = max(0, COMMUNE_TRUTHS - self._commune_discount(elite))  # 2, 1, or 0
         elite_cost = needed  # store for the can't-afford message
 
         if truths < needed and (bag is None or bag.total() < COMMUNE_COST):
             return False
 
-        # Pay cost: spend needed truths (from marginalia first, then history)
-        spent = 0
-        for sys_name in ("marginalia", "history"):
-            ms = self.system(sys_name)
-            while ms and getattr(ms, "read", 0) > 0 and spent < needed:
-                ms.read -= 1
-                spent += 1
-        if spent < needed and bag and bag.total() >= COMMUNE_COST:
-            _spend_matter(bag, COMMUNE_COST)
+        self._spend_commune(needed, bag)
 
         elite.allegiance = "wild"
         elite.brain = None
