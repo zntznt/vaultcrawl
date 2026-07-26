@@ -620,7 +620,8 @@ def agent_state(game, actor) -> dict:
     # Whether the last stair will open, and why not. Without this the agent walks to the
     # bottom, finds the way shut, and has no idea which of the four routes to go earn.
     try:
-        position["egress_ready"], position["egress_blocked_by"] = game.egress_ready()
+        (position["egress_ready"], position["egress_blocked_by"],
+         position["egress_route"]) = game.egress_ready()
     except Exception:
         position["egress_ready"], position["egress_blocked_by"] = True, ""
 

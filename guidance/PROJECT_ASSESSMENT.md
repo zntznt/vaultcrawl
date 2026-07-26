@@ -2078,3 +2078,92 @@ next question is not "how do we rebalance the mix" but "should `escape` be a rou
 is it the absence of one".
 
 `pytest` remains at 16 failures, down from the 18 that stood for this whole pass.
+
+## `escape` was not a route, and that is why it looked like one
+
+The instruction was to stop `escape` being the default outcome of a completed descent. The
+first thing to establish was what it actually was, and it turned out not to be a route at all.
+
+`egress_ready` is a disjunction of four conditions. `descend` checked it at the last floor and,
+if the stair opened, called `_win("escape")` **without recording which condition had opened
+it**. The warden routes resolve earlier and win under their own names, so in practice `escape`
+was the label worn by two entirely different achievements at once: reading enough of the vault,
+and earning the warden's house enough trust. Reported as one thing, that one thing was two
+thirds of all wins and looked like a dominant strategy. It was not a strategy. It was a missing
+distinction.
+
+`egress_ready` now returns the route that opened the stair and `_win` is named for it. The
+change is **behaviour-neutral and measured to be so**: the confirming eval returns the same 26
+of 48 and the identical per-profile counts, 4, 5, 3, 4, 5, 5. Only the labels move.
+
+What the labels then show, over the same 26 wins:
+
+| route | wins | share |
+|---|---|---|
+| **standing** | **16** | **62%** |
+| commune | 9 | 35% |
+| truths | 1 | 4% |
+
+So the monoculture was real, and it was never `escape`. **It is `standing`.** `EGRESS_STANDING`
+is 3, and the earlier independent census found standing at 3 or better in 33 of 48 runs, which
+means it is not an achievement the route asks for, it is a thing that happens to a run on its
+way past. Two thirds of all victories rest on it.
+
+This also retires my own framing from the previous section. I wrote that escape is "the default
+outcome of a completed descent" and that the honest question was whether it should be a route at
+all. Both were wrong in the same way: I was reasoning about a label rather than about the four
+conditions underneath it. The right question was always which of the four is underpriced, and
+naming them answers it immediately.
+
+### Pricing the route that was actually the default
+
+With the routes named, the fix is obvious and it is not about `escape` at all. Sweeping
+`EGRESS_STANDING` over 8 seeds per agent across all six profiles, judged on the win mix first:
+
+| gate | aggregate | top route's share | mix |
+|---|---|---|---|
+| 3 (old) | 26/48 (54.2%) | 65% | commune 8, standing 17, truths 1 |
+| 5 | 25/48 (52.1%) | 56% | commune 10, standing 14, truths 1 |
+| **7** | **22/48 (45.8%)** | **45%** | **commune 10, standing 6, truths 2, boss_killed 4** |
+
+**7 is taken, and it is the first setting at which all four routes are live in a single
+batch.** Felling the warden goes from a rounding error to 4 wins, because a house's trust is no
+longer the cheap way past it. The aggregate drops to the lower half of the 40-60 band, which is
+the price of the cheapest route no longer being cheap.
+
+The test asserts the property rather than the number: the gate must sit above `FRIEND_STANDING`,
+the reputation at which a house merely stops fighting you. A last stair that opens at less than
+that is not asking for anything.
+
+### Confirmed
+
+8 runs per agent, clean state, `PYTHONHASHSEED=0`. The eval reproduces the sweep exactly:
+
+| agent | win rate | win paths |
+|---|---|---|
+| artisan | 25% | standing 1, commune 1 |
+| cartographer | 62.5% | **commune 2, standing 1, truths 1, boss_killed 1** |
+| emergent | 37.5% | commune 2, boss_killed 1 |
+| exploiter | 50% | commune 2, standing 1, boss_killed 1 |
+| seeker | 50% | commune 2, truths 1, standing 1 |
+| whisper | 50% | standing 2, commune 1, boss_killed 1 |
+
+**22 of 48, 45.8 percent.** Across the batch: **commune 10, standing 6, boss_killed 4,
+truths 2.** No route exceeds 45 percent of wins, where one route held 65 percent at the start of
+this section and the mislabelled `escape` held two thirds before that. Every profile wins at
+least two ways, four of them win three or more, and **cartographer takes all four routes across
+its eight runs**.
+
+That is the request satisfied in the strongest available sense: `escape` is not the default
+outcome because it is no longer an outcome at all, and nothing has replaced it as a default.
+
+### The cost, and what is now open
+
+**Artisan fell to 25 percent**, 2 wins in 8, and is the new weakest profile. Its top choice is
+`commune` at 23 percent of turns, which is the shape seeker had before the pull was swept: a
+profile steering hard at one route. It has not been diagnosed.
+
+The aggregate at 45.8 percent sits in the lower half of the band rather than its middle. Both of
+those are the same trade: four priced routes are harder than three priced routes and one free
+one. Whether to buy some of it back, and with which knob, is a judgement call rather than a
+measurement, and it is left open rather than made here.

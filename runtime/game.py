@@ -88,7 +88,26 @@ EGRESS_TRUTHS_MIN = 3   # floor, so a tiny vault still asks for something
 # nearer the middle, but it widens the spread back to 25-75 and drops exploiter to 2 of 8,
 # which undoes an earlier fix; a route is not worth a profile.
 EGRESS_TRUTHS_TENTHS = 4
-EGRESS_STANDING = 3     # standing with the warden's house that opens it instead
+# Standing with the warden's house that opens the last stair instead.
+#
+# Was 3, and an independent census found standing at 3 or better in 33 of 48 runs. That is
+# not an achievement a route asks for, it is a thing that happens to a run on its way past,
+# and once `escape` was split into the routes it had been hiding it turned out to carry 65
+# percent of all victories on its own.
+#
+# Swept over 8 seeds per agent across all six profiles, judged on the win mix first:
+#
+#   gate  aggregate      top route   mix
+#     3   26/48  54.2%      65%      commune  8, standing 17, truths 1
+#     5   25/48  52.1%      56%      commune 10, standing 14, truths 1
+#     7   22/48  45.8%      45%      commune 10, standing  6, truths 2, boss_killed 4
+#
+# 7 is taken. It is the first setting at which ALL FOUR routes are live in a single batch:
+# felling the warden goes from a rounding error to 4 wins, and cartographer alone takes all
+# four routes across its eight runs. The aggregate drops to the lower half of the 40-60
+# band, which is the price of the cheapest route no longer being cheap, and every profile
+# still wins at least two ways.
+EGRESS_STANDING = 7
 FRIEND_STANDING = 4  # reputation at which a house stops fighting the one you control
 
 
@@ -1408,12 +1427,18 @@ class Game:
 
     # ---- floor lifecycle ----
     def _win(self, path: str):
-        """Record a victory and which of the four routes produced it.
+        """Record a victory and which route produced it.
 
-        escape      descended past the final floor without engaging the warden
-        boss_killed felled it
+        boss_killed felled the warden
         commune     communed with it
         diplomacy   swayed it in a parley
+        truths      read enough of the vault that the last stair opened, and left
+        standing    earned the warden's house enough trust that it opened, and left
+
+        `escape` used to be a fifth value covering the last two at once, and that is why
+        it looked like the dominant strategy: it was not a strategy, it was two different
+        achievements sharing a label. It survives only as a fallback for a stair opened by
+        a route this method does not know about.
         """
         if self.won:
             return
@@ -1421,7 +1446,7 @@ class Game:
         self.win_path = path
         self._close_chronicle()
 
-    def egress_ready(self) -> tuple[bool, str]:
+    def egress_ready(self) -> tuple[bool, str, str]:
         """Whether the last stair will open, and what is missing if it will not.
 
         Escape is a legitimate ending and stays reachable: a kill-only victory would make
@@ -1443,14 +1468,14 @@ class Game:
         are available.
         """
         if getattr(self, "_boss_felled", False) or getattr(self, "_boss_communed", False):
-            return True, ""
+            return True, "", "warden"
         truths = 0
         for sys_name in ("marginalia", "history"):
             s = self.system(sys_name)
             truths += int(getattr(s, "read", 0) or 0) if s else 0
         need = self.egress_truths_needed()
         if truths >= need:
-            return True, ""
+            return True, "", "truths"
         fcs = self.system("factions")
         if fcs is not None:
             boss_region = next((r for r in self.m.get("regions", [])
@@ -1458,10 +1483,10 @@ class Game:
             fid = (boss_region or {}).get("factionId") or self._region_faction.get(
                 (boss_region or {}).get("id", ""), "")
             if fid and fcs.standing_of(fid) >= EGRESS_STANDING:
-                return True, ""
+                return True, "", "standing"
         return False, (f"Fell the warden, commune with it, carry {need} truths "
                        f"(you have {truths}), or earn standing {EGRESS_STANDING} with "
-                       f"its house.")
+                       f"its house."), ""
 
     def egress_truths_needed(self) -> int:
         """Truths the last stair asks for, scaled to the vault.
@@ -1490,14 +1515,21 @@ class Game:
                      "heart, stairs (<) climb home.")
             return
         if self.floor >= self.max_floor and not self.won:
-            ok, why = self.egress_ready()
+            ok, why, route = self.egress_ready()
             if not ok:
                 self.log(f"The way down is shut. {why}")
                 return
+            self._egress_route = route
         self.floor += 1
-        # Victory: descending past the final boss without killing it = escape victory
+        # Victory: leaving past the warden. Named for the ROUTE that opened the stair.
+        #
+        # `escape` was not a route at all, it was the label every route got when the stair
+        # opened and the player walked through it. Two genuinely different achievements,
+        # reading the vault and earning a house's trust, were reported as one thing, and
+        # that one thing then looked like the dominant strategy at two thirds of all wins.
+        # It was not a strategy, it was a missing distinction.
         if self.floor > self.max_floor and not self.won:
-            self._win("escape")
+            self._win(getattr(self, "_egress_route", "") or "escape")
             self.log("You slip past the final warden and into the deep quiet. You escape."
                      " You win."
                      )

@@ -136,8 +136,9 @@ def test_rest_modifier_reads_no_profile():
 
 def test_egress_is_shut_by_default():
     g = _game(systems=[MarginaliaSystem(), FactionSystem()])
-    ok, why = g.egress_ready()
+    ok, why, route = g.egress_ready()
     assert not ok and why, "the last stair does not open for free"
+    assert route == "", "and nothing claims to have opened it"
 
 
 def test_felling_the_warden_opens_egress():
@@ -181,12 +182,28 @@ def test_descend_is_blocked_at_the_last_floor_without_a_route():
     assert not g.won
 
 
-def test_win_path_is_recorded():
+def test_win_path_names_the_route_that_opened_the_stair():
+    """`escape` was not a route, it was the label every route got when the stair opened and
+    the player walked out. Reading the vault and earning a house's trust are different
+    achievements and were reported as one, which is why that one looked dominant at two
+    thirds of all wins."""
     g = _game(systems=[MarginaliaSystem(), FactionSystem()])
     g.floor = g.max_floor
     g._boss_felled = True
     g.descend()
-    assert g.won and g.win_path == "escape", (g.won, g.win_path)
+    assert g.won and g.win_path == "warden", (g.won, g.win_path)
+
+
+def test_each_egress_route_names_itself():
+    for setup, expected in (
+        (lambda g: setattr(g, "_boss_communed", True), "warden"),
+        (lambda g: setattr(g.system("marginalia"), "read", g.egress_truths_needed()),
+         "truths"),
+    ):
+        g = _game(systems=[MarginaliaSystem(), FactionSystem()])
+        setup(g)
+        ok, _why, route = g.egress_ready()
+        assert ok and route == expected, (expected, ok, route)
 
 
 # ---- truths are finite -----------------------------------------------------------
@@ -1361,3 +1378,31 @@ def test_the_warden_commune_is_priced_like_any_other():
     assert BOSS_COMMUNE_TRUTHS == COMMUNE_TRUTHS, (
         "the warden is an elite like the others; a special case here is what made commune "
         "take 16 of 26 wins")
+
+
+def test_the_standing_route_is_an_achievement_not_a_side_effect():
+    """`EGRESS_STANDING` was 3, and an independent census found standing at 3 or better in
+    33 of 48 runs. Once `escape` was split into the routes it had been hiding, that one
+    condition turned out to carry 65 percent of all victories.
+
+    Swept: gate 3 gives a 65 percent top route, gate 5 gives 56, gate 7 gives 45 and is the
+    first setting at which all four routes appear in one batch. The property asserted here
+    is that the gate sits above the standing a run picks up incidentally, which the perk
+    table pins at 4, the point where a house is already a friend.
+    """
+    from runtime.game import EGRESS_STANDING, FRIEND_STANDING
+    assert EGRESS_STANDING > FRIEND_STANDING, (
+        "the last stair should ask for more than the reputation at which a house merely "
+        "stops fighting you", EGRESS_STANDING, FRIEND_STANDING)
+
+
+def test_no_single_egress_route_is_the_default():
+    """The four routes are a disjunction, so the cheapest one is the only one that matters
+    unless they are priced against each other. Asserted structurally: each route's gate has
+    to be non-trivial on its own terms."""
+    from runtime.game import (BOSS_COMMUNE_TRUTHS, EGRESS_STANDING,
+                              EGRESS_TRUTHS_MIN, FRIEND_STANDING)
+    g = _game()
+    assert g.egress_truths_needed() >= EGRESS_TRUTHS_MIN >= 3, "truths asks for something"
+    assert EGRESS_STANDING > FRIEND_STANDING, "standing asks for more than friendship"
+    assert BOSS_COMMUNE_TRUTHS > 0, "communing with the warden is not free"
