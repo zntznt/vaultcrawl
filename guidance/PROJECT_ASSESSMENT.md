@@ -1710,3 +1710,77 @@ processes on identical code. That is roughly **plus or minus 12.5 points on a si
 8-seed arm** and about 2 points on the aggregate. Differences smaller than that in this document
 are not differences. The aggregate figures are the ones worth trusting, because they average
 six arms; the per-profile columns should be read as approximate.
+
+## The route diversity regression was mostly noise, and the real defect resisted the fix
+
+Two profiles came out of the band-restoring eval showing a single win route where the
+previous baseline had all six winning at least two ways. Re-measured at **16 seeds**, which
+halves the error bar:
+
+| profile | 8 seeds | 16 seeds |
+|---|---|---|
+| exploiter | commune 3 | commune 4, escape 4 |
+| seeker | commune 6 | **commune 8** |
+| artisan | escape 3, commune 1, boss_killed 1 | boss_killed 1, commune 2, escape 4 |
+
+**Exploiter's single route was an artifact of the sample size**, exactly as the error bar
+predicted. Seeker's is real and holds at 16 seeds.
+
+### The finding underneath it
+
+Recording, for every run, which egress route was satisfied by the end whether it won or not,
+turned up something the win-path column cannot show. Across **48 runs and three profiles**:
+
+| route satisfied | count |
+|---|---|
+| the warden dealt with | 15 |
+| standing with its house | 10 |
+| **truths** | **0** |
+| nothing | 23 |
+
+**The truths route is dead.** It is one of the four authored ways to open the last stair, and
+in 48 runs it never once opened it. The immediate cause looked obvious and matched a bug class
+this project has hit before: `agent_state` reported `truths_read` as a bare count and **never
+said where a mark was**, so the agent could only read one by walking over it by accident. That
+is the same shape as `dialogue` before Tranche B, a fully authored system with no hand to knock.
+
+### The fix failed, and the negative result is the useful part
+
+Perception gained the mark positions and the brain gained a `read_mark` candidate scored off
+`explore`. Three configurations were measured, each over a full slate:
+
+| configuration | truths satisfied /48 | aggregate |
+|---|---|---|
+| no candidate | 0 | 27/48 (56.2%) |
+| range 14, urgency opens at 4 | 2 | 33/48 (68.8%) |
+| range 14, urgency opens at 3 | 1 | (not run to slate) |
+| range 6, urgency opens at 3 | 0 to 1 | 31/48 (64.6%) |
+
+**It never revived the route it exists for, and it broke the band every time.** The reason is
+visible once stated: walking up to fourteen tiles to a mark is fourteen tiles of free map
+coverage, so the candidate worked as a general exploration buff rather than as a route to the
+last stair. Narrowing it to six did not restore the band either, and cartographer swung 4, then
+6, then 2 wins in eight across the three configurations, which is most of the whole range the
+profile has.
+
+One useful piece of it survived as a rule rather than as code: the first version opened at
+urgency 10, which is above four of the six `explore` weights, so the profile gradient it
+claimed to inherit was a fiction and every profile detoured equally.
+
+**Reverted.** A change that fails its stated purpose while moving the aggregate 8 points is not
+a fix, and shipping it because it happens to improve a metric it was not aiming at is the exact
+habit invariant 7 exists to prevent. The tree is back to 27 of 48, 56.25 percent.
+
+### What is actually open
+
+- **The truths route needs a design decision, not a scoring tweak.** Giving the agent eyes and
+  a candidate for marks did not move it, so the constraint is elsewhere: `on_floor_enter`
+  scatters at most 2 marks per floor and only from notes not yet spent, against a threshold of
+  `notes // 2`, bounded to 3 to 8, which is 5 on the sample vault. Whether that is a supply
+  problem, a threshold problem, or a geometry problem is measurable, and none of it was
+  measured here.
+- **Seeker really does win one way**, communing with the warden in 8 of 8 wins at 16 seeds.
+  That is a genuine single route and it is still open.
+- **The game-level mix is healthy** even so: escape 9, commune 16, boss_killed 2 across the
+  batch, so all three win paths are live and it is one profile, not the game, that is
+  monolithic.
