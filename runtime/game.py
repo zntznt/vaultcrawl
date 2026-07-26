@@ -36,11 +36,22 @@ TENSION_REST_CAP = 300  # above this, holding still stops restoring anything
 # made a twenty-six floor descent unsurvivable: win rate fell 3 to 2 to 1 of 6 across
 # three passes while every other number improved.
 #
-# Swept twice. The first sweep ran against a single deterministic scenario, before the
-# harness could vary a run, so it was reading a binary rather than a rate. Re-swept over
-# three run seeds per agent: //4 gives 33%, //3 gives 38%, //2 also gives 38%. It
-# saturates at //3, so anything more generous is free healing bought for nothing.
-DESCEND_MEND_DIV = 3
+# Swept three times. The first ran against a single deterministic scenario, before the
+# harness could vary a run, so it was reading a binary rather than a rate. The second, over
+# three run seeds per agent, gave //4 33%, //3 38%, //2 38%, and //3 was taken because the
+# curve saturated above it and anything more generous was free healing.
+#
+# The third sweep is why it now sits at //4. Four passes of repair later the game had drifted
+# UP to 29 of 48, 60.4%, at the top edge of the 40-60 target band, so the knob was swept in
+# the other direction over 8 seeds per agent across all six profiles:
+#
+#     //3  29/48  60.4%      //4  27/48  56.2%      //5  27/48  56.2%
+#
+# It saturates in this direction too: //4 and //5 are the same aggregate, so //4 is taken as
+# the smaller change. This is the right lever for a whole-game adjustment precisely because
+# the player has no power curve, which makes the mend the only thing every profile depends on
+# equally; a profile-side knob would have moved one agent and called it balance.
+DESCEND_MEND_DIV = 4
 EGRESS_TRUTHS_MAX = 8   # ceiling for the truths route on a large vault
 EGRESS_TRUTHS_MIN = 3   # floor, so a tiny vault still asks for something
 EGRESS_STANDING = 3     # standing with the warden's house that opens it instead

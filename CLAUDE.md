@@ -105,7 +105,9 @@ The agent communicates with the game via a 14-verb `AgentAction` vocabulary
   reshuffle the bestiary and a fresh clone bakes a different world than the author's.
 - **Runtime determinism, mostly fixed.** The 21 `hash()`-seeded sites are now SHA-256 via
   `runtime/det.py`. Residual cross-process variance remains in the knowledge-to-sigil-slot
-  path; within a fixed `PYTHONHASHSEED` runs reproduce exactly.
+  path. It does **not** reproduce exactly at a fixed `PYTHONHASHSEED`: measured over two
+  48-run evals on identical code, one run in 48 flipped outcome. Budget about +/-1 win of
+  noise per 8-seed arm, which is 12.5 points, before calling two arms different.
 - **Cross-run state leaks into benchmarks.** `~/.vaultcrawl` carries graves, the forge
   cache and the chronicle. A clean directory and a warm one give different win rates from
   the same command; `eval_stats.json` now records which it ran against.

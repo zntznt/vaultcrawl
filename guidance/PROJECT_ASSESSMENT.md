@@ -1606,16 +1606,107 @@ knob has no intermediate setting.
 **30 of 48, 62.5%, which is above the stated 40-60 band.** Two things have to be said plainly
 about that number rather than buried:
 
-- **Exploiter gained a win without being touched.** Its code and kit are unchanged and its runs
-  still differ (avg floor 22.5 to 22.75, turns 6213 to 6113). Profiles run sequentially in one
-  process against a shared `~/.vaultcrawl`, so an earlier profile surviving longer warms the
-  forge cache for a later one. This is the cross-run contamination already recorded as a known
-  issue, and it means **the aggregate is order-dependent**. Discounting it, the two fixes are
-  worth +4 between them and the honest aggregate is about 60 percent.
+- **Exploiter appeared to gain a win without being touched.** The explanation given here at
+  first was wrong twice over and is corrected below, under "the extra win was neither".
 - **The band is now the open problem, not the profiles.** Every profile is between 50 and 75
   percent, which is the tightest the table has ever been, and the game as a whole is easier
-  than the target. Restoring the band means tightening something global, which is a different
-  task from fixing two profiles and is left rather than done unasked.
+  than the target. Restoring the band means tightening something global.
 
 `event kinds per run` rose 12 to 13. Every profile still reaches floor 27 and still wins by at
 least two routes.
+
+## The extra win was neither contamination nor order
+
+Exploiter came out of one eval at 75 percent and out of the next, on identical code, at 62.5.
+The first explanation offered here was that profiles run sequentially against a shared
+`~/.vaultcrawl` and an earlier profile surviving longer warms the forge cache for a later one,
+making the aggregate order-dependent. **Both halves of that are wrong**, and the second attempt
+was wrong too. Recorded in full, because a balance instrument that is trusted while it is
+wrong is worse than no instrument.
+
+**There is no forge cache.** Nothing writes one. In descent mode the only file the runtime puts
+under `~/.vaultcrawl` is `graves.json`, and `_load_graves` is called only on the sandbox branch,
+so a descent run can write graves and can never read them back.
+
+**It is not order.** Measured directly: exploiter run first in a fresh process, and exploiter
+run after artisan, cartographer and emergent in the order the harness actually uses, give
+**byte-identical floors**, `[24, 26, 27, 26, 27, 26, 12, 12]`, 5 of 8 both ways.
+
+**It is not `max_floor` either**, which is the next thing that looked suspicious: every sweep in
+this document passes `max_floor=27` while the harness defaults to 99. Also byte-identical, since
+the world's own floor count binds first.
+
+What it actually is: comparing the two evals run by run, **exactly one of the 48 differs**. Run
+25, exploiter on run seed 0, is `F26 WON` in one and `F24 DIED` in the other, and the other 47
+match. Two independent reproductions of that seed outside the harness both give F24. So the
+harness carries a residual non-determinism of roughly **one run in 48, about 2 percent**, which
+is consistent with the known-issues note about cross-process variance, except that the note
+claims runs reproduce exactly at a fixed `PYTHONHASHSEED` and they do not.
+
+Two consequences worth carrying forward:
+
+- **A single run is not evidence.** An 8-seed arm carries roughly plus or minus one win of
+  noise on its own, which is 12.5 percentage points. Several arms in this document tie or
+  invert inside that margin (cartographer's +3 DEF, emergent's stairs-plus-Phase), and the
+  right reading of those is "not distinguishable", not "worse".
+- **The real aggregate is 29 of 48, 60.4 percent**, not the 62.5 first reported. That is at
+  the top edge of the target band rather than clearly outside it.
+
+## Restoring the band
+
+Four passes of repair had left the aggregate at **29 of 48, 60.4 percent**, at the top edge of
+the 40-60 target. Fixing it needed a global knob rather than another profile patch, since the
+profiles themselves were now the tightest they have ever been.
+
+The descent mend is the right lever, and for a specific reason: `entities.py` says outright
+that the player never gains stats during a run, so the mend is the **only resource in the game
+that scales with depth**. Every profile depends on it equally. A profile-side knob would have
+moved one agent and called it balance.
+
+Swept over 8 seeds per agent across all six profiles:
+
+| mend | aggregate | artisan | cartographer | emergent | exploiter | seeker | whisper |
+|---|---|---|---|---|---|---|---|
+| `//3` | 29/48 (60.4%) | 4 | 4 | 5 | 5 | 5 | 6 |
+| **`//4`** | **27/48 (56.2%)** | 5 | 4 | 4 | 3 | 6 | 5 |
+| `//5` | 27/48 (56.2%) | 5 | 3 | 4 | 5 | 5 | 5 |
+
+**It saturates in this direction as well.** `//4` and `//5` give the same aggregate, so `//4`
+is taken as the smaller change. The knob had already been shown to saturate the other way at
+`//3`, which means the mend has a usable range of exactly one step, and pushing further would
+buy nothing.
+
+### Confirmed baseline
+
+8 runs per agent, clean state, `PYTHONHASHSEED=0`. The confirming eval reproduces the sweep
+exactly:
+
+| agent | win rate | avg floor | contested | win paths |
+|---|---|---|---|---|
+| artisan | 62.5% | 20.4 | 34% | escape 3, commune 1, boss_killed 1 |
+| cartographer | 50% | 20.0 | 62% | escape 2, commune 2 |
+| emergent | 50% | 17.9 | 29% | escape 2, commune 2 |
+| exploiter | 37.5% | 19.5 | 23% | commune 3 |
+| seeker | 75% | 24.3 | 36% | commune 6 |
+| whisper | 62.5% | 21.4 | 32% | escape 2, commune 2 |
+
+**27 of 48, 56.25 percent, inside the band.** Every profile is between 37.5 and 75 percent and
+every profile still reaches floor 27.
+
+Two things to hold honestly against that:
+
+- **Exploiter and seeker each show a single route in this batch**, where the previous baseline
+  had every profile winning at least two ways. Four of the six still do. At one win of harness
+  noise per arm this is not clearly a real loss of route diversity, but it is a real change from
+  what was reported last pass and it should not be quietly dropped.
+- **The win mix tilted toward commune**: escape 9, commune 16, boss_killed 2, against escape 13,
+  commune 10, boss_killed 2 before. A smaller mend hurts the long grind that the escape route
+  rewards more than it hurts talking to the warden.
+
+### The instrument's own error bar, stated
+
+Everything above is 8 seeds per arm, and the harness flips about **one run in 48** between
+processes on identical code. That is roughly **plus or minus 12.5 points on a single profile's
+8-seed arm** and about 2 points on the aggregate. Differences smaller than that in this document
+are not differences. The aggregate figures are the ones worth trusting, because they average
+six arms; the per-profile columns should be read as approximate.
