@@ -1256,3 +1256,76 @@ def test_the_stairs_weight_is_live():
                   "decoration and the key should go", {n: w.get('stairs') for n, w in PROFILES.items()})
     assert PROFILES["emergent"]["stairs"] > stairs_base_urgency, (
         "the profile that would not descend has to actually want to")
+
+
+# ---- the truths route: payout guard and threshold basis -------------------------------
+
+def test_a_mark_that_says_nothing_is_not_spent():
+    """`spent` was added to before `weave` was even called, so a note that wove nothing was
+    gone from every later floor and paid nothing for it. The route needs 5 of the roughly 8
+    notes a descent ever places, so each silent step cost it an eighth of its supply.
+
+    It never fires on the sample corpus, where weave pays 100 of 100 on all ten notes, so
+    the guard is free here. It matters for a vault too thin to weave from, which is exactly
+    the vault that can least afford to lose the route.
+    """
+    g = _game(systems=[MarginaliaSystem()])
+    ms = g.system("marginalia")
+    if not ms.ground:
+        return
+    pos, nid = next(iter(ms.ground.items()))
+    g.player.x, g.player.y = pos
+    import runtime.marginalia as M
+    real_weave = M.weave
+    M.weave = lambda *a, **k: ""          # a note with nothing legible in it
+    try:
+        before = ms.read
+        ms.on_player_act(g)
+    finally:
+        M.weave = real_weave
+    assert ms.read == before, "a silent mark pays nothing, which was always true"
+    assert nid not in ms.spent, "and now it is not burned for nothing either"
+    assert pos not in ms.ground, (
+        "it still leaves this floor, so standing on it does not re-roll every turn")
+
+
+def test_a_mark_that_speaks_is_still_spent_once():
+    """The guard must not make truths re-readable; that was the unbounded-truths bug."""
+    g = _game(systems=[MarginaliaSystem()])
+    ms = g.system("marginalia")
+    if not ms.ground:
+        return
+    pos, nid = next(iter(ms.ground.items()))
+    g.player.x, g.player.y = pos
+    before = ms.read
+    ms.on_player_act(g)
+    assert ms.read == before + 1
+    assert nid in ms.spent
+    ms.on_floor_enter(g)
+    assert nid not in ms.ground.values(), "a note that has spoken does not come back"
+
+
+def test_the_truths_threshold_asks_for_a_share_of_what_is_reachable():
+    """The docstring's intent is half the notes, but half the NOTES is not half the notes
+    you can reach: of 10 in the sample vault only 8 are ever placed as a mark across a full
+    26-floor descent, so a flat `notes // 2` asked for 63 percent of the obtainable supply.
+    """
+    from runtime.game import (EGRESS_TRUTHS_TENTHS, EGRESS_TRUTHS_MIN,
+                              EGRESS_TRUTHS_MAX, Game)
+    g = _game()
+    notes = len(g.m.get("graph", {}).get("nodes", {}))
+    need = g.egress_truths_needed()
+    assert need == max(EGRESS_TRUTHS_MIN,
+                       min(EGRESS_TRUTHS_MAX, notes * EGRESS_TRUTHS_TENTHS // 10))
+    assert EGRESS_TRUTHS_TENTHS < 5, (
+        "a flat half of the vault's notes is more than half of what a run can reach; "
+        "if this goes back to 5 it should come with a sweep that justifies it")
+    placeable = 8               # measured on this vault, see PROJECT_ASSESSMENT.md
+    assert need <= placeable, ("never ask for more than a descent can offer", need)
+
+
+def test_the_truths_threshold_stays_bounded():
+    from runtime.game import EGRESS_TRUTHS_MIN, EGRESS_TRUTHS_MAX
+    g = _game()
+    need = g.egress_truths_needed()
+    assert EGRESS_TRUTHS_MIN <= need <= EGRESS_TRUTHS_MAX

@@ -1878,3 +1878,65 @@ full-slate sweep and this was a measuring exercise**:
 - **Guard the payout conditional.** A mark should not be spent when `weave()` returns nothing.
   It never fires on this corpus, so the change is free here and prevents a thin-corpus vault
   from silently destroying its own route.
+
+## Shipping both truths-route fixes
+
+Both changes from the measurement above, swept and taken.
+
+### The payout guard
+
+`on_player_act` added the note to `spent` **before `weave` was even called**, so a note that
+wove nothing was gone from every later floor and paid nothing for it. With the route needing
+most of the roughly 8 notes a descent places, each silent step cost it an eighth of its own
+supply. The note is now spent only when it actually says something; the mark still leaves the
+floor, so standing on it does not re-roll every turn.
+
+It never fires on this corpus, where `weave` pays 100 times out of 100 on all ten notes, so it
+is behaviourally free here. It is a guard for a vault too thin to weave from, which is exactly
+the vault that can least afford to lose a route. Two tests pin it: a silent mark pays nothing
+and is not burned, and a speaking mark is still spent exactly once, which was the
+unbounded-truths bug and must stay fixed.
+
+### The threshold basis
+
+`egress_truths_needed()` intended half the vault's notes and delivered 63 percent of the
+obtainable supply, because only 8 of 10 notes are ever placed. Swept over 8 seeds per agent
+across all six profiles, judged on both axes, since a cheaper threshold revives the route and
+also raises the win rate:
+
+| tenths | threshold | aggregate | truths route | profile spread |
+|---|---|---|---|---|
+| 5 (old) | 5 | 27/48 (56.2%) | 3/48 (6.3%) | 3 to 6 wins |
+| **4** | **4** | **26/48 (54.2%)** | **6/47 (12.8%)** | **4 to 5 wins** |
+| 3 | 3 | 23/48 (47.9%) | 9/46 (19.6%) | 2 to 6 wins |
+
+**4 is taken.** The route doubles, the aggregate is unchanged inside the instrument's own
+noise and stays in the band, and the profile spread is the tightest this project has measured.
+3 revives the route further and puts the aggregate nearer the middle of the band, but it widens
+the spread back to 25-75 percent and drops exploiter to 2 of 8, undoing an earlier fix. A route
+is not worth a profile.
+
+The denominators differ (48, 47, 46) because a run that neither wins nor dies never closes its
+chronicle and so reports no end-state snapshot.
+
+### Confirmed baseline
+
+The confirming eval reproduces the sweep exactly. 8 runs per agent, clean state,
+`PYTHONHASHSEED=0`:
+
+| agent | win rate | avg floor | contested | win paths |
+|---|---|---|---|---|
+| artisan | 50% | 19.0 | 31% | escape 3, boss_killed 1 |
+| cartographer | 50% | 20.0 | 62% | escape 2, commune 2 |
+| emergent | 50% | 17.9 | 29% | escape 2, commune 2 |
+| exploiter | 50% | 19.8 | 23% | commune 4 |
+| seeker | 62.5% | 23.0 | 37% | commune 5 |
+| whisper | 62.5% | 21.5 | 33% | escape 3, commune 2 |
+
+**26 of 48, 54.2 percent**, and **every profile sits between 50 and 62.5 percent**, a spread of
+one win. Four of six win by two routes; exploiter's single route in this batch is the
+sample-size artifact already characterised, and seeker's is the genuine one still open.
+
+For the record, where the four egress routes now stand across 47 snapshots: standing 32,
+warden 16, truths 6. The truths route is no longer a rounding error, and it is still the
+expensive one, which is the right shape for a route whose price is paid in detours.

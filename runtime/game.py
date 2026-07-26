@@ -54,6 +54,28 @@ TENSION_REST_CAP = 300  # above this, holding still stops restoring anything
 DESCEND_MEND_DIV = 4
 EGRESS_TRUTHS_MAX = 8   # ceiling for the truths route on a large vault
 EGRESS_TRUTHS_MIN = 3   # floor, so a tiny vault still asks for something
+# Tenths of the vault's notes the truths route asks for. Was a flat `notes // 2`, i.e. 5.
+#
+# The docstring's intent is "half the notes", but half the NOTES is not half the notes you
+# can reach. Measured by walking a full 26-floor descent and counting what is offered
+# without reading any of it: of 10 notes in the sample vault, only 8 are ever placed as a
+# mark, so asking for 5 was asking for 63 percent of the obtainable supply rather than 50.
+# The gap is why the route was satisfied in 3 runs of 48 while standing managed 33.
+#
+# Swept over 8 seeds per agent across all six profiles, judged on both axes that matter,
+# because a cheaper threshold revives the route AND raises the win rate:
+#
+#   tenths  threshold  aggregate        truths route     profile spread
+#     5         5      27/48  56.2%      3/48   6.3%      3 to 6 wins
+#     4         4      26/48  54.2%      6/47  12.8%      4 to 5 wins
+#     3         3      23/48  47.9%      9/46  19.6%      2 to 6 wins
+#
+# 4 is taken. The route doubles, the aggregate is unchanged inside noise and stays in the
+# 40-60 band, and the profile spread is the tightest this project has measured: every
+# profile between 50 and 62.5 percent. 3 revives the route further and moves the aggregate
+# nearer the middle, but it widens the spread back to 25-75 and drops exploiter to 2 of 8,
+# which undoes an earlier fix; a route is not worth a profile.
+EGRESS_TRUTHS_TENTHS = 4
 EGRESS_STANDING = 3     # standing with the warden's house that opens it instead
 FRIEND_STANDING = 4  # reputation at which a house stops fighting the one you control
 
@@ -1437,7 +1459,8 @@ class Game:
         sample and trivial on a large one. Half the notes, bounded.
         """
         notes = len(self.m.get("graph", {}).get("nodes", {})) or 1
-        return max(EGRESS_TRUTHS_MIN, min(EGRESS_TRUTHS_MAX, notes // 2))
+        return max(EGRESS_TRUTHS_MIN,
+                   min(EGRESS_TRUTHS_MAX, notes * EGRESS_TRUTHS_TENTHS // 10))
 
     def descend(self):
         if self.sandbox:
