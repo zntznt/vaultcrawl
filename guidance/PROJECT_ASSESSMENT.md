@@ -1784,3 +1784,97 @@ habit invariant 7 exists to prevent. The tree is back to 27 of 48, 56.25 percent
 - **The game-level mix is healthy** even so: escape 9, commune 16, boss_killed 2 across the
   batch, so all three win paths are live and it is one profile, not the game, that is
   monolithic.
+
+## Measuring the truths route: supply, threshold, placement
+
+Four measurements, and the first one retracts a claim from the previous section.
+
+### Correction: it is not 0 of 48, it is 3 of 48
+
+The earlier census recorded which egress route each run had satisfied using an **elif
+chain**, so a run that satisfied truths *and* had dealt with the warden was recorded only as
+"boss". The four routes are a **disjunction, not a partition**, and counting them as one
+produced "the truths route is satisfied 0 times in 48 runs".
+
+Counted independently, over the same 48 runs:
+
+| route | runs satisfying it |
+|---|---|
+| standing with the warden's house | 33 (69%) |
+| the warden dealt with | 18 (37.5%) |
+| **truths** | **3 (6.3%)** |
+| at least one | 34 (71%) |
+
+The route is rare, not dead. That materially changes the previous section: the `read_mark`
+experiment was aimed at a problem that was overstated by my own instrument. Reverting it was
+still right, since it failed to move even the corrected number and cost 8 points of aggregate,
+but the reasoning is corrected here.
+
+### Supply: adequate, with a wrinkle
+
+Walking a full 26-floor descent and counting what is offered without reading any of it:
+
+| | |
+|---|---|
+| notes in the vault | 10 |
+| notes with a community (eligible to yield a mark) | 10 |
+| marks scattered per floor | exactly 2 |
+| total mark-slots over the descent | 52 |
+| **distinct notes ever offered** | **8** |
+| threshold (`notes // 2`) | 5 |
+| headroom | 3 |
+
+**Supply is not the constraint.** But note the wrinkle: the threshold is computed from the
+vault's 10 notes while only **8** are ever placed. Two, `grocery list` and `rust`, never
+appear on any floor in a full descent. So the route asks for 5 of the 8 that can actually be
+had, which is 63% of the real supply rather than the 50% the formula intends.
+
+### Payout: exactly 1:1, and 100%
+
+The suspicion was that `on_player_act` consumes a mark unconditionally (popped from `ground`,
+added to `spent` forever) while granting the truth only if `weave()` returns a non-empty line,
+which would burn supply without paying. Measured at the source inside real runs:
+
+```
+cartographer s0  scattered 45  stepped on 6  truths granted 6
+whisper      s3  scattered 37  stepped on 8  truths granted 8
+```
+
+**Stepped-on equals granted in every run**, and probing `weave()` 100 times per note across
+all ten notes gives a **100% pay rate**. The conditional is real but never fires on this
+vault. It remains a latent hazard for a vault whose corpus is thinner, and it is worth a
+guard, but it is not what is happening here.
+
+### Placement: this is the constraint
+
+Distance from the tile a run arrives on to the marks on that floor, over all 26 floors:
+
+| | |
+|---|---|
+| min | 1 |
+| **median** | **13** |
+| max | 41 |
+| marks within 6 tiles of arrival | 14 of 52 (27%) |
+| marks within 14 tiles | 28 of 52 (54%) |
+
+And what runs actually collect: **0 to 8 marks stepped on** out of 10 to 52 scattered, median
+about 4, against a threshold of 5.
+
+### The answer
+
+Not under-supplied. Not broken. **Mis-priced, and the price is geometric.**
+
+To open the stair by truths you must step on 5 of the 8 distinct notes the run will ever
+place, each sitting a median 13 tiles off your arrival point, while the two routes it competes
+with cost nothing extra: standing accrues from the fighting and talking a run does anyway, and
+the warden is directly on the way down. That is why it lands at 6% against 69% and 37.5%.
+
+Two changes follow from this, and **neither is made here, because a threshold change needs a
+full-slate sweep and this was a measuring exercise**:
+
+- **Scale the threshold to the notes that can actually appear**, not to the vault's note
+  count. `egress_truths_needed()` intends half the vault and delivers 63% of the reachable
+  supply. Basing it on placed notes would restore the intent without touching the geometry.
+- **Guard the payout conditional.** A mark should not be spent when `weave()` returns nothing.
+  It never fires on this corpus, so the change is free here and prevents a thin-corpus vault
+  from silently destroying its own route.
