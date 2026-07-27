@@ -119,6 +119,13 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
 - **Cross-run state leaks into benchmarks.** `~/.vaultcrawl` carries graves, the forge
   cache and the chronicle. A clean directory and a warm one give different win rates from
   the same command; `eval_stats.json` now records which it ran against.
+- **In-process run isolation, fixed.** The other half of the above, and a fresh `HOME` did
+  not help because it lived in RAM. `reset_run_state()` was called only by `agent_eval` and
+  `run_agents.py`, so anything else building two games in one process inherited the first
+  run's skill tiers: eight runs of one config gave matter 3, 4, 5, 7, 7, 7, 9, 9 where a
+  fresh interpreter always gave 3. `Game.__init__` now calls it, because a Game is a run.
+  If you add per-run module state, reset it there and add a case to
+  `tests/test_run_isolation.py`.
 - **Privacy is enforced.** `#nogame`/`#private` tags exclude notes at ingest.
 - **Real-LLM path is unproven.** No Anthropic-backed `complete_json` exists. The offline
   stub is the default. A `_named()` fallback prevents crashes when LLM output is missing keys.

@@ -141,6 +141,20 @@ class Game:
                  upheaval=None, systems=None, sandbox: bool = False,
                  site_cache: str = None, sprawl: float = 1.0, run_seed=None,
                  chronicle_out: bool = False):
+        # A Game IS a run, so the per-run module globals are cleared here rather than
+        # being every caller's job to remember. `reset_run_state()` already existed and
+        # said "call this at the start of every run", but only agent_eval and
+        # run_agents.py ever did, so anything else that built two Games in one process
+        # carried the first one's skill tiers into the second. Measured before the fix:
+        # the identical configuration, with a fresh HOME each time, gave matter totals of
+        # 3, 4, 5, 7, 7, 7, 9, 9 over eight runs in one process, while one run per fresh
+        # interpreter gave 3 every time. The harnesses that already call it are unharmed;
+        # the call is idempotent.
+        try:
+            from .stack import reset_run_state
+            reset_run_state()
+        except Exception:
+            pass
         self.site_cache = site_cache   # path for the grown-world cache (sandbox)
         self.sprawl = max(1.0, float(sprawl))
         self.m = manifest

@@ -2441,12 +2441,12 @@ So a playthrough is not a stable measuring stick, even within a process and even
 documented `~/.vaultcrawl` leak controlled for. This is worse than the "cross-run state
 leaks into benchmarks" note above, which is about state carried between processes.
 
-The strongest candidate by inspection, not proven: `senses.py` stores `id(a)`, a memory
-address, into the scent map and later compares against it to decide whose scent is whose.
-Addresses are not stable identifiers across object allocations. Anything downstream of
-scent, such as which way a scavenger walks and therefore where it drops matter, would drift
-run to run. Worth a real investigation; the divergence in the traced run appeared at turn
-203 as a one-unit matter difference with identical HP and actor counts.
+~~The strongest candidate by inspection, not proven: `senses.py` stores `id(a)`, a memory
+address, into the scent map and later compares against it to decide whose scent is whose.~~
+
+**That guess was wrong, and it was investigated the next day.** It is not `id()` and it is
+not addresses. See "The drift, diagnosed" below. The tell was in the numbers already
+printed above and I did not read it: 3, 4, 5, 7 is *monotonic*, and address noise is not.
 
 The test now asserts the property directly, fingerprinting game state around the hook, which
 is both immune to that noise and a stronger claim: not "the outcome happened to match" but
@@ -2464,3 +2464,76 @@ is both immune to that noise and a stronger claim: not "the outcome happened to 
 - **The place-voice timer** is still a static corpus on a cadence, which is the shape the
   panel's own Stop-doing section warns about. It now loses the turn to any real perception,
   which is a smaller change than deleting it.
+
+---
+
+## The drift, diagnosed
+
+The previous section guessed that the within-process drift came from `senses.py` storing
+`id(a)`, a memory address, into the scent map. **That guess was wrong.** The real cause is
+duller and more embarrassing, and the evidence against the guess was already printed in the
+same paragraph: 3, 4, 5, 7 is monotonic, and address noise is not.
+
+### What it actually is
+
+`reset_run_state()` in `runtime/stack.py` already existed, already did the right thing, and
+its own docstring already said "call this at the start of every run". **Only
+`agent_eval.py` and `run_agents.py` ever called it.** `Game.__init__` did not. So every
+other path that built two games in one process, which is the entire test suite, every
+scenario script and `play.py`, carried the previous run's skill tiers into the next one.
+
+The specific channel: `salvage._collect_heaps` adds the foraging tier to every scrap heap
+you pick, and `exercise_skill("foraging")` accumulates that tier in a module-level
+singleton with no per-run reset.
+
+### How it was found, since the first two attempts went the wrong way
+
+| step | result |
+|---|---|
+| Eight runs in one process | 3, 4, 5, 7, 7, 7, 9, 9 |
+| One run per fresh interpreter, four times | 3, 3, 3, 3 |
+| Diff of module-level container sizes between runs | nothing changed size |
+| Diff of the two runs' message traces | **196 entries each, byte-identical** |
+| Per-turn fingerprint of actors, corpses, plants, matter | identical until turn 203, where **only** matter differs |
+| Spy on every `Inventory.add` | turn 204, `_collect_heaps`: `{'scrap': 1}` in one run, `{'scrap': 2}` in the other |
+
+The monotonic sequence should have been the first clue and was not. The identical message
+traces were the second: matter changed with no log line saying so, which pointed straight
+at a silent grant rather than at anything to do with pathing or perception.
+
+### The second bug, which is why nobody noticed the first
+
+`_collect_heaps` logged `heap["matter"]`, the base amount, while granting `matter`, the base
+plus the foraging tier. So a skilled forager was told a smaller number than they received,
+and, worse, **two runs that granted different amounts produced byte-identical logs.** The
+leak was invisible to any check that read the transcript, which is what the integration
+audit does.
+
+### The fix
+
+One call, moved to where a run actually begins: `reset_run_state()` at the top of
+`Game.__init__`. A Game is a run. The two harnesses that already called it are unaffected,
+since the call is idempotent. After it, eight runs in one process give 3 every time,
+matching a fresh interpreter.
+
+`tests/test_run_isolation.py` pins all three: two games in one process agree, skills do not
+survive a new Game, and the heap reports what it gave. Each was proved load-bearing by
+reverting its fix.
+
+### Two things this changes about earlier results
+
+- **`tests/test_integration.py`'s determinism section was green for the wrong reason.** It
+  built both games up front and played them in sequence, so with the reset in place the
+  second inherited the first's skills and it began failing. It now builds each game
+  immediately before playing it. Note honestly: that section still passes even with the
+  reset removed, because by the time it runs, foraging has saturated during the earlier
+  sections and two runs both pinned at the ceiling cannot diverge. It is correct now, but
+  it is not the guard. `test_run_isolation.py` is.
+- **Every balance number in this document was produced through `agent_eval`**, which did
+  call the reset, so the 22 of 48 baseline stands. What was confounded is anything measured
+  by building games directly, which includes any ad-hoc comparison run in a shell.
+
+### Still open
+
+The `id(a)` write in `senses.py` is still there and is still a poor idea, since a memory
+address is not a stable identifier. It is simply not the cause of this. Left as found.

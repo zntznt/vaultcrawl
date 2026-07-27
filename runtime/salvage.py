@@ -158,7 +158,11 @@ class SalvageSystem(System):
         inv(player).add({"scrap": matter})
         rng = random.Random(f"{game.seed}:{game.floor}:heaps:{pos}")
         self._heap_timers[pos] = game.turn + rng.randint(80, 120)
-        game.log(f"You pick through the trash ({heap['matter']} scrap).")
+        # `matter`, not heap["matter"]: the foraging tier is added to what you receive, so
+        # reporting the base understated the take by the whole skill bonus. It also meant
+        # two runs granting different amounts produced byte-identical logs, which is what
+        # hid the proficiency leak that made them differ.
+        game.log(f"You pick through the trash ({matter} scrap).")
         try:
             from .proficiency import exercise_skill
             exercise_skill("foraging")
