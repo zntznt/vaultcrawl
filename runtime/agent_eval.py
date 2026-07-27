@@ -409,8 +409,13 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
             for p in press:
                 for lbl, share in p.get("label_share", {}).items():
                     label_share[lbl] = label_share.get(lbl, 0.0) + share / len(press)
+            # The whole distribution, not the top 8 of about 30. Every survival label sits
+            # below that cut for every profile, so the truncation hid `fight`, `flee`,
+            # `recall` and `shield` from every report this project has produced, and the
+            # divergence matrix below was comparing policies by an arbitrary slice of each.
             stats[name]["pressure"] = {
-                "label_share": dict(sorted(label_share.items(), key=lambda kv: -kv[1])[:8]),
+                "label_share": {k: round(v, 4) for k, v in
+                                sorted(label_share.items(), key=lambda kv: -kv[1])},
                 "top_label_share": round(max(label_share.values()), 3) if label_share else 0.0,
                 "contested_share": round(_mean(p["contested_share"] for p in press), 3),
                 "uncontested_share": round(_mean(p["uncontested_share"] for p in press), 3),
@@ -418,6 +423,9 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
                 "avg_candidates": round(_mean(p["avg_candidates"] for p in press), 1),
                 "min_hp_pct": min(p["min_hp_pct"] for p in press),
                 "hurt_share": round(_mean(p["hurt_share"] for p in press), 3),
+                "critical_share": round(_mean(p.get("critical_share", 0.0) for p in press), 3),
+                "forced_share": round(_mean(p.get("forced_share", 0.0) for p in press), 3),
+                "max_drop_pct": max((p.get("max_drop_pct", 0) for p in press), default=0),
                 "top3_label_share": round(_mean(p["top3_label_share"] for p in press), 3),
                 "labels_used": round(_mean(p["labels_used"] for p in press), 1),
             }
@@ -479,6 +487,14 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
             "cause_of_death": r.cause_of_death,
             "egress_open": r.egress_open, "egress_route": r.egress_route,
             "egress_why": r.egress_why,
+            # How the run ended, in HP. A death that fell from full health in one turn and a
+            # death that was ground down over thirty are different problems, and the loss
+            # column could not tell them apart.
+            "hp_tail": (r.pressure or {}).get("hp_tail", []),
+            "max_drop_pct": (r.pressure or {}).get("max_drop_pct", 0),
+            "critical_share": round((r.pressure or {}).get("critical_share", 0.0), 4),
+            "forced_share": round((r.pressure or {}).get("forced_share", 0.0), 4),
+            "labels": (r.pressure or {}).get("label_share", {}),
         }
         for name in agent_names for r in results[name]
     ]

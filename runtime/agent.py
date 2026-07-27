@@ -189,6 +189,10 @@ class UniversalBrain(Brain):
         # taken. Read by the balance harness; nothing in the game loop depends on it.
         self._last_candidates: list = []
         self._last_choice: int | None = None
+        # True when the turn was a hard override rather than a scored choice, so the
+        # harness can count the label without polluting the margin statistics with a
+        # decision that never weighed an alternative.
+        self._last_forced: bool = False
         # Consecutive absorb-hazard rests on the current tile, so the attempt is bounded.
         self._hazard_tile: tuple | None = None
         self._hazard_tries: int = 0
@@ -211,27 +215,48 @@ class UniversalBrain(Brain):
     def profile(self) -> dict:
         return self._profile
 
+    def _forced(self, label: str, action):
+        """Record an override turn and return its action unchanged.
+
+        Telemetry only. The action passed in is the action returned, so a branch that used to
+        `return X` and now `return self._forced("...", X)` plays identically.
+        """
+        self._last_candidates = [(label, 0.0, action)]
+        self._last_choice = 0
+        self._last_forced = True
+        return action
+
     def decide(self, game, actor):
         s = agent_state(game, actor)
         hp_pct = s["vitals"]["hp_pct"]
         st = _stairs(game)
         bonus = _starting_bonus(game.turn)
         candidates = []
+        self._last_forced = False
 
         # ---- PANIC: survival above all ----
         # Non-fighters panic sooner: 35% for fight<=2, 25% for fighters
+        #
+        # These three paths return before the candidate list is ever built, and they used to
+        # return before recording anything either. `DecisionLog.observe` reads only
+        # `_last_candidates` / `_last_choice`, so a panic turn re-recorded the PREVIOUS turn's
+        # label, margin and candidate count: the survival branch was invisible in every label
+        # distribution this project has ever quoted, and the turns just before a near-death
+        # were double-counted in its place. `_forced` records the override without pretending
+        # it weighed alternatives.
         fw = self.profile.get("fight", 0)
         panic_cutoff = 35 if fw <= 2 else 25
         if hp_pct < panic_cutoff:
             if s["near_hostiles"]:
                 for i, sig in enumerate(s["sigils"]):
                     if sig.get("ability") == "Phase" or sig.get("base") == "Phase":
-                        return AgentAction("cast", index=i)
+                        return self._forced("panic_phase", AgentAction("cast", index=i))
             if s["position"]["on_stairs"]:
-                return AgentAction("descend")
+                return self._forced("panic_descend", AgentAction("descend"))
             if st:
                 step = step_toward_avoiding_elites(game, actor, st[0], st[1])
-                return AgentAction("move", dx=step[0], dy=step[1])
+                return self._forced("panic_flee",
+                                    AgentAction("move", dx=step[0], dy=step[1]))
 
         # ---- COMMUNE (any elite, not just final boss) ----
         truths = s["knowledge"]["truths_read"]

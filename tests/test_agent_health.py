@@ -70,6 +70,29 @@ def test_every_health_condition_has_a_field_to_read(tmp_path, monkeypatch):
     assert out["policy_divergence"], "policy_divergence is empty with two profiles present"
 
 
+def test_the_whole_policy_survives_into_the_dump(tmp_path, monkeypatch):
+    """No truncation. The rare labels are the ones worth reading.
+
+    `label_share` used to be cut to the top 8 of about 30, and every survival label sits below
+    that cut for every profile. So `fight`, `flee`, `recall` and `shield` were invisible in
+    every report, and `policy_divergence` was comparing profiles by an arbitrary slice of each
+    policy rather than by the policy.
+    """
+    wide = dict(_PRESSURE)
+    wide["label_share"] = {f"label_{i}": 0.07 for i in range(13)}
+    wide["label_share"]["flee"] = 0.005          # the kind of label the cut used to eat
+    wide["labels_used"] = 14
+
+    out = _run(monkeypatch, tmp_path,
+               [_fake("artisan", 0, pressure=wide), _fake("artisan", 1, pressure=wide),
+                _fake("whisper", 0, pressure=wide), _fake("whisper", 1, pressure=wide)])
+
+    shares = out["agent_stats"]["artisan"]["pressure"]["label_share"]
+    assert len(shares) == 14, f"the dump kept only {len(shares)} of 14 labels"
+    assert "flee" in shares, \
+        "the rarest label was dropped, which is exactly the one a survival question needs"
+
+
 def test_the_route_mix_pools_across_profiles(tmp_path, monkeypatch):
     """Route concentration is a property of the population, not of one profile.
 
