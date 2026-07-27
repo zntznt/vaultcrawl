@@ -110,7 +110,15 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
    spread by about three times. The current baseline is **77 of 288, 26.7%, 95% interval
    [22.0, 32.1]**, which is below the 40-60 band; see `guidance/PROJECT_ASSESSMENT.md`.
    `agent_eval` writes per-run rows into `eval_stats.json`, so use those for spread rather
-   than quoting a mean.
+   than quoting a mean. The rows also carry `egress_open`/`egress_route`/`egress_why`, which
+   record what the last stair wanted at the moment the run ended, so **price a threshold from
+   an evaluation you already have before spending an hour on an arm.** Counting the stalled
+   runs a candidate value would have released predicted all three arms of the
+   `EGRESS_STANDING` sweep: exact at one point of gate, within a win at two, four wins
+   optimistic at four, because a bigger change also alters the run rather than only its
+   ending. That sweep, 4 arms of 144, is also the answer on the escape gate: **7, 6, 5 and 3
+   all overlap, so the gate is not the lever and it stays at 7.** Deaths are 82, 82, 81, 82
+   across the arms, and 69 of 82 of them happen at standing 0.
 
 ## Known issues
 

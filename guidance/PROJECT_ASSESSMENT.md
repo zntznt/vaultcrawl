@@ -2837,3 +2837,71 @@ the evidence offered for each could not have separated it from its neighbours:
 The point of writing this down is not to relitigate five decisions. It is that a sixth decision
 made the same way would compound the problem rather than fix it, so the next constant this
 project moves has to be moved on a sample that can decide.
+
+## The first sweep run at a size that could decide: EGRESS_STANDING
+
+Four arms, 144 runs each (24 seeds per profile, all six profiles), 576 runs total. Each arm
+from a clean `~/.vaultcrawl` at `PYTHONHASHSEED=0`, sequential, never concurrent with the test
+suite. The decision rule was fixed before the first arm ran: **adopt a value other than 7 only
+if its interval does not overlap the interval for gate 7.**
+
+| gate | wins | rate | 95% interval | died | stalled |
+|---|---|---|---|---|---|
+| 7 (current) | 34/144 | 23.6% | [17.4, 31.2] | 82 | 28 |
+| 6 | 34/144 | 23.6% | [17.4, 31.2] | 82 | 28 |
+| 5 | 38/144 | 26.4% | [19.9, 34.1] | 81 | 25 |
+| 3 | 42/144 | 29.2% | [22.4, 37.1] | 82 | 20 |
+
+**Every arm overlaps every other. Nothing is adopted. `EGRESS_STANDING` stays at 7.**
+
+Gate 3 was measured but was never adoptable: `FRIEND_STANDING` is 4, and an escape gate that
+asks for less than the standing at which a house merely stops fighting you is the inversion
+`tests/test_pressure.py` already guards. It is in the table to show the shape of the curve.
+
+Two things the sweep establishes beyond the rule.
+
+**Gate 7 at 144 runs reproduces the 288-run baseline.** 23.6% [17.4, 31.2] against 26.7%
+[22.0, 32.1]. The instrument agrees with itself at two sample sizes, which is the first time
+that has been checked.
+
+**The constant's total authority is bounded, and the bound is below the band.** Deaths are 82,
+82, 81, 82 across the four arms: the gate cannot touch them, because a run that dies on floor
+14 does not reach the last stair. Only the stall column moves, at about two wins per point of
+gate. At gate 7 there are 28 stalls, so even deleting the gate outright and letting every
+stalled run walk out gives at most 62/144 = **43.1%, [35.2, 51.3]**, the bottom edge of the
+band, bought by making escape free again. That is exactly what `0df8c3f` R5 introduced the
+constant to stop. **The gate is not the lever, and no setting of it reaches the band.**
+
+### The stall standings predicted the sweep before it ran
+
+The per-run egress capture landed the arm before, so arm 1 could be asked which standing each
+stalled run actually held: 0 (x8), 1 (x3), 2 (x4), 3 (x8), 4 (x1), 5 (x3), and never 6. Counting
+the stalls a lower gate would have released gave a prediction for each remaining arm:
+
+| gate | predicted | actual |
+|---|---|---|
+| 6 | 34 | 34 |
+| 5 | 37 | 38 |
+| 3 | 46 | 42 |
+
+Exact at one point of gate, within a win at two, and four wins optimistic at four. The
+over-prediction is informative rather than a failure: a lower gate does not merely re-score the
+ending, it opens the stair earlier and the run diverges from there, so 8 of the 12 counted
+stalls converted and the rest went on to fail some other way. Route counts confirm the
+mechanism, `standing` wins rising 15 to 26 while the other three routes fall by 3 between them.
+
+The practical consequence: **a threshold change can now be priced from a single existing
+evaluation, and only the promising ones need an arm.** Gate 6 cost an hour to confirm a
+prediction of "no change" that the capture had already made for free.
+
+### Where the losses actually are
+
+- **All 28 stalls are at floor 26.** A stall is exactly what it was assumed to be: arrived at
+  the bottom, could not open the stair.
+- **69 of 82 deaths happen at standing 0.** For the majority of losing runs the standing
+  economy is not merely priced wrong, it is never entered at all.
+- Deaths are 74% of losses at every gate. Nothing in this sweep addressed them.
+
+So the honest reading is that the question stopped being a tuning question. The remaining move
+is the one in the plan's step 4: write down in `guidance/AGENT_SPEC.md` what an agent win rate
+is **for**, and judge 26.7% against that rather than against a band nobody justified.
