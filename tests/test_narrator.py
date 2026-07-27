@@ -273,6 +273,11 @@ def test_a_real_perception_outranks_the_place_murmur():
     worth printing is a pointer.
     """
     game = _game()
+    # Step off whatever turn the world was built on. Building a game can itself spend the
+    # turn's one ambient line, and an earlier version of this test assumed a fresh budget
+    # and started failing the moment the sample world changed. The budget is per turn, so
+    # take a turn nobody has used.
+    game.turn += 1
     game.log("a murmur with nowhere to go", ambient=True, ambient_rank=0)
     assert game.messages[-1].startswith("A murmur")
     game.log("a real thing to the east, in Somewhere", ambient=True, ambient_rank=2)
@@ -282,6 +287,7 @@ def test_a_real_perception_outranks_the_place_murmur():
     assert len(game.messages) == len(game.message_tags), "replacing a line desynced the tags"
 
     # and not the other way round
+    game.turn += 1
     game.log("another real thing", ambient=True, ambient_rank=2)
     game.log("a later murmur", ambient=True, ambient_rank=0)
     assert not any(m.startswith("A later murmur") for m in game.messages)

@@ -23,7 +23,7 @@ python3 -m runtime.play examples/world.json                       # interactive 
 python3 -m runtime.play examples/world.json --auto --brain seeker # headless agent
 python3 -m runtime.agent_eval examples/world.json --runs 20       # evaluation harness
 python3 run_agents.py                                             # multi-agent runner
-python3 -m pytest tests/ -q                                       # 304 tests, 46 of 66 modules
+python3 -m pytest tests/ -q                                       # 336 tests, 50 of 70 modules
 PYTHONPATH=. python3 tests/test_integration.py                    # the other 20 are scripts
 ```
 
@@ -80,12 +80,12 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
 3. **No em dashes**, ever, in anything (code, comments, docs, UI, commit messages).
    Rephrase. Enforced on pull requests, but only on the lines a change *adds*
    (`.github/workflows/ci.yml`, job `house-style`). The back catalogue is untouched and
-   large, 552 occurrences across 100 `.py` files and 368 across 23 `.md` files, so the rule
+   large, 550 occurrences across 99 `.py` files and 350 across 22 `.md` files, so the rule
    is real going forward and a lie about the past. Do not cite existing files as precedent.
 4. **Determinism first.** No `random.seed()`, no `hash()`-seeded ordering, no wall-clock
    in the bake path. Seed RNG from SHA-256 of stable keys.
 5. **The suite is split, and pytest only sees two thirds of it.** `python3 -m pytest tests/ -q`
-   collects 304 tests across 46 of 66 modules and runs in about 40 seconds. The other 20,
+   collects 336 tests across 50 of 70 modules and runs in about 90 seconds. The other 20,
    including `test_integration.py` and the whole brain ladder, use a `main()` plus
    `if __name__` script style pytest cannot discover; run those as
    `PYTHONPATH=. python3 tests/<name>.py`. **16 collected tests currently fail**, and they
@@ -99,7 +99,7 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
    1-run-in-48 flaky.
    Do not run the suite concurrently with `agent_eval`: together they OOM.
 6. `ponytail:` comments mark deliberate shortcuts. Prefer deleting over adding.
-   (There are currently zero in the codebase.)
+   (Two: `vaultcrawl/evolve.py` and `vaultcrawl/corpus.py`. This said zero, which was wrong.)
 7. **Balance changes must be measured, not argued.** `runtime/pressure.py` reports decision
    margin, label share, win-path split and policy divergence. Run the eval from a clean
    `~/.vaultcrawl` with `PYTHONHASHSEED=0` or the numbers are not comparable to anyone
@@ -107,10 +107,16 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
 
 ## Known issues
 
-- **Bake determinism, half-fixed.** Edge ordering is sorted, so re-baking on the same
-  machine is byte-identical. Still open: `activity` derives from file mtimes, and it does
-  not stay in the flavor layer. It feeds `_archetype_for`, so touching one note can
-  reshuffle the bestiary and a fresh clone bakes a different world than the author's.
+- **Bake determinism, fixed.** The bake is a pure function of vault content: same notes,
+  same world, on any machine. `activity` no longer comes from file mtimes (a clone rewrites
+  them, and min-max amplified the surviving write-order jitter to the full range), and
+  `generatedFrom.vaultPath` is a basename rather than the baking machine's absolute path.
+  Pass `--mtime-activity` to get edit-recency back on your own vault; that world is not
+  portable and says so in the manifest. CI asserts a fresh bake equals the committed
+  `examples/world.json`, so the demo page, the tests and a stranger's clone all describe the
+  same game. See `vaultcrawl/mapping.py` `activity_map()` and `tests/test_bake_determinism.py`.
+  If you change `sample_vault`, regenerate `examples/world.json` and re-measure the balance
+  baseline in the same commit.
 - **Runtime determinism, mostly fixed.** The 21 `hash()`-seeded sites are now SHA-256 via
   `runtime/det.py`. Residual cross-process variance remains in the knowledge-to-sigil-slot
   path. It does **not** reproduce exactly at a fixed `PYTHONHASHSEED`: measured over two

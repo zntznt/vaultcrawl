@@ -144,7 +144,7 @@ structure into personal flavor.
 | Orphan note (degree 0) | A **secret** (hidden room / lost artifact) | `mapping.py` |
 | Open checkbox `- [ ]` | A **quest** | `mapping.py` |
 | Attachment `![[img]]` | **Loot** | `mapping.py` |
-| Edit recency (mtime) | Region **activity** (spawn density) | `mapping.py` |
+| Stable per-note spread (`--mtime-activity` for edit recency) | Region **activity** (spawn density) | `mapping.py` |
 
 The poetic anchor for a *traditional* descent: **depth = centrality**. You start at the
 periphery of your knowledge and descend toward your most-linked notes. The deepest boss

@@ -19,12 +19,19 @@ from .mapping import build_blueprint
 from .validate import pad_if_sparse, region_graph_warnings, validate
 
 
-def bake(vault_path: str, out_path: str, llm=None):
+def bake(vault_path: str, out_path: str, llm=None, use_mtime_activity: bool = False):
     vault = load_vault(vault_path)
+    vault.use_mtime_activity = use_mtime_activity
     an = analyze(vault)
     blueprint = build_blueprint(vault, an)
     manifest = generate_world(vault, an, blueprint, llm=llm)
-    manifest["generatedFrom"]["vaultPath"] = os.path.abspath(vault_path)
+    # The BASENAME, not the absolute path. This wrote the baking machine's full path into
+    # a published artifact, so the committed examples/world.json carried the author's home
+    # directory, and no re-bake anywhere else could ever be byte-identical to it.
+    manifest["generatedFrom"]["vaultPath"] = os.path.basename(os.path.normpath(vault_path))
+    if use_mtime_activity:
+        # Mark it, because such a world cannot be reproduced from the vault alone.
+        manifest["generatedFrom"]["activitySource"] = "mtime"
     manifest["corpus"] = build_corpus(vault, an)
 
     manifest = pad_if_sparse(manifest)
@@ -67,13 +74,17 @@ def main(argv=None):
     ap.add_argument("vault", help="path to a folder of .md notes")
     ap.add_argument("-o", "--out", default="world.json", help="output manifest path")
     ap.add_argument("-q", "--quiet", action="store_true")
+    ap.add_argument("--mtime-activity", action="store_true",
+                    help="derive `activity` from note modification times instead of graph "
+                         "position. Expressive on your own live vault, but mtimes do not "
+                         "survive a copy or a clone, so the world stops being reproducible")
     args = ap.parse_args(argv)
 
     if not os.path.isdir(args.vault):
         print(f"error: {args.vault} is not a directory", file=sys.stderr)
         return 2
 
-    manifest, warns = bake(args.vault, args.out)
+    manifest, warns = bake(args.vault, args.out, use_mtime_activity=args.mtime_activity)
     if not args.quiet:
         _print_summary(manifest, args.out, warns)
     return 0

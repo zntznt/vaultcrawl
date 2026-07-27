@@ -72,13 +72,33 @@ jobs:
           fi
 
       # Invariant 4, determinism: the bake must not depend on anything but its inputs.
-      # Baking twice and diffing is the cheapest possible check that it still holds.
-      - name: Bake is valid and deterministic
+      #
+      # This used to bake twice on this runner and diff, which sounds like the check and is
+      # not. mtimes are constant within a job, so it could only ever test the half that was
+      # already fixed, and it passed unconditionally while a clone genuinely baked a
+      # different world: different creature archetypes, and a different number of enemies on
+      # every floor. The two checks below are the ones with teeth.
+      - name: Bake is valid, reproducible, and matches the committed world
         run: |
           python -m vaultcrawl.bake sample_vault -o /tmp/bake_a.json
+
+          # 1. The runner's bake must equal what is committed. This is what keeps the
+          # published demo, the artifact 149 test call sites load, and a stranger's clone
+          # describing the same game. It is only possible now that nothing environmental
+          # reaches the output.
+          cmp /tmp/bake_a.json examples/world.json \
+            || { echo "a fresh bake does not match the committed examples/world.json."; \
+                 echo "regenerate it and re-measure the balance baseline."; \
+                 diff <(head -c 2000 /tmp/bake_a.json) <(head -c 2000 examples/world.json) | head -20; \
+                 exit 1; }
+
+          # 2. Touching a note must change nothing. This is the direct regression for the
+          # clock reaching the world, and the old check was structurally blind to it.
+          touch sample_vault/*.md
           python -m vaultcrawl.bake sample_vault -o /tmp/bake_b.json
           cmp /tmp/bake_a.json /tmp/bake_b.json \
-            || { echo "the bake is not reproducible on one machine"; exit 1; }
+            || { echo "a file modification time still changes the baked world"; exit 1; }
+          git checkout -- examples/world.json 2>/dev/null || true
           python - <<'PY'
           import json, sys
           from vaultcrawl.validate import validate

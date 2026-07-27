@@ -79,7 +79,7 @@ codebase-wide sloppiness.
 | F3 | 16 collected tests fail on HEAD | 7 modules, see below |
 | ~~F4~~ | ~~No CI runs any test~~ CLOSED, see "F4 closed" below | `.github/workflows/ci.yml` |
 | F5 | Stated invariants unenforced and broadly violated | `CLAUDE.md:79,80,85` |
-| F6 | mtime reaches the mechanical layer of the bake | `vaultcrawl/mapping.py:103,291` |
+| ~~F6~~ | ~~mtime reaches the mechanical layer of the bake~~ CLOSED, see "F6 closed" below | `vaultcrawl/mapping.py` `activity_map()` |
 | F7 | Brain registry collision makes `ExploiterBrain` unreachable | `runtime/tactics.py:145` vs `runtime/agent.py:637` |
 | F8 | Eval harness runs 26 systems, the game runs 28 | `runtime/agent_eval.py:57` vs `runtime/play.py:1274` |
 | F9 | Sandbox versus classic selected by TTY detection | `runtime/play.py:1288-1290` |
@@ -266,7 +266,11 @@ the letter. It is not compliant with the spirit, and it means a seeded run is no
 across processes. `test_integration.py` has a determinism section; it is one of the twenty
 modules pytest never collects.
 
-### F6. mtime reaches the mechanical layer of the bake
+### F6. mtime reaches the mechanical layer of the bake [CLOSED]
+
+*Closed. The finding as written follows, and it understated the reach: the bake was the
+smaller half, and six mechanical consumers in the RUNTIME read `activity` back out of
+the manifest. See "F6 closed" at the end of this document.*
 
 Verified experimentally: copy `sample_vault` twice, `touch -d "2020-01-01"` one copy, bake
 both, diff. Result: 24 field differences, 11 of them numeric. `activity` diverges on every
@@ -2537,3 +2541,102 @@ reverting its fix.
 
 The `id(a)` write in `senses.py` is still there and is still a poor idea, since a memory
 address is not a stable identifier. It is simply not the cause of this. Left as found.
+
+---
+
+## F6 closed: the bake is a pure function of the vault
+
+`CLAUDE.md` listed this first under Known Issues and framed it as a flavour-layer leak that
+happened to touch `_archetype_for`. It was bigger than that in three directions.
+
+### Archetype is not flavour
+
+`entities.py:92` maps archetype to a glyph and `senses.profile_name_for` maps glyph to a
+sense profile. A `scribe` is glyph `s`, the **mind_seer** profile that senses thought through
+walls at range 10. A `gloom` is glyph `k`, plain **sighted**. Two copies of the same vault
+with different file times bake one or the other. A file modification time decided what a
+creature could perceive.
+
+### The bake was the smaller half
+
+`activity` is written into the manifest and read back by six mechanical consumers in the
+runtime. The loudest is `runtime/game.py`'s `n = 2 + floor//4 + round(region["activity"] * 2)`,
+the number of enemies on every floor; the others are the parley goal, whether a room gets a
+cache, area-kind weighting, which interior generators fire, and the type of orphan landmarks.
+Fixing `_archetype_for` alone, which is what the old wording implies, would have left all six.
+
+### The old numbers were not even degenerate, which is why nobody noticed
+
+The expectation was that a clone flattens every mtime and `activity` collapses to a constant.
+It does not. The measured spread across `sample_vault` in this checkout is **5.3
+milliseconds** of filesystem write order, and min-max normalisation amplifies that to the
+full 0..1 range. The result looks plausibly graded while encoding nothing but the order git
+happened to write the files in.
+
+### A second environment leak, previously unrecorded
+
+`bake.py` wrote `os.path.abspath(vault_path)` into `generatedFrom.vaultPath`, so the
+committed `examples/world.json` shipped with `/Users/zntznt/Repositories/vaultcrawl/...` in
+it. An environment leak into a published artifact, and independently enough to stop any
+re-bake elsewhere from matching. It is a basename now.
+
+### The design, including the version that was wrong
+
+`activity` now comes from a stable per-note hash, ranked rather than min-max normalised.
+
+The first attempt derived it from **graph position**, calling the central core "old" and the
+leaves "the frontier", which is the story `ARCHITECTURE_SPEC.md` tells about growth rings. It
+was reproducible and it collapsed the world. `runtime/arch/areakinds.py` weights an area's
+kind from the region's ANCHOR note, which is by definition its most central, and it reads
+role, degree **and** activity. Ranking activity by centrality put every anchor in the "old
+and quiet" band, every region got the same necropolis bonus, and block-glyph variety in the
+sample world fell from four kinds to two. Centrality was already a signal there; activity had
+to be a different one. Caught by `tests/test_blocks.py`, which is exactly what that test is
+for.
+
+What the mtime version actually supplied was a spread across notes **uncorrelated** with
+graph position, since editing a note today says nothing about how many things link to it. A
+hash of the note id reproduces that character exactly and is the same on every machine.
+
+Rank rather than min-max applies to both sources: min-max divides by the span, so one note
+edited today rescales every other note in the vault.
+
+Edit recency is not deleted, it is opt-in. `--mtime-activity` restores it for someone baking
+their own live vault, and stamps `generatedFrom.activitySource` so a world that cannot be
+reproduced from the vault alone says so.
+
+### What it unlocks
+
+CI now asserts that a fresh bake **equals the committed `examples/world.json`, byte for
+byte**. That check was impossible before and it collapses three worlds into one.
+
+There really were three. `.github/workflows/pages.yml` bakes `sample_vault` over
+`examples/world.json` on the runner before capturing the demo, so the published animation was
+generated from the runner's checkout order, not from the artifact the tests validate. The job
+comment claims the site "can never drift from the current build", which was true about code
+and false about the world. It is true about both now.
+
+The old CI determinism gate baked twice **on one runner in one job**, where mtimes are
+constant by construction, so it passed unconditionally while this bug was live. It tested the
+half `CLAUDE.md` already called fixed. It is replaced by the equality check above plus a
+touch-a-note-and-rebake guard.
+
+### Tests, and two of them were weaker than they looked
+
+`tests/test_bake_determinism.py`, six tests, each proved load-bearing by reverting the fix.
+Two needed rewriting first, and the reason is worth keeping:
+
+- The two "same content, different mtimes" tests stamped every file to a **single** value per
+  arm. That looks like the harsher test and is the weakest one: min-max divides by the span,
+  and a span of zero sends every note to the same activity in both arms, so the comparison
+  passes whatever the code does. They stamp a spread now, in opposite orders, which is what a
+  clone actually produces.
+- The opt-in test compared whole manifests and passed with the flag disabled, because the
+  `activitySource` marker alone made them unequal. The marker is not the feature; it compares
+  activity values now.
+
+### Cost
+
+`examples/world.json` is regenerated, which moves the balance baseline: region activity
+changed, so `round(activity * 2)` changed, so the enemy count per floor changed. Re-measured
+below, per invariant 7.
