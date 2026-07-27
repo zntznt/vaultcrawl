@@ -2781,3 +2781,59 @@ table above shows 8-seed measurements move by up to three wins. Re-running the o
 
 It also does not license a retune. 26.7% is a measurement, not a target, and deciding what to
 do about it is a separate piece of work from finding out.
+
+## Correcting the record: what the band is, and what it was ever measured at
+
+The 288-run figure invites an obvious response, which is to tune the game back up until the
+number returns to 40-60. Before doing that, two facts about the record above.
+
+### The band is not justified anywhere
+
+It appears in no spec. `guidance/AGENT_SPEC.md` says nothing about a target win rate; neither
+does any other file in `guidance/`. Grep the repository and every occurrence is in this
+document. Its first appearance is line 830, "just under the 40-60% band the balance pass
+targeted", which cites the band as an existing standard while being the place it enters. From
+there it is treated as given for the next 1,800 lines.
+
+So nobody wrote down what an agent win rate is **for**. That matters more than whether 26.7%
+is inside it: a target with no stated purpose cannot tell you which way to move a constant, or
+whether to move one at all.
+
+### And it was never reliably hit
+
+Every claim of being inside the band was measured below the resolution the claim needed:
+
+| claim | line | measured at |
+|---|---|---|
+| "3 of 6, 50%, the middle of the target band" | 903 | **two runs per agent** |
+| "aggregate 46%, inside the band for the first time" | 1006 | 8 seeds |
+| "23 of 48, 47.9%, inside the band" | 1114 | 8 seeds |
+| "21 of 48, 43.75%, still inside the band" | 1315 | 8 seeds |
+| "24 of 48, 50.0%, the centre of the target band" | 1460 | 8 seeds |
+| "27 of 48, 56.25%, inside the band" | 1716 | 8 seeds |
+| "45.8%, the lower half of the band" | 2189 | 8 seeds |
+
+The table at line 2706 shows 8-seed arms moving by up to three wins per profile when the same
+code, same world and same seeds are widened to 48, and the aggregate moving 45.8% to 26.7%
+purely by sampling more. **26.7% is therefore not a regression from 46%. It is the first
+aggregate this project has measured at a sample size that can support the sentence.** The
+earlier numbers are not wrong so much as unresolved: they never distinguished the arms they
+were used to distinguish.
+
+### The five constants set that way
+
+Each of these was chosen by comparing arms that differed by one to four wins at 8 seeds, which
+is inside the noise now measured. None of them is known to be wrong. What is now known is that
+the evidence offered for each could not have separated it from its neighbours:
+
+| constant | value | set in | swept at | what the sweep could actually resolve |
+|---|---|---|---|---|
+| `EGRESS_STANDING` | 7 | `0df8c3f` R5, raised 3 to 7 later | 8 seeds | nothing at this margin |
+| `EGRESS_TRUTHS_TENTHS` | 4 | `f0122b0` | 8 seeds | nothing at this margin |
+| `DESCEND_MEND_DIV` | 4 | `622770b` | 8 seeds, one arm at 2 runs per agent | nothing at this margin |
+| `BOSS_COMMUNE_TRUTHS` | 2 | `1c2006e` | 8 seeds, and the value came from a test file | nothing at this margin |
+| `COMMUNE_PULL_BASE` | 12 | `0d5e744` | 8 seeds | nothing at this margin |
+
+The point of writing this down is not to relitigate five decisions. It is that a sixth decision
+made the same way would compound the problem rather than fix it, so the next constant this
+project moves has to be moved on a sample that can decide.
