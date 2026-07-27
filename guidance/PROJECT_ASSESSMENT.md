@@ -2916,3 +2916,107 @@ aggregate is reported with an interval and compared against the
 history in this document, with degeneracy below 10% or above 80% the only absolute call. Every
 in-band claim above stays exactly as written: it is the record of what was believed, not a
 standard anyone should now measure against.
+
+## What kills a run: attrition, with a healing sigil in hand it cannot see
+
+The escape-gate sweep left deaths as 74% of losses and untouched by any threshold. This is the
+first measurement that asked what they are. 288 runs on the corrected telemetry (see below),
+clean `~/.vaultcrawl`, `PYTHONHASHSEED=0`.
+
+**76 of 288, 26.4%, [21.6, 31.8]**, against the 77 of 288, 26.7%, [22.0, 32.1] baseline. One
+win apart, so the telemetry work moved nothing, which is what a telemetry change should do.
+157 died, 55 stalled.
+
+### It is attrition, not burst
+
+The obvious hypothesis from the old numbers was a burst: `hurt_share` said agents spent 2 to 17%
+of turns below half health, so it looked like they were healthy and then suddenly dead. **Wrong.**
+
+| reading | value |
+|---|---|
+| worst single-turn HP fall on a dying run | median **17%** of max, worst 44% |
+| dying runs that ever took a hit of 50% or more | **0 of 157** |
+| HP twelve decisions before the end | median **21%**, above 75% in only 7 of 157 |
+| dying runs never below 25% HP before the end | **0 of 157** |
+| share of a dying run spent below 25% HP | median 1.3%, which at 5,000 turns is about 65 turns |
+
+Every run that dies is worn down, sits in the critical band for dozens of turns, and dies there.
+`hurt_share` looked reassuring only because it averages over runs of five to ten thousand turns,
+so hundreds of desperate turns disappear into thousands of healthy ones. The old number was not
+wrong, it was the wrong denominator.
+
+### And the heal never fires
+
+With panic recorded and the label list untruncated, every survival branch is readable for the
+first time. Shares of all decisions, 288 runs:
+
+| profile | forced | panic_flee | panic_descend | panic_phase | recall | sigil_escape | flee | shield |
+|---|---|---|---|---|---|---|---|---|
+| artisan | 1.5% | 1.43% | 0.02% | 0.01% | **0.00%** | **0.00%** | 0.28% | 0.26% |
+| cartographer | 13.7% | 9.63% | 4.06% | 0.01% | **0.00%** | **0.00%** | 0.40% | 0.28% |
+| emergent | 2.1% | 2.08% | 0.05% | 0.00% | **0.00%** | **0.00%** | 0.16% | 0.37% |
+| exploiter | 1.1% | 1.06% | 0.03% | 0.00% | **0.00%** | **0.00%** | 0.07% | 0.33% |
+| seeker | 2.2% | 2.11% | 0.04% | 0.03% | **0.00%** | **0.00%** | 0.11% | 0.25% |
+| whisper | 3.3% | 1.42% | 1.92% | 0.00% | **0.00%** | **0.00%** | 0.42% | 0.17% |
+
+**`recall` and `sigil_escape` are zero for all six profiles across 288 runs**, and `panic_phase`
+is within rounding of zero. Three survival branches that never once fired.
+
+### The cause, and it is a bug rather than a balance number
+
+**First hypothesis, and it was wrong.** `can_heal_meaningfully` gates the HEAL branch and reads
+per-part HP, and `tests/known_failures.txt` says the body-part layer is broken, so the gate
+looked dead. Sampled on real runs it is alive: True on 48 of 48 low-HP turns of a dying artisan
+and 913 of 927 for a cartographer. The parts do take damage. (A hand-set `player.hp` leaves the
+parts full, which is what made the gate look stuck; that was an artifact of the probe.)
+
+The actual cause is one line up. The HEAL branch matches its sigil by exact string:
+
+```python
+if sig.get("ability") == "Recall" or sig.get("base") == "Recall":
+```
+
+A quality-graded sigil has `ability = "Legendary Recall"` and **`base = ""`**. Sampled over one
+artisan run of 10,485 turns:
+
+| what the agent held | turns | matches `== "Recall"` |
+|---|---|---|
+| `Legendary Recall` | 2,746 | no |
+| `Uncommon Recall` | 1,084 | no |
+| `Epic Phase` | 579 | no |
+| `Epic Recall` | 52 | no |
+| `Recall` | 65 | yes |
+
+**The agent carried a Recall sigil on about 3,900 turns and could see it on 65.** It is holding
+the heal and cannot read the label. The same exact-match appears at five sites in `agent.py`:
+HEAL (`:245`), PANIC's Phase escape (`:252`), FORGE's "what do I already have" set (`:384`,
+which is why an agent keeps forging a Recall it already owns), `sigil_escape` (`:547`) and
+deploy (`:615`).
+
+That is the whole diagnosis, and it fits the loss profile exactly: runs ground down over dozens
+of turns in the critical band, holding an unreadable heal, falling through to `panic_flee` and
+running for the stairs instead.
+
+### Not fixed here, deliberately
+
+This tranche pre-registered that no game behaviour changes in it, because a fix folded into a
+diagnosis is a fix nobody measured. The next tranche is the fix and its measurement: match the
+base ability inside a graded name at all five sites, then 288 runs against the 26.4% recorded
+above. The expected direction is up, and it should be checked rather than assumed, since a heal
+that fires also changes what the agent spends its turns doing.
+
+### Health checklist, recomputed on the corrected telemetry
+
+| condition | limit | current |
+|---|---|---|
+| every profile can win | above 0 for all six | 6 of 6 |
+| every route is used | all 4 present | 4 of 4 |
+| no route dominates | at most 60% | 50% (`standing` 38 of 76) |
+| no verb is broken | empty | empty |
+| decisions are contested | at most 0.05 | 0.000 |
+| the decision space is used | at least 20 | 25.1 to 30.4 |
+| profiles actually differ | every pair above 0.10 | **0.151 to 0.506** |
+
+`policy_divergence` rose from 0.123-0.439 because it is now computed from whole policies rather
+than each profile's top 8 labels. All seven conditions hold. Route concentration at 50% is the
+closest to its limit, as it was before.

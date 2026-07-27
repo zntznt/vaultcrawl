@@ -113,7 +113,14 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
    conditions in `guidance/AGENT_SPEC.md` §What the win rate is for, and the aggregate is a
    tripwire read against its own history in `guidance/PROJECT_ASSESSMENT.md`.
    `agent_eval` writes per-run rows into `eval_stats.json`, so use those for spread rather
-   than quoting a mean. The rows also carry `egress_open`/`egress_route`/`egress_why`, which
+   than quoting a mean. **Deaths are 74% of losses and they are attrition, not burst**: median
+   worst single-turn fall is 17% of max HP, no run in 288 ever took a 50% hit, and every dying
+   run spent dozens of turns below 25% HP. `recall`, `sigil_escape` and `panic_phase` fire on
+   0.00% of decisions because five sites in `agent.py` match a sigil by exact string
+   (`== "Recall"`) against an `ability` that carries a quality prefix (`"Legendary Recall"`,
+   with `base` empty). The agent holds the heal and cannot read the label; that is the named
+   next lever, not a balance constant.
+   The rows also carry `egress_open`/`egress_route`/`egress_why`, which
    record what the last stair wanted at the moment the run ended, so **price a threshold from
    an evaluation you already have before spending an hour on an arm.** Counting the stalled
    runs a candidate value would have released predicted all three arms of the
