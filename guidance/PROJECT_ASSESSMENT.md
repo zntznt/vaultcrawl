@@ -75,9 +75,9 @@ codebase-wide sloppiness.
 | # | Finding | Evidence |
 |---|---------|----------|
 | F1 | Four player verbs are unreachable dead code | `runtime/play.py:1135,1145,1160,1162` |
-| F2 | 20 of 65 test modules collect zero tests under pytest | `tests/test_integration.py` et al |
+| F2 | 20 of 66 test modules collect zero tests under pytest | `tests/test_integration.py` et al |
 | F3 | 16 collected tests fail on HEAD | 7 modules, see below |
-| F4 | No CI runs any test | `.github/workflows/pages.yml` is the only workflow |
+| ~~F4~~ | ~~No CI runs any test~~ CLOSED, see "F4 closed" below | `.github/workflows/ci.yml` |
 | F5 | Stated invariants unenforced and broadly violated | `CLAUDE.md:79,80,85` |
 | F6 | mtime reaches the mechanical layer of the bake | `vaultcrawl/mapping.py:103,291` |
 | F7 | Brain registry collision makes `ExploiterBrain` unreachable | `runtime/tactics.py:145` vs `runtime/agent.py:637` |
@@ -183,7 +183,10 @@ twenty modules ships silently.
 `CLAUDE.md:83`'s remark that "`unittest discover` finds nothing" is exactly backwards about
 where the risk lies.
 
-### F4. No CI runs any test
+### F4. No CI runs any test [CLOSED]
+
+*Closed by `.github/workflows/ci.yml`. The finding as originally written follows; what was
+built, and what it still does not cover, is in "F4 closed" at the end of this document.*
 
 `.github/workflows/pages.yml` is the only workflow. It bakes the sample world and captures the
 demo SVG for GitHub Pages, which is a nice touch (the published animation cannot drift from
@@ -230,6 +233,10 @@ generators share no interface. Both live inside `game.py`, interleaved
 **No em dashes (`CLAUDE.md:79`, "ever, in anything").** 558 occurrences across 100 `.py`
 files. 374 across 24 `.md` files. Six in `CLAUDE.md` itself. Eight in commit subjects. The
 rule is dead letter. Either enforce it in CI with a one-line grep or delete it.
+
+*Partly addressed. The `house-style` job in `.github/workflows/ci.yml` now fails a pull
+request whose added lines contain an em dash. The back catalogue is untouched, 552 and 368 as
+of this commit, so the rule binds new work only. See "F4 closed".*
 
 **`ponytail:` convention (`CLAUDE.md:85`).** Zero occurrences in the codebase. The rule
 documents a convention that does not exist.
@@ -2167,3 +2174,85 @@ The aggregate at 45.8 percent sits in the lower half of the band rather than its
 those are the same trade: four priced routes are harder than three priced routes and one free
 one. Whether to buy some of it back, and with which knob, is a judgement call rather than a
 measurement, and it is left open rather than made here.
+
+---
+
+## F4 closed
+
+`.github/workflows/ci.yml` is the second workflow this repo has ever had. It runs on push to
+`main`, on every pull request, and on manual dispatch.
+
+### What it checks
+
+**pytest, 304 tests across 46 of the 66 test modules.** About 40 seconds, peak RSS 48 MB.
+`HOME` is redirected to a throwaway directory because `test_pressure.py::test_graves_escalate`
+genuinely writes `$HOME/.vaultcrawl/graves.json`; it restores what it finds, but CI is not the
+place to discover otherwise. pytest is pinned at 9.1.1 and invoked as `python -m pytest`: it is
+undeclared anywhere in the repo and only ambiently present, and this environment has two
+conflicting versions on `PATH`.
+
+**The 20 modules pytest cannot see.** They use a `main()` plus `if __name__` style with no
+`def test_` at module level, so they run nowhere. The step selects them by *asking each file
+whether pytest can find anything in it* rather than from a hardcoded list, so it stays correct
+as tests are added and never double-runs the 46. The partition was verified rather than
+assumed: 46 collected plus 20 script-only is exactly 66, with no file in both sets and none in
+neither.
+
+**The bake is valid and deterministic.** Bake `sample_vault` twice, `cmp` the two outputs, and
+run the in-repo `vaultcrawl.validate.validate()` over the result. This is `CLAUDE.md`
+invariant 4 turned into a gate, and it is the cheapest possible version of it.
+
+**No em dashes on added lines**, pull requests only. Invariant 3, made real going forward.
+
+### The known-failure list, and why it is not a deselect
+
+16 tests fail on HEAD and have failed identically on every commit checked back to before this
+assessment began. That left two bad options: ship CI red on its first run, which teaches
+everyone to ignore it, or deselect the failures, which hides them permanently.
+
+`tests/known_failures.txt` plus `tests/conftest.py` is the third option. The listed node IDs
+get `xfail(strict=True)` applied at collection, so no existing test file is edited and the set
+is written down in exactly one place. Two properties make it strictly better than a deselect:
+
+* **A listed test that starts passing fails the build** (`XPASS(strict)`). The list cannot rot
+  into a lie about what is broken. Fix the bug, delete the line, same commit.
+* **An entry matching no collected test is a collection error**, judged per file rather than
+  per run so that `-k`, a single test path, and `--last-failed` all stay usable. A renamed or
+  deleted test would otherwise silently widen the hole.
+
+The file only ever shrinks, and every line carries a one-line note on what is actually broken:
+`is_immobilized()` returning False on a player with broken legs, forged sigils coming out with
+`perks` empty, the fabricator not producing the sigil it advertises. These are mostly not stale
+expectations. They are authored features wired to nothing, the same class of defect as the
+deploy crash and the unreachable dialogue tree.
+
+All four properties were proved locally before pushing, not reasoned about: listing a passing
+test does go red with `XPASS(strict)`; deleting an entry does surface the real assertion
+(`assert 25 == 8`); a bogus entry does error collection; and a single-file run and a `-k`
+filter both stay green.
+
+### What it does not cover
+
+**The agent eval.** Deliberate. Roughly seventeen minutes for 48 games, and it carries about one
+flipped run in 48 between processes, so as a merge gate it would be slow and flaky at once.
+Balance is measured on purpose, from a clean `~/.vaultcrawl` at `PYTHONHASHSEED=0`, not on every
+push. Nothing in CI will catch a balance regression.
+
+**`balance_test.py` and `run_agents.py`** at the repo root are collected by nothing and run
+nowhere, and `balance_test.py` hardcodes its own 27-system list instead of calling
+`runtime.stack.build_systems()`, so it will drift from the canonical stack. Related to F8, and a
+separate change from standing CI up.
+
+**`schema/world.schema.json`** still has no validator wired to it. The bake step uses the
+dependency-free in-repo validator instead; a real JSON Schema check would need a third-party
+package and would break the zero-dependency rule.
+
+**The em-dash back catalogue**, 552 in `.py` and 368 in `.md`. Only new lines are checked. F5
+is narrowed here, not closed.
+
+**Coverage is not measured**, and the script-style step asserts only that each module exits 0.
+A module that silently stopped running its assertions would still pass.
+
+**One interpreter.** Python 3.12, matching `pages.yml`. The failure set was cross-checked at
+module level on both 3.11 and 3.12 and is version-stable, so the pin is safe, but nothing tests
+any other version.

@@ -23,7 +23,7 @@ python3 -m runtime.play examples/world.json                       # interactive 
 python3 -m runtime.play examples/world.json --auto --brain seeker # headless agent
 python3 -m runtime.agent_eval examples/world.json --runs 20       # evaluation harness
 python3 run_agents.py                                             # multi-agent runner
-python3 -m pytest tests/ -q                                       # 265 tests, 45 of 65 modules
+python3 -m pytest tests/ -q                                       # 304 tests, 46 of 66 modules
 PYTHONPATH=. python3 tests/test_integration.py                    # the other 20 are scripts
 ```
 
@@ -78,17 +78,25 @@ The agent communicates with the game via a 14-verb `AgentAction` vocabulary
    and returns only `name`/`flavor`/`title`/`objective`. It cannot move a tier, depth, or
    power number. Do not break this seam.
 3. **No em dashes**, ever, in anything (code, comments, docs, UI, commit messages).
-   Rephrase. (The rule is currently unenforced and widely broken: 558 occurrences across
-   100 `.py` files and 374 across 24 `.md` files. Enforce it in CI or drop it.)
+   Rephrase. Enforced on pull requests, but only on the lines a change *adds*
+   (`.github/workflows/ci.yml`, job `house-style`). The back catalogue is untouched and
+   large, 552 occurrences across 100 `.py` files and 368 across 23 `.md` files, so the rule
+   is real going forward and a lie about the past. Do not cite existing files as precedent.
 4. **Determinism first.** No `random.seed()`, no `hash()`-seeded ordering, no wall-clock
    in the bake path. Seed RNG from SHA-256 of stable keys.
-5. **The suite is split, and pytest only sees half of it.** `python3 -m pytest tests/ -q`
-   collects 265 tests across 45 of 65 modules and runs in about a minute. The other 20,
+5. **The suite is split, and pytest only sees two thirds of it.** `python3 -m pytest tests/ -q`
+   collects 304 tests across 46 of 66 modules and runs in about 40 seconds. The other 20,
    including `test_integration.py` and the whole brain ladder, use a `main()` plus
    `if __name__` script style pytest cannot discover; run those as
-   `PYTHONPATH=. python3 tests/<name>.py`. **18 collected tests currently fail**, and they
+   `PYTHONPATH=. python3 tests/<name>.py`. **16 collected tests currently fail**, and they
    fail identically on every commit checked back to before the assessment work began (see
-   `guidance/PROJECT_ASSESSMENT.md` F3). Nothing runs any of this in CI.
+   `guidance/PROJECT_ASSESSMENT.md` F3). They are listed in `tests/known_failures.txt` and
+   marked `xfail(strict=True)` by `tests/conftest.py`, so a green run means "the same 16 are
+   broken", not "everything works". That list may only shrink: fixing a bug and leaving the
+   line in place turns the pass into an `XPASS(strict)` failure, and an entry that matches
+   no collected test is a collection error. CI runs both halves plus a determinism check
+   (`.github/workflows/ci.yml`); `agent_eval` is deliberately not in it, being slow and
+   1-run-in-48 flaky.
    Do not run the suite concurrently with `agent_eval`: together they OOM.
 6. `ponytail:` comments mark deliberate shortcuts. Prefer deleting over adding.
    (There are currently zero in the codebase.)

@@ -1,0 +1,119 @@
+name: CI
+
+# Runs the tests. Until this file existed, nothing did: `pages.yml` was the only workflow
+# and it publishes the demo page. See guidance/PROJECT_ASSESSMENT.md F4.
+#
+# Deliberately NOT here: `runtime.agent_eval`. It takes about seventeen minutes for 48
+# games and carries roughly one flipped run in 48 between processes, so as a merge gate it
+# would be slow and flaky at once. Balance is measured on purpose, not on every push.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The em-dash step diffs against the base branch, which needs real history.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The project is deliberately zero-dependency stdlib Python, so pytest is the only
+      # thing to install. Pinned because it is otherwise undeclared anywhere in the repo,
+      # and because `xfail` and collection semantics are exactly what tests/conftest.py
+      # leans on.
+      - name: Install pytest
+        run: python -m pip install --disable-pip-version-check pytest==9.1.1
+
+      # A throwaway HOME: tests/test_pressure.py::test_graves_escalate genuinely writes
+      # $HOME/.vaultcrawl/graves.json. It restores what it finds, but CI should not be
+      # the place we discover otherwise.
+      - name: pytest
+        env:
+          HOME: ${{ runner.temp }}/fake-home
+        run: |
+          mkdir -p "$HOME"
+          python -m pytest tests/ -q -p no:cacheprovider
+
+      # Twenty modules use a `main()` plus `if __name__` style pytest cannot discover, so
+      # they run nowhere unless invoked directly. Selected by asking each file whether
+      # pytest can see anything in it, rather than from a hardcoded list, so the step stays
+      # correct as tests are added and never double-runs the 44 dual-style modules.
+      - name: Script-style suites
+        env:
+          HOME: ${{ runner.temp }}/fake-home
+          PYTHONPATH: .
+        run: |
+          mkdir -p "$HOME"
+          failed=""
+          for f in tests/test_*.py; do
+            grep -q '^def test_' "$f" && continue
+            echo "--- $f"
+            python "$f" > /dev/null || failed="$failed $f"
+          done
+          if [ -n "$failed" ]; then
+            echo "FAILED:$failed"
+            exit 1
+          fi
+
+      # Invariant 4, determinism: the bake must not depend on anything but its inputs.
+      # Baking twice and diffing is the cheapest possible check that it still holds.
+      - name: Bake is valid and deterministic
+        run: |
+          python -m vaultcrawl.bake sample_vault -o /tmp/bake_a.json
+          python -m vaultcrawl.bake sample_vault -o /tmp/bake_b.json
+          cmp /tmp/bake_a.json /tmp/bake_b.json \
+            || { echo "the bake is not reproducible on one machine"; exit 1; }
+          python - <<'PY'
+          import json, sys
+          from vaultcrawl.validate import validate
+          errs = validate(json.load(open("/tmp/bake_a.json")))
+          if errs:
+              print("\n".join(errs))
+              sys.exit(1)
+          print("bake valid and byte-identical across two runs")
+          PY
+
+  # CLAUDE.md invariant 3 forbids em dashes anywhere. There are ~920 already in the repo,
+  # so the rule can only be adopted going forward: this checks the lines a change ADDS,
+  # which makes it real for new work without demanding a 123-file cleanup first.
+  #
+  # The two em dashes below are the pattern being searched for and cannot be written any
+  # other way. The check scans only *.py and *.md, so this file does not trip it. Do not
+  # "fix" them.
+  house-style:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: No em dashes on changed lines
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          added=$(git diff --unified=0 "FETCH_HEAD...HEAD" \
+                    -- '*.py' '*.md' \
+                  | grep '^+' | grep -v '^+++' || true)
+          if printf '%s' "$added" | grep -q '—'; then
+            echo "Em dashes are not used in this project (CLAUDE.md invariant 3)."
+            echo "Rephrase these added lines:"
+            printf '%s\n' "$added" | grep -n '—'
+            exit 1
+          fi
+          echo "no em dashes added"
