@@ -90,7 +90,7 @@ ingest  -> analyze -> mapping -> generate -> validate -> bake
 | `runtime/sense.py` | Perception toolkit + `Brain` interface + the `brain_for` capability policy. |
 | `runtime/{brains,tactics,planner,instincts}.py` | The brain ladder (18 tiers: wander→hunter→survivor→opportunist→forager/scavenger→companion→tactician→exploiter→tracker→wary→mastermind→strategist + 6 player profiles). |
 | `runtime/agent.py`, `guidance/AGENT_SPEC.md` | UniversalBrain: one decision tree, 6 profiles (artisan/cartographer/emergent/exploiter/seeker/whisper). Berlin-compliant — scores as identity floors, not class-locks. |
-| `runtime/agent_action.py`, `runtime/agent_perception.py` | 14-verb AgentAction vocabulary + 40-field agent_state() perception snapshot. |
+| `runtime/agent_action.py`, `runtime/agent_perception.py` | 19-verb AgentAction vocabulary + 40-field agent_state() perception snapshot. |
 | `runtime/agent_eval.py` | Evaluation harness: per-agent win rate, floor depth, kill stats, survival curves, attractor metrics. |
 | `guidance/BRAINS_SPEC.md`, `runtime/brain_scenario.py` | The brain contract + the capability-ladder showcase. |
 | `runtime/senses.py` | Perception layer: stimuli, sense profiles, two-layer detect/identify. |

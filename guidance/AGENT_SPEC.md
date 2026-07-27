@@ -80,11 +80,16 @@ commune landmarks) → WORKSPACES (fabricator/terminal/depleted/camp within 6, s
 REST (safe, hp<70%) → WEATHER CLEAR → FIGHT (adjacent hostiles, weighted by hp/defense)
 → DE-ESCALATION (kills≥4: descend or move to stairs) → STAIRS (on or toward).
 
-## AgentAction — 14-verb vocabulary (`runtime/agent_action.py`)
+## AgentAction, a 19-verb vocabulary (`runtime/agent_action.py`)
 
 `@dataclass AgentAction(kind, dx, dy, index, target, additive)` at `agent_action.py:14`.
-Kinds: **move, wait, cast, shield, shove, interact, descend, forge, rest, talk, toss,
-negotiate, breakdown, commune, becalm, craft_consumable.**
+Kinds: **move, wait, cast, shield, shove, interact, descend, ascend, forge, rest, talk,
+toss, negotiate, breakdown, becalm, craft_consumable, commune, deploy, recover.**
+
+Nineteen, counted off `dispatch()`. This heading said fourteen and then listed sixteen,
+a different sixteen from the one the dataclass comment listed. Two of the nineteen,
+`talk` and `ascend`, are dispatched but emitted by no brain. Every one of the nineteen is
+now also reachable from the keyboard; see `guidance/SYSTEMS_GAP.md`.
 
 `dispatch(game, action)` at `agent_action.py:44` routes each verb — `"forge"` →
 `forge.forge(game, ability=target)`, `"negotiate"` → `Parley(...).hear(...)`,

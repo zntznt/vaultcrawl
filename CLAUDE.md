@@ -56,7 +56,7 @@ Six agent profiles (artisan, cartographer, emergent, exploiter, seeker, whisper)
 formula is: `score = max(profile_weight, state_urgency) + turn_bonus`. Berlin-compliant:
 every agent CAN do everything. Starting state determines which branches are reachable.
 
-The agent communicates with the game via a 14-verb `AgentAction` vocabulary
+The agent communicates with the game via a 19-verb `AgentAction` vocabulary
 (`runtime/agent_action.py`) and reads the world through `agent_state()` in
 `runtime/agent_perception.py`. See `guidance/AGENT_SPEC.md` for the full architecture.
 

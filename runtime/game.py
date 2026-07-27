@@ -2439,6 +2439,15 @@ class Game:
             s.on_player_act(self)
 
     def interact(self):
+        """Contextual interaction: a Keeper beside you first, then what is underfoot,
+        flora, structures, decay and the rest. Iterates all systems, collects handlers,
+        and consumes the turn if any fire.
+
+        This docstring sat stranded in the middle of the body, below the Keeper block
+        that was later prepended above it, where Python evaluated it as a no-op string
+        and no tool read it. tests/test_keys.py::test_no_orphaned_docstrings now fails
+        on that shape, because it is how `travel` lost its `def` line and went unnoticed.
+        """
         # Speaking to whoever is beside you comes first. DialogueSystem.on_event listens
         # for `interact` and nothing in real play ever emitted it, so its entire quest,
         # offering and gossip tree ran only in a demo and a test. Eight-directional,
@@ -2463,8 +2472,6 @@ class Game:
                     for s in self.systems:
                         s.on_player_act(self)
                     return
-        """Contextual interaction with what's underfoot: flora, structures, decay, etc.
-        Iterates all systems, collects handlers, and consumes the turn if any fire."""
         if not self.alive or self.won:
             return
         weather = self.system("weather")

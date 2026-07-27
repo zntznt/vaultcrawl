@@ -74,7 +74,7 @@ codebase-wide sloppiness.
 
 | # | Finding | Evidence |
 |---|---------|----------|
-| F1 | Four player verbs are unreachable dead code | `runtime/play.py:1135,1145,1160,1162` |
+| ~~F1~~ | ~~Four player verbs are unreachable dead code~~ CLOSED, see "F1 closed" below | `runtime/play.py`, `tests/test_keys.py` |
 | F2 | 20 of 66 test modules collect zero tests under pytest | `tests/test_integration.py` et al |
 | F3 | 16 collected tests fail on HEAD | 7 modules, see below |
 | ~~F4~~ | ~~No CI runs any test~~ CLOSED, see "F4 closed" below | `.github/workflows/ci.yml` |
@@ -93,7 +93,12 @@ codebase-wide sloppiness.
 
 ## Correctness
 
-### F1. Four player verbs are unreachable dead code
+### F1. Four player verbs are unreachable dead code [CLOSED]
+
+*Closed. The finding as written follows, and it was right about the mechanism and wrong about
+the price: it cost seven systems' interaction handlers and the whole quest-acquisition path, not
+four verbs. See "F1 closed" at the end of this document.*
+
 
 `runtime/play.py`. The `f` (forge) handler opens at line 1123. Inside it, `if i is not None:`
 at line 1128. The next four branches are indented as `elif`s of *that* conditional rather
@@ -392,7 +397,11 @@ profiles "reach floor 3 of 26 and stop". That was wrong. `runtime/play.py:1205` 
 that is what was asked of it, not because the agent stalls. The agent is far more capable
 than that measurement implied.
 
-### F11. Verb vocabulary has drifted from every document
+### F11. Verb vocabulary has drifted from every document [CLOSED]
+
+*Closed. `AGENT_SPEC.md`, `CLAUDE.md`, `README.md` and the `agent_action.py` docstring and
+dataclass comment all say 19 now, and all list the same 19. The two dead verbs below are
+recorded rather than removed.*
 
 `AGENT_SPEC.md:83` says 14 verbs. Its own list at `:86-87` enumerates 16. The dataclass
 docstring at `runtime/agent_action.py:15-16` lists a *different* 16. `dispatch()` implements
@@ -488,6 +497,9 @@ The project is close to several things it has not quite reached. Ordered by leve
 **1. A trustworthy build.** This is the prerequisite for everything else. CI that runs both
 test harnesses, a determinism check that bakes twice and diffs, and a grep for em dashes.
 Roughly a day of work, and it converts the spec corpus from documentation into enforcement.
+
+*Done. See "F1 closed". The count below was wrong: seven, not eight, and two of the eight
+named were already reachable.*
 
 **2. A human game as deep as the agent's.** F1 alone restores four verbs. Beyond that, the
 agent has eight verbs the human lacks. The engine is already there; the binding layer is the
@@ -2256,3 +2268,103 @@ A module that silently stopped running its assertions would still pass.
 **One interpreter.** Python 3.12, matching `pages.yml`. The failure set was cross-checked at
 module level on both 3.11 and 3.12 and is version-stable, so the pin is safe, but nothing tests
 any other version.
+
+---
+
+## F1 closed
+
+F1 called itself "the single highest-value fix in the repo" and "a four-line dedent". The first
+was right and the second was not, in three ways.
+
+### The dedent was not the whole of it
+
+`b` is the `yubn` down-left diagonal. `moves = dict(_DIRKEYS)` is consulted before the first
+`elif`, so dedenting `elif k == ord("b")` into the chain would have left breakdown exactly as
+unreachable as before, while looking repaired. It is `B` now, and `test_no_key_is_shadowed`
+asserts no key in the table collides with movement.
+
+### `a` was worth far more than a verb
+
+`Game.interact()` is the only site in the runtime that emits `interact`. That is the only
+trigger for `DialogueSystem.on_event`, which holds the only call to `quests.offer()`. So while
+`a` was dead, **a human could not acquire a quest at all**, and the `on_interact` handler in
+`flora`, `decay`, `reactions`, `sacrifice`, `structures`, `fauna` and `factions` had never once
+run in interactive play, along with `Game.clear_weather` and `Game.repair_part`. F1 counted four
+verbs. The bill was seven systems' interaction handlers and a severed quest economy.
+
+### Two crashes were sitting in the same file, and one outranked F1
+
+Neither is a verb gap. Both were found by building a headless driver for the dispatch chain, and
+neither is visible by reading.
+
+- **`draw()` raised NameError on any graded creature in the viewport.** It coloured grades with
+  `[(G, BOLD), ...]`, and `G`, `B`, `M`, `Y` and `BOLD` are locals of `_init_palette`, a
+  *sibling* function, not an enclosing scope. Python resolved them as module globals and found
+  none. `put()` swallows only `curses.error`, so it propagated. With the real system stack this
+  fires on the first frame, so **the default interactive mode did not survive to its first
+  keypress**. It is keyed on viewport position rather than fog, so a graded creature you could
+  not see was enough. This was a worse bug than F1 and no document had it.
+- **`g` raised NameError because `travel` had no `def` line.** Deleted at some point, so its
+  docstring became a no-op expression and its body became the tail of `autoexplore`. Pressing
+  `g`, an advertised key, killed the process. Pressing `o` took one explore step and then asked
+  which way you wanted to travel.
+
+A third, quieter: `menu = " ".join(...)` in the debug handler makes `menu` local to the whole
+dispatch loop, leaving `interactive()`'s `menu()` unbound for every other caller in it. That
+broke `e`, and would have broken the sacrifice shrine the moment `a` was revived.
+
+### The corrections F1 and the Potential section needed
+
+- "The agent has eight verbs the human lacks" is right by accident and wrong in membership.
+  `becalm` and `negotiate` were already reachable through the `t` talk window, and the human's
+  parley is the better one: it runs every move with a `resolve(recruit=)` branch, while the
+  agent gets one round with the last move hardcoded and can never recruit. The correct set is
+  **seven**, and it included `interact`, which F1's list omitted.
+- The gap runs both ways and nothing had said so. The human has four verbs the agent lacks:
+  `confide`, `recruit`, body-action `player_cast`, and `EffectSystem.wear`.
+
+### What was built
+
+Every one of the 19 verbs in `dispatch()` now has a key. `deploy`, `recover` and
+`craft_consumable` had none at all; the craft picker needed paging, because both existing
+pickers read a single keystroke in 1..9 and there are 25 recipes, so a plain menu would have
+left the tail of the list as unreachable as a key nothing dispatches.
+
+`KEY_TABLE` in `runtime/play.py` is now the one place the key set is written down. The status
+line and a new `?` screen both render from it. `tests/test_keys.py` parses the dispatch chain
+out of the source and asserts set equality with the table in **both** directions, walking each
+branch's `test` and never its body, which is exactly what makes it catch the F1 shape.
+
+Eleven tests, and each was proved load-bearing rather than assumed: reintroducing each bug in
+turn was measured to turn the module red, and reverting made it green.
+
+| bug put back | tests that failed |
+|---|---|
+| remove the `travel` def line | 3 |
+| re-indent the four keys into the `f` handler | 3 |
+| point breakdown back at `b` | 1 |
+| put the grade colours back out of scope | 7 |
+| restore the `menu` shadow | 1 |
+| craft through the unpaged menu | 1 |
+
+### Cost, and what this does not cover
+
+Three files changed: `runtime/play.py`, one docstring in `runtime/game.py`, and the new test
+module. `git diff -w` shows exactly ten deleted lines and nothing else, which is the proof that
+the dedent moved whitespace and nothing more. Nothing touched `agent_action.py` beyond its
+docstring, so the measured balance baseline (22/48, commune 10 / standing 6 / boss_killed 4 /
+truths 2) stands and needed no re-run.
+
+Not covered, and now the honest frontier:
+
+- **Perception, not verbs, is where the asymmetry now lives.** `agent_state()` computes
+  `predicted_traps`, `boss_weak_element`, `hazard_behind`, `encounter_options` and
+  `egress_ready`/`egress_route`, and none has a human equivalent on screen. A human plays the
+  endgame without being told which of the four win routes is open. No keybinding fixes that.
+- **The two players are not charged the same for the same verb.** `cast`, `toss`, `recover` and
+  `craft_consumable` are free for the agent and cost a human a turn, and a human's `wait()` also
+  heals. Every cell of that is a balance number and half live in `agent_action.py`.
+- **The first press of `o` does nothing**, because `KnowledgeSystem.seen` is written only in
+  `on_player_act`, so at turn 0 the player's own tile reads as unexplored at distance 0.
+- The dispatch chain is still a 200-line `elif`. It is now covered, which is the precondition
+  for restructuring it into a handler registry and knowing nothing moved.
