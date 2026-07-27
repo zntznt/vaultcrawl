@@ -59,6 +59,12 @@ class RunResult:
     # `run_seed`, and it is what makes a row in the dump reproducible: re-running
     # `run_agent(world, agent, floors, run_seed=<this>)` replays that exact game.
     run_seed: object = None
+    # State of the last stair at the moment the run ended. `egress_why` enumerates all four
+    # routes with the counts the player actually had, so a run that reached the bottom and
+    # stalled records what it was short of rather than only that it lost.
+    egress_open: bool = False
+    egress_route: str = ""
+    egress_why: str = ""
     cause_of_death: str = ""
     floors_cleared: int = 0
     average_hp: float = 0.0
@@ -222,6 +228,22 @@ def run_agent(world_json: str, agent_name: str,
     # matter collected and forged are now recorded where they actually happen, in
     # Inventory.add and ForgeSystem, so nothing is guessed or re-read here.
 
+    # Why the run did not end in a win. Measured on 288 runs: 55 of 211 losses reached the
+    # bottom alive and simply never opened the last stair, and nothing recorded what they
+    # were short of. `egress_ready` already computes exactly that and enumerates all four
+    # routes with the player's current counts, so a stall can say which gate it failed and
+    # by how much instead of being an anonymous tick in a loss column.
+    #
+    # A run that ended badly enough to leave the game half-built can make this raise, and a
+    # batch of 144 must not die for a diagnostic. But swallowing the error would make a
+    # broken capture look exactly like a run with nothing to report, so the failure is
+    # written into the row instead of dropped.
+    egress_open, egress_why, egress_route = False, "", ""
+    try:
+        egress_open, egress_why, egress_route = game.egress_ready()
+    except Exception as exc:
+        egress_why = f"egress_ready raised: {type(exc).__name__}: {exc}"
+
     return RunResult(
         agent=agent_name,
         seed=manifest["seed"],
@@ -242,6 +264,9 @@ def run_agent(world_json: str, agent_name: str,
         narrative=tracker.narrative(),
         metrics=_get_metrics(),
         win_path=getattr(game, "win_path", ""),
+        egress_open=egress_open,
+        egress_route=egress_route,
+        egress_why=egress_why,
         pressure=decisions.summary(),
         emergence=emergence.summary(),
     )
@@ -452,6 +477,8 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
             "turns_survived": r.turns_survived,
             "hp_ended": r.hp_ended, "average_hp": round(r.average_hp, 2),
             "cause_of_death": r.cause_of_death,
+            "egress_open": r.egress_open, "egress_route": r.egress_route,
+            "egress_why": r.egress_why,
         }
         for name in agent_names for r in results[name]
     ]

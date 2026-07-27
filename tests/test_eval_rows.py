@@ -16,6 +16,8 @@ apart are worse than one view.
 """
 from __future__ import annotations
 
+import re
+
 import runtime.agent_eval as ev
 
 
@@ -44,7 +46,8 @@ def test_the_dump_carries_one_row_per_run(tmp_path, monkeypatch):
     assert rows is not None, "the dump has no per_run block, so nothing can be re-analysed"
     assert len(rows) == 2, f"expected one row per run, got {len(rows)}"
     for field in ("agent", "world_seed", "run_seed", "floor_reached", "won", "win_path",
-                  "kills", "turns_survived", "hp_ended", "cause_of_death"):
+                  "kills", "turns_survived", "hp_ended", "cause_of_death",
+                  "egress_open", "egress_route", "egress_why"):
         assert field in rows[0], f"per_run rows are missing {field!r}"
 
     # A row you cannot trace back to a run is half useless. `seed` on RunResult is the
@@ -84,3 +87,33 @@ def test_rows_and_aggregates_describe_the_same_runs(tmp_path, monkeypatch):
         if r["won"]:
             won_paths[r["win_path"]] = won_paths.get(r["win_path"], 0) + 1
     assert won_paths == agg["win_paths"]
+
+
+def test_a_real_run_records_what_the_last_stair_wanted(tmp_path, monkeypatch):
+    """A losing run must say which gate it failed and by how much.
+
+    Of 288 runs, 55 reached the bottom alive and simply never opened the last stair. In the
+    dump they were indistinguishable from each other and from a run that stalled on floor
+    two: a tick in a loss column. `egress_ready` has always computed the answer, listing all
+    four routes with the counts the player actually holds, and nothing read it.
+
+    This goes through the real `run_agent` rather than a stub, because the thing being
+    pinned is the capture, not the dataclass. Two floors keeps it under two seconds.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    r = ev.run_agent("examples/world.json", "seeker", 2, run_seed=0)
+
+    assert r.egress_why or r.egress_open, \
+        "the run recorded nothing about the last stair, so a stall cannot be diagnosed"
+    if r.egress_open:
+        assert r.egress_route, "the stair opened but no route is named"
+        return
+
+    # Both countable gates report the player's own total, not only the threshold. Knowing a
+    # run wanted standing 7 is worth little; knowing it ended on 6 is the whole diagnosis.
+    truths = re.search(r"carry (\d+) truths \(you have (\d+)\)", r.egress_why)
+    standing = re.search(r"standing (\d+) \(you have (-?\d+)\)", r.egress_why)
+    assert truths, f"the truths gate does not report what the run held: {r.egress_why!r}"
+    assert standing, f"the standing gate does not report what the run held: {r.egress_why!r}"
+    assert int(truths.group(2)) < int(truths.group(1))
+    assert int(standing.group(2)) < int(standing.group(1))

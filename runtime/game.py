@@ -1522,16 +1522,24 @@ class Game:
         if truths >= need:
             return True, "", "truths"
         fcs = self.system("factions")
+        standing = None
         if fcs is not None:
             boss_region = next((r for r in self.m.get("regions", [])
                                 if r.get("sourceNoteId") == self.final_boss_source), None)
             fid = (boss_region or {}).get("factionId") or self._region_faction.get(
                 (boss_region or {}).get("id", ""), "")
-            if fid and fcs.standing_of(fid) >= EGRESS_STANDING:
-                return True, "", "standing"
+            if fid:
+                standing = fcs.standing_of(fid)
+                if standing >= EGRESS_STANDING:
+                    return True, "", "standing"
+        # Report the standing you HAVE, not just the one you need. The truths clause always
+        # said "(you have N)" and the standing clause never did, so a run that stalled here
+        # recorded which gates existed but not how close it came to any of them. That is the
+        # difference between "it lost" and "it was one point of standing short".
+        have = f" (you have {standing})" if standing is not None else ""
         return False, (f"Fell the warden, commune with it, carry {need} truths "
-                       f"(you have {truths}), or earn standing {EGRESS_STANDING} with "
-                       f"its house."), ""
+                       f"(you have {truths}), or earn standing {EGRESS_STANDING}{have} "
+                       f"with its house."), ""
 
     def egress_truths_needed(self) -> int:
         """Truths the last stair asks for, scaled to the vault.
