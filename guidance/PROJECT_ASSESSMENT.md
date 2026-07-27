@@ -2368,3 +2368,99 @@ Not covered, and now the honest frontier:
   `on_player_act`, so at turn 0 the player's own tile reads as unexplored at distance 0.
 - The dispatch chain is still a 200-line `elif`. It is now covered, which is the precondition
   for restructuring it into a handler registry and knowing nothing moved.
+
+---
+
+## Potential #3 closed: the ambient narrator
+
+"A perceptible world" was ranked third by leverage and called "the highest-value unbuilt
+feature in the repo". `DESIGN_PLACE_PANEL.md` steps 5 and 6b are now built
+(`runtime/narrator.py`, `tests/test_narrator.py`) and that document is closed.
+
+### The premise in this document was wrong, and worth correcting
+
+"Twelve systems currently run every turn and are invisible" fails three ways:
+
+- **Eleven tick per turn, not twelve.** `FactionSystem` has no `on_player_act`; it is
+  event-driven and floor-gated.
+- **`render_overlay` and `status_line` are both live.** `compose_frame` calls every
+  `render_overlay`, and `play.py` calls `status_line` directly. Six systems already draw to
+  the map: flora `;`, decay `%`, reactions, structures, terrain_mod `†`, marginalia `"`.
+- **The real mechanism is a deliberate, documented priority order.** `play.py` ranks status
+  lines and everything ambient sorts last, so it truncates first, with the reason in a
+  comment: "on a short terminal the ambience is what falls off the bottom, never your build,
+  wealth, or reputation." That is a design choice, not an oversight.
+
+`ReactionSystem`, which this document listed among the silent, is the **loudest** system in
+the stack. What is actually silent is narrower: `SenseField` and `ScentSystem` rewrite
+full-map dicts every turn and emit nothing at all; `DecaySystem`'s 1 HP per turn corpse
+miasma has no message; all fauna predation and breeding is silent.
+
+### A fairness bug, not an ambience gap
+
+Acrid haze damaged the player **every third turn and mentioned it every fifteenth**, so five
+HP went missing per line. Worse, the line was tagged `ambient=True`, and an ambient line is
+specifically what tells a travel glide *not* to stop, so a player could be chipped toward
+death mid-glide and never be halted. It now speaks whenever it damages, and not as ambience.
+Damage is not atmosphere.
+
+### What the narrator is
+
+One system, appended last in the stack, that only ever reads and logs. It diffs corpses and
+elemental tiles between turns, gates the result through the player's own sense profile,
+takes the single most salient percept, re-asks live state whether the thing is still there,
+and speaks at most one line. Sight names what it found; sound and smell give a bearing and
+stay ignorant, which is `SENSES_SPEC.md`'s identifying-versus-locating split doing real work.
+
+The cap moved into `Game.log` and is global, because several unrelated producers share the
+channel and none can see the others. It sits below the duplicate collapse so four strikes
+still read as one "(x4)". Ranked, so a line you can walk to beats a place murmur off a static
+corpus, which otherwise won every contested turn by firing earlier in the turn.
+
+### Twelve tests, each proved load-bearing
+
+Reintroducing each bug was measured to turn the module red. Two of the first drafts were
+**not** load-bearing and had to be rewritten, which is the part worth recording:
+
+- The cardinal-rule test passed with the guard deleted. In ordinary play the narrator diffs
+  and speaks inside one turn, so the referent never has an opportunity to vanish in between:
+  the test was checking the invariant, not the guard. The guard is now exercised directly.
+- The wait-to-listen test passed with the advantage removed, in two separate drafts, one
+  wandering and one pacing in place. `wait` also rests, heals and ticks tension, so no
+  walking control holds the world equal and what it measured was geography. The rate is now
+  tested at the decision rather than at the outcome.
+
+### The parity test found something bigger than the narrator
+
+The balance guard began by comparing two whole playthroughs, with and without the system,
+and reported a difference. The difference was not the narrator. **Four runs of the identical
+configuration, each with its own fresh HOME, in one process, gave matter totals of 3, 4, 5
+and 7.** An inert system that did nothing at all "changed" the result the same way.
+
+So a playthrough is not a stable measuring stick, even within a process and even with the
+documented `~/.vaultcrawl` leak controlled for. This is worse than the "cross-run state
+leaks into benchmarks" note above, which is about state carried between processes.
+
+The strongest candidate by inspection, not proven: `senses.py` stores `id(a)`, a memory
+address, into the scent map and later compares against it to decide whose scent is whose.
+Addresses are not stable identifiers across object allocations. Anything downstream of
+scent, such as which way a scavenger walks and therefore where it drops matter, would drift
+run to run. Worth a real investigation; the divergence in the traced run appeared at turn
+203 as a one-unit matter difference with identical HP and actor counts.
+
+The test now asserts the property directly, fingerprinting game state around the hook, which
+is both immune to that noise and a stronger claim: not "the outcome happened to match" but
+"this system wrote nothing".
+
+### Left open
+
+- **Two perceptibility bugs in map rendering**, recorded in the last tranche and still true:
+  actors are stamped into the frame before `render_overlay` runs and reactions skips
+  non-floor cells, so a hazard under a creature is invisible; and the hazard glyphs collide
+  with the step-1 fixture glyphs, so `:` is both acid and stone.
+- **Perception parity.** The five things `agent_state()` computes that no human screen shows,
+  including which of the four win routes is open, are still agent-only. Deliberately out of
+  scope here.
+- **The place-voice timer** is still a static corpus on a cadence, which is the shape the
+  panel's own Stop-doing section warns about. It now loses the turn to any real perception,
+  which is a smaller change than deleting it.

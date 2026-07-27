@@ -9,7 +9,7 @@ Two codebases under one roof:
 - **`vaultcrawl/`**: the bake pipeline. Markdown vault → graph metrics → mechanical slots
   (deterministic) → LLM names/lore (the "skin", can never move a number) → `world.json`.
   Entry: `python3 -m vaultcrawl.bake <vault> -o world.json`. Zero deps, stock Python.
-- **`runtime/`**: a terminal roguelike rendering a baked `world.json`, with a 28-system
+- **`runtime/`**: a terminal roguelike rendering a baked `world.json`, with a 29-system
   stack, 6 AI agent profiles, and 25 consumable recipes.
   Entry: `python3 -m runtime.play world.json` (interactive) or `--auto` (headless).
 

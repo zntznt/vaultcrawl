@@ -234,7 +234,11 @@ class Game:
         for s in self.systems:
             s.on_world_start(self)
         if self.up.total:
-            self.messages.append(
+            # through log(), not straight onto self.messages. Appending directly skipped
+            # message_tags, so the two lists desynced by one for the rest of the run and
+            # show_log's `len(tags) == len(msgs)` guard then silently disabled every
+            # category filter. This was the only direct append in the runtime.
+            self.log(
                 f"~ The world has shifted since you last descended: {self.up.total} upheaval(s). ~")
         if sandbox:
             self._load_graves()
@@ -985,7 +989,7 @@ class Game:
                         return True
         return False
 
-    def log(self, msg: str, ambient: bool = False):
+    def log(self, msg: str, ambient: bool = False, ambient_rank: int = 0):
         # every log line is a sentence; names now begin with "the ..." so the first
         # letter is capitalized here, once, instead of at 16 call sites
         for i, ch in enumerate(msg):
@@ -993,8 +997,8 @@ class Game:
                 if ch.islower():
                     msg = msg[:i] + ch.upper() + msg[i + 1:]
                 break
-        # ambient (weather/atmosphere) lines are mood, not events: they don't halt a
-        # travel-glide. Track the count so a front-end can tell if the newest line is one.
+        # ambient lines don't halt a travel-glide, so a front-end needs to know whether
+        # the newest line is one.
         self._last_was_ambient = ambient
         # dedup consecutive identical lines — but never dedup combat messages
         tag = "ambient" if ambient else self._tag_for(msg)
@@ -1002,11 +1006,38 @@ class Game:
             self._dup_n += 1
             self.messages[-1] = msg if self._dup_n == 1 else f"{msg} (x{self._dup_n})"
             return
+        # The one-ambient-line-per-turn cap is the design panel's, and it is global on
+        # purpose: several unrelated producers write to this channel and none of them can
+        # see the others, so the budget cannot live in any one of them. It matters because
+        # the message pane is five lines, and an unbudgeted ambient channel pushes the blow
+        # that is killing you off the screen.
+        #
+        # It sits BELOW the dedup, deliberately. Four lightning strikes in one turn collapse
+        # into a single "(x4)" line, and a rule about how many LINES there may be has no
+        # business suppressing a counter on a line that already exists.
+        #
+        # Rank breaks the tie between different lines. A perception with a bearing you can
+        # walk to beats a murmur off a static corpus, and the murmur fires from inside
+        # try_move, before the narrator has looked at the turn: without a rank the timer
+        # would win every contested turn purely by going first, which is backwards.
+        if ambient:
+            if getattr(self, "_ambient_turn", None) == self.turn:
+                if ambient_rank <= getattr(self, "_ambient_rank", 0):
+                    return
+                i = getattr(self, "_ambient_idx", -1)
+                if 0 <= i < len(self.messages) and i < len(self.message_tags):
+                    del self.messages[i]
+                    del self.message_tags[i]
+                    self._last_logged = None
+            self._ambient_turn = self.turn
+            self._ambient_rank = ambient_rank
         self._last_logged = msg
         self._dup_n = 1
         tag = "ambient" if ambient else self._tag_for(msg)
         getattr(self, "message_tags", []).extend([tag])
         self.messages.append(msg)
+        if ambient:
+            self._ambient_idx = len(self.messages) - 1
 
     def _tag_for(self, msg: str) -> str:
         """Categorize a message for filtered log display."""
@@ -3679,7 +3710,17 @@ class Game:
                         e = make_enemy(spec, fx, fy)
                         e.faction = self._region_faction.get(spec.get("regionId", ""), "")
                         self.actors.append(e)
-                        self.log("Something stirs in the wild, drawn by your lingering.", ambient=True)
+                        # It is placed at least 9 tiles out, which is past sight, so this
+                        # is a sound-band perception: a bearing and a place, and no word
+                        # about what it is. It used to say only "something stirs in the
+                        # wild", which named a real arrival the player had no way to find.
+                        from .narrator import bearing as _bearing
+                        _idx = self.room_at(fx, fy)
+                        _where = (self.room_label(_idx) if _idx is not None else None) \
+                            or self.region_name or "the dark"
+                        self.log(f"Something moves out there to the "
+                                 f"{_bearing(fx - self.player.x, fy - self.player.y)}, "
+                                 f"toward {_where}.", ambient=True)
 
     def _tick_aspect(self):
         """Track time spent in current region. 50+ turns grants the region's aspect."""

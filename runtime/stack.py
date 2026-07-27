@@ -13,12 +13,14 @@ Order matters, and the reasons are load-bearing:
   - salvage before forge: salvage pools the matter that forge spends
   - decay before fauna: scavengers query corpses
   - knowledge last, so its fog paints over every other overlay
+  - narrator after all of them, so what it reports is the settled state of the turn and
+    not a half-resolved one. It only ever reads and logs, so nothing depends on it.
 """
 from __future__ import annotations
 
 
 def build_systems() -> list:
-    """Instantiate the full 28-system stack. Fresh objects every call: systems are stateful."""
+    """Instantiate the full 29-system stack. Fresh objects every call: systems are stateful."""
     from .senses import SenseField
     from .memory import MemorySystem
     from .sigils import SigilSystem
@@ -47,6 +49,7 @@ def build_systems() -> list:
     from .loci import LocusSystem
     from .knowledge import KnowledgeSystem
     from .effects import EffectSystem
+    from .narrator import NarratorSystem
     from . import abilities  # noqa: F401  registers creature special actions
 
     return [
@@ -62,6 +65,7 @@ def build_systems() -> list:
         FactionSystem(), BodySystem(), QualitySystem(),
         HistorySystem(), MarginaliaSystem(), LocusSystem(), KnowledgeSystem(),
         EffectSystem(),
+        NarratorSystem(),
     ]
 
 
