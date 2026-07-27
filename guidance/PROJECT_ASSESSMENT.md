@@ -2905,3 +2905,14 @@ prediction of "no change" that the capture had already made for free.
 So the honest reading is that the question stopped being a tuning question. The remaining move
 is the one in the plan's step 4: write down in `guidance/AGENT_SPEC.md` what an agent win rate
 is **for**, and judge 26.7% against that rather than against a band nobody justified.
+
+**Done, in `guidance/AGENT_SPEC.md` §What the win rate is for.** The answer is that the rate
+carries no target: the agents are an instrument for showing the systems are reachable and the
+decisions are real, not a difficulty proxy for a person, and they do not even run the same level
+generator the default interactive mode uses. Health is seven structural conditions checkable
+from one `eval_stats.json`. All seven currently hold; the closest to its limit is route
+concentration at 44% of wins against a ceiling of 60%, or 49% on the 288-run batch. The
+aggregate is reported with an interval and compared against the
+history in this document, with degeneracy below 10% or above 80% the only absolute call. Every
+in-band claim above stays exactly as written: it is the record of what was believed, not a
+standard anyone should now measure against.

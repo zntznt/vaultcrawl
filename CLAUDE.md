@@ -35,7 +35,7 @@ PYTHONPATH=. python3 tests/test_integration.py                    # the other 20
 |---|---|---|
 | Understanding systems, the event bus, or System base class | `guidance/SYSTEMS_SPEC.md`, `guidance/INTERACTIONS_SPEC.md` | System hooks, canonical events, query API, contracts |
 | Working on enemy/monster AI or NPC behavior | `guidance/BRAINS_SPEC.md`, `guidance/MIND_SPEC.md` | Brain interface, capability ladder, memory/planning tiers |
-| Working on player-agent AI or agent profiles | `guidance/AGENT_SPEC.md` | UniversalBrain, 6 profiles, scoring formula, perception |
+| Working on player-agent AI or agent profiles | `guidance/AGENT_SPEC.md` | UniversalBrain, 6 profiles, scoring formula, perception, what the win rate is for |
 | Working on ecology (flora, fauna, weather, structures, decay) | `guidance/ECOLOGY_SPEC.md` | Autonomous world-layer, allegiance model, terrain write-API |
 | Working on sigils, forge, salvage, or the matter economy | `guidance/SALVAGE_SPEC.md`, `guidance/QUALITY_SPEC.md` | Shatter→salvage→forge loop, quality grades, proficiency |
 | Working on senses, perception, or creature detection | `guidance/SENSES_SPEC.md` | Two-layer perception (detection/identification), sense profiles |
@@ -108,7 +108,10 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
    or three wins' worth: artisan 37.5 to 18.8%, cartographer 50 to 22.9%, emergent 12.5 to
    29.2%, whisper 75 to 50%. The old "+/-1 win per 8-seed arm" guidance understated the
    spread by about three times. The current baseline is **77 of 288, 26.7%, 95% interval
-   [22.0, 32.1]**, which is below the 40-60 band; see `guidance/PROJECT_ASSESSMENT.md`.
+   [22.0, 32.1]**. **There is no target win rate**, and the 40-60 band that was treated as
+   one for most of this project's life appears in no spec; health is the seven structural
+   conditions in `guidance/AGENT_SPEC.md` §What the win rate is for, and the aggregate is a
+   tripwire read against its own history in `guidance/PROJECT_ASSESSMENT.md`.
    `agent_eval` writes per-run rows into `eval_stats.json`, so use those for spread rather
    than quoting a mean. The rows also carry `egress_open`/`egress_route`/`egress_why`, which
    record what the last stair wanted at the moment the run ended, so **price a threshold from
