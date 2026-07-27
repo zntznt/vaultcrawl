@@ -1610,6 +1610,20 @@ class Game:
 
         rng.shuffle(free)
 
+        # Give this floor its note map BEFORE anything asks which room a note owns.
+        # `_assign_rooms` rebuilds `room_notes` from `self.level.rooms`, and the boss
+        # placement below calls `spot_for` -> `room_of_note`, which indexes
+        # `self.level.rooms[i]` with those keys. Placing the boss first meant reading the
+        # PREVIOUS floor's map against the CURRENT floor's level: harmless while the room
+        # counts happened to match, an IndexError the moment the new floor had fewer rooms,
+        # and a boss placed by a stale map even when it did not crash. It only fires on the
+        # final floor, which is the win-condition floor, so the crash landed exactly where
+        # a run was about to be decided. Found by a 288-run eval; the 48-run one never
+        # reached the seeds that trigger it.
+        region = self.region_for(self.floor)
+        self.region_name = region["name"]
+        self._assign_rooms(region)
+
         # Boss floor: ensure boss spawns adjacent to player so it's encountered
         if self.floor == self.max_floor:
             for b in self.m["bosses"]:
@@ -1620,9 +1634,6 @@ class Game:
                         py = by
                     break
 
-        region = self.region_for(self.floor)
-        self.region_name = region["name"]
-        self._assign_rooms(region)
         anchor = region["sourceNoteId"]
         pool = self.enemies_by_region.get(region["id"]) or self.m["enemies"]
 
