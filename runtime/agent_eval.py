@@ -54,6 +54,11 @@ class RunResult:
     caches_opened: int
     turns_survived: int
     hp_ended: int
+    # `seed` above is the WORLD seed and is the same for every run of a batch, so it
+    # cannot identify a run. This is the per-run varier that `evaluate_agents` passes as
+    # `run_seed`, and it is what makes a row in the dump reproducible: re-running
+    # `run_agent(world, agent, floors, run_seed=<this>)` replays that exact game.
+    run_seed: object = None
     cause_of_death: str = ""
     floors_cleared: int = 0
     average_hp: float = 0.0
@@ -220,6 +225,7 @@ def run_agent(world_json: str, agent_name: str,
     return RunResult(
         agent=agent_name,
         seed=manifest["seed"],
+        run_seed=run_seed,
         floor_reached=game.floor,
         max_floor=max_floor,
         won=game.won,
@@ -425,11 +431,37 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
     shares = {name: s.get("pressure", {}).get("label_share", {})
               for name, s in stats.items() if s.get("pressure")}
 
+    # Every field above this line is an average. A mean carries no interval, so every
+    # balance claim this project has made from `avg_kills` or `avg_hp_ended` has been a
+    # point estimate quoted as though it were a measurement. The rows below are what make
+    # a confidence interval, a median, or a two-sample test possible at all.
+    #
+    # It matters more than it looks. Extending three profiles from 8 seeds to 48 moved
+    # artisan 37.5% -> 18.8%, cartographer 50% -> 22.9% and emergent 12.5% -> 29.2%, which
+    # is up to three wins' worth against a documented noise budget of one. Without spread
+    # there was no way to see that coming.
+    #
+    # Cost is small and bounded: one flat row per run, so `--runs 48` writes 288 rows.
+    per_run = [
+        {
+            "agent": r.agent, "world_seed": r.seed, "run_seed": r.run_seed,
+            "floor_reached": r.floor_reached, "floors_cleared": r.floors_cleared,
+            "won": r.won, "win_path": r.win_path,
+            "kills": r.kills, "items_collected": r.items_collected,
+            "sigils_forged": r.sigils_forged, "caches_opened": r.caches_opened,
+            "turns_survived": r.turns_survived,
+            "hp_ended": r.hp_ended, "average_hp": round(r.average_hp, 2),
+            "cause_of_death": r.cause_of_death,
+        }
+        for name in agent_names for r in results[name]
+    ]
+
     output = {
         "world": world_json,
         "n_runs": n_runs,
         "max_floor": max_floor,
         "agent_stats": stats,
+        "per_run": per_run,
         "per_floor_survival": survival,
         # Without this, no win rate here is comparable to any other: a clean state and a
         # warm one are different experiments run by the same command.
