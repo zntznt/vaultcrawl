@@ -48,8 +48,11 @@ class DecaySystem(System):
             return                       # missing / malformed / out-of-bounds -> ignore
         x, y = pos
         self.corpses[(x, y)] = _CORPSE_TTL
-        # announce the fresh corpse so scavengers / other ecology can react
+        # announce the fresh corpse so scavengers / other ecology can react, and make the
+        # sound of it. The noise used to be re-emitted from inside Game.emit, one frame
+        # after this system had already announced the corpse.
         game.emit("corpse_spawned", pos=(x, y))
+        game.emit("noise", pos=(x, y), volume=4)
 
     def _valid_pos(self, game, pos) -> bool:
         if not pos or not isinstance(pos, (tuple, list)) or len(pos) != 2:

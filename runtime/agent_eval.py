@@ -18,62 +18,22 @@ from typing import Any
 
 from runtime.game import Game, load_manifest
 from runtime.sense import make_brain
-
-ALL_SYSTEMS: list = []
-
+from runtime.pressure import (
+    DecisionLog, EmergenceLog, divergence_matrix, percentiles,
+    persistence_fingerprint,
+)
 
 def _build_systems():
-    global ALL_SYSTEMS
-    if ALL_SYSTEMS:
-        return ALL_SYSTEMS
-    from runtime.senses import SenseField
-    from runtime.memory import MemorySystem
-    from runtime.sigils import SigilSystem
-    from runtime.reactions import ReactionSystem
-    from runtime.weather import WeatherSystem
-    from runtime.flora import FloraSystem
-    from runtime.structures import StructureSystem
-    from runtime.decay import DecaySystem
-    from runtime.fauna import FaunaSystem
-    from runtime.salvage import SalvageSystem
-    from runtime.forge import ForgeSystem
-    from runtime.scent import ScentSystem
-    from runtime.body_parts import BodySystem
-    from runtime.terrain_mod import TerrainModSystem
-    from runtime.portals import PortalSystem
-    from runtime.sacrifice import SacrificeSystem
-    from runtime.quests import QuestSystem
-    from runtime.dialogue import DialogueSystem
-    from runtime.machines import MachineSystem
-    from runtime.caches import CacheSystem
-    from runtime.factions import FactionSystem
-    from runtime.history import HistorySystem
-    from runtime.marginalia import MarginaliaSystem
-    from runtime.knowledge import KnowledgeSystem
-    from runtime.effects import EffectSystem
-    from runtime.quality import QualitySystem
-    import runtime.abilities  # noqa: F401
-
-    ALL_SYSTEMS = [
-        SenseField(), MemorySystem(), SigilSystem(), ReactionSystem(), WeatherSystem(),
-        FloraSystem(), StructureSystem(), DecaySystem(), FaunaSystem(),
-        SalvageSystem(), ForgeSystem(),
-        ScentSystem(),
-        QuestSystem(), DialogueSystem(), MachineSystem(),
-        CacheSystem(),
-        TerrainModSystem(),
-        PortalSystem(),
-        SacrificeSystem(),
-        FactionSystem(), BodySystem(), QualitySystem(),
-        HistorySystem(), MarginaliaSystem(), KnowledgeSystem(),
-        EffectSystem(),
-    ]
-    return ALL_SYSTEMS
+    """Fresh instances every call. These objects are stateful (sigil slots, faction
+    standing, cache counters), and this used to memoise one list into a module global,
+    so every run after the first in a batch inherited the previous run's systems."""
+    from runtime.stack import build_systems
+    return build_systems()
 
 
 def _register_brains():
-    from runtime import brains, tactics, planner, instincts  # noqa: F401
-    from runtime import agent  # noqa: F401 — universal brain
+    from runtime.stack import register_brains
+    register_brains()
 
 
 AGENT_NAMES = ["artisan", "cartographer", "emergent", "exploiter", "seeker", "whisper"]
@@ -100,11 +60,14 @@ class RunResult:
     attractor_scores: dict = None
     narrative: str = ""
     metrics: dict = None
+    win_path: str = ""
+    pressure: dict = None
+    emergence: dict = None
 
 
 def run_agent(world_json: str, agent_name: str,
               max_floor: int = DEFAULT_MAX_FLOOR,
-              max_turns_per_floor: int = 500) -> RunResult:
+              max_turns_per_floor: int = 500, run_seed=None) -> RunResult:
     """Run a single agent through a world descent and return the run's statistics.
 
     Args:
@@ -115,13 +78,15 @@ def run_agent(world_json: str, agent_name: str,
     """
     from collections import deque
     from runtime.agent_action import AgentAction, dispatch
-    from runtime.attractors import AttractorTracker
+    from runtime.attractors import tracker as attractor_tracker
 
-    _build_systems()
+    from runtime.stack import reset_run_state
+    reset_run_state()
+    systems = _build_systems()
     _register_brains()
 
     manifest = load_manifest(world_json)
-    game = Game(manifest, systems=list(ALL_SYSTEMS), sandbox=False)
+    game = Game(manifest, systems=systems, sandbox=False, run_seed=run_seed)
     game.player.brain = make_brain(game, game.player, name=agent_name)
     game.player.brain.name = agent_name
     game.starting_kit(agent_name)
@@ -132,7 +97,20 @@ def run_agent(world_json: str, agent_name: str,
     hp_samples: list[float] = []
     floors_cleared = 0
     turns_total = 0
-    tracker = AttractorTracker()
+    # The shared per-run tracker, not a private one. Four of the recorders fire from
+    # deep inside the game (knowledge, sigils, forge, graves); a local instance could
+    # never see them. reset_run_state() clears it at the top of every run.
+    tracker = attractor_tracker()
+    decisions = DecisionLog()
+    emergence = EmergenceLog()
+    # Watch the bus and the verbs for this run. A 28-system game whose systems never touch
+    # is 28 games running in parallel, and a verb that never succeeds is a dead mechanic
+    # burning the decision budget.
+    _orig_emit = game.emit
+    def _watched_emit(etype, **kw):
+        emergence.observe_event(etype)
+        return _orig_emit(etype, **kw)
+    game.emit = _watched_emit
 
     def bfs_step(level, start, goal, avoid=None):
         avoid = avoid or set()
@@ -172,9 +150,14 @@ def run_agent(world_json: str, agent_name: str,
                 break
 
             result = game.player.brain.decide(game, game.player)
+            decisions.observe(game, game.player.brain)
             if isinstance(result, tuple) and len(result) == 2:
                 result = AgentAction("move", dx=result[0], dy=result[1])
             ok = dispatch(game, result)
+            emergence.observe_verb(getattr(result, "kind", "?"), bool(ok))
+            nr = getattr(game.player.brain, 'note_result', None)
+            if nr:
+                nr(ok)
             if not ok:
                 if game.on_stairs():
                     break
@@ -199,8 +182,9 @@ def run_agent(world_json: str, agent_name: str,
             # track caches opened
             caches = game.system("caches")
             if caches is not None:
-                caches_opened = max(caches_opened,
-                                    len(getattr(caches, "opened", []) or []))
+                # CacheSystem counts in `searched`; there is no `opened` attribute, so this
+                # read was hardcoding 0 into every run the harness has ever recorded.
+                caches_opened = max(caches_opened, int(getattr(caches, "searched", 0) or 0))
 
             floor_turns += 1
             if floor_turns > max_turns_per_floor:
@@ -230,10 +214,8 @@ def run_agent(world_json: str, agent_name: str,
     fcs = game.system("factions")
     if fcs:
         tracker.record_standing(dict(getattr(fcs, "standing", {})))
-    tracker.record_matter_forged(sigils_forged * 3)  # rough: each sigil costs ~3 matter
-    salvage = game.system("salvage")
-    if salvage:
-        tracker.record_matter_collected(salvage.inventory(game).total())
+    # matter collected and forged are now recorded where they actually happen, in
+    # Inventory.add and ForgeSystem, so nothing is guessed or re-read here.
 
     return RunResult(
         agent=agent_name,
@@ -253,7 +235,22 @@ def run_agent(world_json: str, agent_name: str,
         attractor_scores=tracker.scores(),
         narrative=tracker.narrative(),
         metrics=_get_metrics(),
+        win_path=getattr(game, "win_path", ""),
+        pressure=decisions.summary(),
+        emergence=emergence.summary(),
     )
+
+
+def _mean(xs) -> float:
+    xs = [x for x in xs]
+    return sum(xs) / len(xs) if xs else 0.0
+
+
+def _tally(xs) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for x in xs:
+        out[x or "unknown"] = out.get(x or "unknown", 0) + 1
+    return dict(sorted(out.items(), key=lambda kv: -kv[1]))
 
 
 def _get_metrics() -> dict | None:
@@ -283,21 +280,28 @@ class _Sentinel:
 
 
 def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
-                    max_floor: int = DEFAULT_MAX_FLOOR) -> dict[str, Any]:
+                    max_floor: int = DEFAULT_MAX_FLOOR,
+                    agents: list[str] | None = None) -> dict[str, Any]:
     """Run each agent n_runs times and compute aggregate statistics.
 
     Returns a dict with per-agent stats and per-floor survival curves,
     also written to ~/.vaultcrawl/eval_stats.json.
     """
-    results: dict[str, list[RunResult]] = {name: [] for name in AGENT_NAMES}
+    agent_names = list(agents) if agents else list(AGENT_NAMES)
+    results: dict[str, list[RunResult]] = {name: [] for name in agent_names}
 
-    total_runs = len(AGENT_NAMES) * n_runs
+    total_runs = len(agent_names) * n_runs
     run_idx = 0
     t0 = time.monotonic()
 
-    for agent_name in AGENT_NAMES:
-        for _ in range(n_runs):
-            result = run_agent(world_json, agent_name, max_floor)
+    for agent_name in agent_names:
+        for run_idx_for_agent in range(n_runs):
+            # Vary the run, not the world. Without this every run of one agent on one world
+            # was byte-identical, so `--runs 100` played the same game a hundred times and
+            # the reported win rate could only ever be 0% or 100%. The apparent bimodality
+            # across profiles was that artifact, not a property of the game.
+            result = run_agent(world_json, agent_name, max_floor,
+                               run_seed=run_idx_for_agent)
             results[agent_name].append(result)
             run_idx += 1
             elapsed = time.monotonic() - t0
@@ -333,7 +337,59 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
             "avg_turns": round(sum(turns) / n, 2) if n else 0,
             "avg_hp_ended": round(sum(hps) / n, 2) if n else 0,
             "deaths": deaths,
+            # Spread, not just the mean. Every aggregate above is an average, which is
+            # what let six profiles look distinct while making identical choices.
+            "floor_pct": percentiles(floors),
+            "turns_pct": percentiles(turns),
+            # Which of the four routes ended each win. A unanimous split is the finding.
+            "win_paths": _tally(r.win_path for r in runs if r.won),
         }
+
+        # Emergence: how much of the stack participates, and is any verb simply broken.
+        emg = [r.emergence for r in runs if r.emergence]
+        if emg:
+            # Judge on the summed totals, not the union of per-run verdicts. A verb that
+            # happens to fail every attempt in one unlucky run is not a broken verb; one
+            # that never succeeds across the whole batch is.
+            ok_all: dict[str, int] = {}
+            fail_all: dict[str, int] = {}
+            for e in emg:
+                for k, v in (e.get("verb_ok") or {}).items():
+                    ok_all[k] = ok_all.get(k, 0) + v
+                for k, v in (e.get("verb_fail") or {}).items():
+                    fail_all[k] = fail_all.get(k, 0) + v
+            from runtime.pressure import MIN_ATTEMPTS_TO_JUDGE
+            broken = sorted(k for k, n in fail_all.items()
+                            if n >= MIN_ATTEMPTS_TO_JUDGE and not ok_all.get(k))
+            kinds: dict[str, int] = {}
+            for e in emg:
+                for k, c in e.get("event_counts", {}).items():
+                    kinds[k] = kinds.get(k, 0) + c
+            stats[name]["emergence"] = {
+                "event_kinds": round(_mean(e["event_kinds"] for e in emg), 1),
+                "event_counts": dict(sorted(kinds.items(), key=lambda kv: -kv[1])),
+                "broken_verbs": broken,
+            }
+
+        # Pressure: how forced were the decisions, and did the agent ever get hurt.
+        press = [r.pressure for r in runs if r.pressure]
+        if press:
+            label_share: dict[str, float] = {}
+            for p in press:
+                for lbl, share in p.get("label_share", {}).items():
+                    label_share[lbl] = label_share.get(lbl, 0.0) + share / len(press)
+            stats[name]["pressure"] = {
+                "label_share": dict(sorted(label_share.items(), key=lambda kv: -kv[1])[:8]),
+                "top_label_share": round(max(label_share.values()), 3) if label_share else 0.0,
+                "contested_share": round(_mean(p["contested_share"] for p in press), 3),
+                "uncontested_share": round(_mean(p["uncontested_share"] for p in press), 3),
+                "median_margin": round(_mean(p["median_margin"] for p in press), 2),
+                "avg_candidates": round(_mean(p["avg_candidates"] for p in press), 1),
+                "min_hp_pct": min(p["min_hp_pct"] for p in press),
+                "hurt_share": round(_mean(p["hurt_share"] for p in press), 3),
+                "top3_label_share": round(_mean(p["top3_label_share"] for p in press), 3),
+                "labels_used": round(_mean(p["labels_used"] for p in press), 1),
+            }
 
         # Attractor scores aggregation
         attractor_scores = {"industrial": [], "haunted": [], "companion_flux": [],
@@ -366,12 +422,20 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
             surv_curve[f] = sum(1 for r in runs if r.floor_reached >= f)
         survival[name] = surv_curve
 
+    shares = {name: s.get("pressure", {}).get("label_share", {})
+              for name, s in stats.items() if s.get("pressure")}
+
     output = {
         "world": world_json,
         "n_runs": n_runs,
         "max_floor": max_floor,
         "agent_stats": stats,
         "per_floor_survival": survival,
+        # Without this, no win rate here is comparable to any other: a clean state and a
+        # warm one are different experiments run by the same command.
+        "persistence": persistence_fingerprint(),
+        "hash_seed": os.environ.get("PYTHONHASHSEED", "random"),
+        "policy_divergence": {k: round(v, 3) for k, v in divergence_matrix(shares).items()},
     }
 
     out_path = Path(os.path.expanduser("~/.vaultcrawl/eval_stats.json"))
@@ -380,8 +444,42 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
         json.dump(output, fh, indent=2)
 
     _print_table(stats)
+    _print_pressure(stats, output["policy_divergence"])
     print(f"\nSaved → {out_path}")
     return output
+
+
+def _print_pressure(stats: dict[str, dict[str, Any]], divergences: dict[str, float]):
+    """The half of the report that says whether the choices were hard."""
+    header = (f"{'AGENT':<16} {'TOP CHOICE':<20} {'TOP3':<6} {'LABELS':<7} "
+              f"{'CONTEST':<8} {'MIN HP':<7} {'WIN PATHS'}")
+    print()
+    print(header)
+    print("-" * len(header))
+    for name, s in stats.items():
+        p = s.get("pressure")
+        if not p:
+            continue
+        top = next(iter(p["label_share"].items()), ("none", 0.0))
+        paths = ", ".join(f"{k} {v}" for k, v in s.get("win_paths", {}).items()) or "no wins"
+        print(f"{name:<16} {top[0] + ' ' + format(top[1], '.0%'):<20} "
+              f"{p.get('top3_label_share', 0):<6.0%} {p.get('labels_used', 0):<7.0f} "
+              f"{p['contested_share']:<8.0%} {p['min_hp_pct']:<7} {paths}")
+
+    broken = sorted({v for s in stats.values()
+                     for v in s.get("emergence", {}).get("broken_verbs", [])})
+    kinds = max((s.get("emergence", {}).get("event_kinds", 0) for s in stats.values()),
+                default=0)
+    print(f"\nevent kinds per run: {kinds:.0f}")
+    if broken:
+        print(f"BROKEN VERBS (attempted, never once succeeded): {', '.join(broken)}")
+
+    if divergences:
+        vals = sorted(divergences.values())
+        print(f"\npolicy divergence across profile pairs: "
+              f"min {vals[0]:.2f}  median {vals[len(vals)//2]:.2f}  max {vals[-1]:.2f}")
+        closest = min(divergences.items(), key=lambda kv: kv[1])
+        print(f"  most alike: {closest[0].replace('|', ' and ')} at {closest[1]:.2f}")
 
 
 def _print_table(stats: dict[str, dict[str, Any]]):
@@ -413,7 +511,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     world_json = args.world
-    evaluate_agents(world_json, args.runs, args.floors)
+    evaluate_agents(world_json, args.runs, args.floors,
+                    agents=[args.agent] if args.agent else None)
 
 
 if __name__ == "__main__":

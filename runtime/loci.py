@@ -5,6 +5,7 @@ conversation partner. The same world object, different outcomes."""
 from __future__ import annotations
 
 from runtime.systems import System
+from .det import droll, drng
 
 
 class LocusSystem(System):
@@ -22,11 +23,11 @@ class LocusSystem(System):
         """Place 5-8 neutral loci per floor. Away from player and stairs."""
         from random import Random
         seed = f"{game.seed}:{game.floor}:loci"
-        self._rng = Random(hash(seed) % (2**31))
+        self._rng = drng(seed)
         self.loci = {}
         self.depleted = set()
 
-        count = 5 + (hash(seed + "count") % 4)  # 5-8
+        count = 5 + droll(seed + "count", 4)  # 5-8
         # Phase 1: more loci on early floors for sustain, tapering at depth
         if game.floor <= 8:
             count += 3  # 8-11 loci on floors 1-8
@@ -65,8 +66,8 @@ class LocusSystem(System):
         if game.floor == region_entry and stairs and not self.loci:
             # Place a beacon within 6 tiles of stairs
             for _ in range(50):
-                bx = stairs[0] + (hash(f"{seed}:beacon:x") % 13 - 6)
-                by = stairs[1] + (hash(f"{seed}:beacon:y") % 7 - 3)
+                bx = stairs[0] + (droll(f"{seed}:beacon:x", 13) - 6)
+                by = stairs[1] + (droll(f"{seed}:beacon:y", 7) - 3)
                 bx = max(0, min(game.level.w - 1, bx))
                 by = max(0, min(game.level.h - 1, by))
                 if game.level.walkable(bx, by) and (bx, by) not in self.loci:
@@ -138,7 +139,7 @@ class LocusSystem(System):
             locus_type = "becalm"
         else:
             from random import Random
-            rng = Random(hash(f"{game.seed}:{game.turn}:locus") % (2**31))
+            rng = drng(f"{game.seed}:{game.turn}:locus")
             choice = rng.choice(["forge", "parley", "explore", "shield"])
             locus_type = choice
             if choice == "forge":
@@ -188,7 +189,7 @@ class LocusSystem(System):
             facs = list(fcs.standing.keys())
             if facs:
                 from random import Random
-                rng = Random(hash(f"{game.seed}:{game.floor}:{lx}:{ly}") % (2**31))
+                rng = drng(f"{game.seed}:{game.floor}:{lx}:{ly}")
                 target = rng.choice(facs)
                 current = fcs.standing.get(target, 0)
                 fcs.standing[target] = min(6, current + 1)
@@ -198,7 +199,7 @@ class LocusSystem(System):
             unrevealed = [nid for nid in nodes if not know.is_known(nid)]
             if unrevealed:
                 from random import Random
-                rng = Random(hash(f"{game.seed}:{game.turn}:reveal") % (2**31))
+                rng = drng(f"{game.seed}:{game.turn}:reveal")
                 know._reveal(game, rng.choice(unrevealed))
                 game.log("The locus murmurs a secret — a note reveals itself.")
         heal_body(game.player, 5)

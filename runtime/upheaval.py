@@ -43,7 +43,12 @@ class Upheaval:
     def from_events(cls, events: list, echo_span: int = 6):
         u = cls()
         for e in events:
-            k, note = e["kind"], e["note"]
+            # `e["note"]` unconditionally. Six of the ten kinds `to_upheaval_events`
+            # produces carry no note key, so wiring the two halves together raised
+            # KeyError on the first faction or terraforming event. The producer now sets
+            # `note` wherever a kind's consumer needs one; this stays tolerant so a
+            # chronicle written by an older build still loads.
+            k, note = e["kind"], e.get("note", "")
             if k == "idea_ascends":
                 u.ascended.add(note)
             elif k == "power_wanes":

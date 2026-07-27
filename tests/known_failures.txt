@@ -1,0 +1,60 @@
+# Tests that fail today, so CI can be green without pretending they pass.
+#
+# `tests/conftest.py` marks every node listed here `xfail(strict=True)`. Two consequences
+# worth understanding before editing this file:
+#
+#   * A listed test that starts PASSING fails the build. That is deliberate. It means this
+#     list cannot quietly become a lie about what is broken: fix the bug, delete the line,
+#     same commit.
+#   * An entry that matches no collected test is a collection ERROR, not a warning. A typo
+#     or a renamed test would otherwise silently widen the hole.
+#
+# So this file only ever shrinks. Every line is a bug with a name.
+#
+# These are not new. They fail identically on every commit checked back to before the
+# assessment work began, and they are mostly not stale expectations: several are authored
+# features wired to nothing, the same class as the deploy crash and the unreachable
+# dialogue tree. See guidance/PROJECT_ASSESSMENT.md.
+#
+# Measured on Python 3.11.15 and cross-checked at module level on 3.12.3.
+
+# --- becalm: g.becalm() returns False where the test expects a disarm --------------
+tests/test_becalm.py::test_understanding_disarms_for_free
+tests/test_becalm.py::test_offering_placates
+
+# --- body parts: per-part HP is not what the tests expect, and leg breaks do nothing.
+# `is_immobilized()` returns False on a player whose legs are broken, so the whole
+# immobilisation mechanic is inert.
+tests/test_body_parts.py::test_init_body
+tests/test_body_parts.py::test_damage_part
+tests/test_body_parts.py::test_leg_break_immobilizes
+tests/test_body_parts.py::test_heal_restores_legs
+tests/test_body_parts.py::test_heal_worst_first
+
+# --- commune: felling the deepest boss does not register the win ------------------
+# (The other two tests in this module were failing for the free-warden-commune bug and
+# now pass; this one is a separate defect in the kill path.)
+tests/test_commune.py::test_the_old_way_still_works
+
+# --- felt: road tiles do not grant the second pace ---------------------------------
+tests/test_felt.py::test_stride_on_the_road
+
+# --- forge: a forged sigil comes out with `perks` empty, even at quality 4, so the
+# whole perk layer is dead on the forge path. Two of these three are a bare KeyError.
+tests/test_forge.py::test_forge_quality_floor
+tests/test_forge.py::test_forge_additive_steers_perk
+tests/test_forge.py::test_forge_quality_deterministic
+
+# --- machines: the fabricator does not produce the sigil it claims to ---------------
+tests/test_machines.py::test_fabricator_forges_and_consumes
+
+# --- qud: g.confide() returns False, so secrets are never traded -------------------
+tests/test_qud.py::test_confide_trades_secrets
+
+# --- salvage: points_of_interest does not list what the test expects ---------------
+tests/test_salvage.py::test_salvage
+
+# --- ux: the fixture parks the player beside a hostile and then expects an
+# uninterrupted three-turn camp, which `wait()` correctly refuses. Verified failing on
+# the commit before any of the assessment work, so it is not a regression from it.
+tests/test_ux.py::test_rest_camp

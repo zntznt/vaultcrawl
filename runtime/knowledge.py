@@ -22,6 +22,7 @@ Deterministic: no randomness is used. (If any were added, it would be seeded fro
 from __future__ import annotations
 
 from .systems import System
+from .det import droll
 
 RADIUS = 4          # base Chebyshev sight radius (the dark DEPTHS: fog is tension)
 SURFACE_RADIUS = 12  # the open SURFACE: you see the vista you wander (exploration)
@@ -65,6 +66,12 @@ class KnowledgeSystem(System):
             self._update_faction_insight(game, note_id)
         self.known.add(note_id)
         if direct:
+            if note_id not in self.learned:
+                try:
+                    from .attractors import tracker
+                    tracker().record_note_learned()
+                except Exception:
+                    pass
             self.learned.add(note_id)
         node = nodes.get(note_id)
         if not node:
@@ -267,6 +274,18 @@ class KnowledgeSystem(System):
             note = data.get("note")
             if note:
                 self.reveal(note)
+            # One idea leads to another: a read sometimes lights up an unrevealed
+            # neighbour in the note graph. This chain ran from inside Game.emit, so the
+            # system that owns revelation was not the one doing it.
+            if note and droll(f"{game.seed}:{game.turn}:lore_chain", 100) < 30:
+                nodes = game.m.get("graph", {}).get("nodes", {})
+                if note in nodes:
+                    unrevealed = [n for n in nodes[note].get("neighbors", [])
+                                  if not self.is_known(n)]
+                    if unrevealed:
+                        idx = droll(f"{game.seed}:{game.turn}:lore_chain:{note}",
+                                    len(unrevealed))
+                        self.reveal(unrevealed[idx])
 
     # ---- rendering ----
     def render_overlay(self, game, grid):

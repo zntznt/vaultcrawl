@@ -160,6 +160,14 @@ class ForgeSystem(System):
         if not player_inv.can_pay(cost):
             return False
 
+        try:
+            # What the forge actually consumed, not `sigils_forged * 3` guessed after
+            # the fact by the harness.
+            from .attractors import tracker
+            tracker().record_matter_forged(sum(cost.values()))
+        except Exception:
+            pass
+
         sigil = {
             "note": "forged",
             "role": _ABILITY_ROLE.get(ability, ""),
@@ -192,16 +200,35 @@ class ForgeSystem(System):
 
         slots.append(sigil)
         game.emit("forge_used", ability=ability, tier=tier)
-        # The forge-fire mends the crafter — every successful forge heals
-        from runtime.body_parts import heal_body
-        heal_body(game.player, 3)
+        # No heal. Crafting should produce a sigil, not double as a heal button that also
+        # produces one. With auto-forge on, this fired every turn the player held matter.
         ptracker().exercise(ability)
         return True
 
+    def on_event(self, game, etype, data):
+        """The forge is loud, and its work persists between runs.
+
+        Both of these used to live in an if/elif inside Game.emit, so ForgeSystem had no
+        listener at all and the event it raised was serviced by someone else.
+        """
+        if etype != "forge_used":
+            return
+        data = data or {}
+        pos = data.get("pos", (game.player.x, game.player.y))
+        game.emit("noise", pos=pos, volume=6)
+        try:
+            from runtime.persistence import chronicle
+            r = game.region_for(game.floor)
+            if r:
+                chronicle().record_forge(r["id"])
+        except Exception:
+            pass
+
     # ---- auto-forge ---------------------------------------------------------
-    # `auto` stays True for the headless demo/tests; the interactive UI sets it False
-    # so the `f` key is a real choice instead of a race the autopilot always wins.
-    auto = True
+    # Off by default. The interactive UI already disabled it so the `f` key was a real
+    # choice; the headless harness did not, so every balance number was measured against a
+    # forge the agent never decided to use, running on every single turn.
+    auto = False
 
     def on_player_act(self, game):
         """Whenever there's a free slot and enough matter, auto-craft the missing ability,
@@ -220,6 +247,25 @@ class ForgeSystem(System):
         if len(getattr(sigils, "slots", [])) >= cap:
             return None
         return "Forge: ready" if inv(game.player).can_pay(self.cost(game)) else None
+
+    def can_forge(self, game, ability=None) -> bool:
+        """Whether a forge attempt would actually succeed. Query API per INTERACTIONS_SPEC.
+
+        The brain used to offer `forge` on matter and a free slot alone, so it spent turns
+        on an action the proficiency gate would refuse. That was invisible while proficiency
+        leaked across runs in a module global and the agent arrived pre-skilled.
+        """
+        sigils = game.system("sigils")
+        if sigils is None:
+            return False
+        slots = getattr(sigils, "slots", None)
+        cap = sigils.max_slots(game) if hasattr(sigils, "max_slots") else MAX_SLOTS
+        if slots is None or len(slots) >= cap:
+            return False
+        ability = ability or self._default_ability(game)
+        if not ability:
+            return False
+        return self._has_proficiency(game, ability)
 
     def _has_proficiency(self, game, ability) -> bool:
         """Check knowledge of note-role AND recent practice with the ability."""

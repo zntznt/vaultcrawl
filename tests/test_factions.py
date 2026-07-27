@@ -64,7 +64,14 @@ def test_factions():
     for _ in range(3):
         g.emit("enemy_killed", enemy=make_enemy(spec, 0, 0), cause="melee")
     assert s.disturbance.get(victim, 0) == d0 + 3, "loud melee kills raise disturbance"
-    assert s.standing_of(victim) == st0 - 3, "victim faction standing drops per loud kill"
+    # Standing drops per loud kill but now bottoms out at STANDING_MIN. It used to fall
+    # forever, and `rest_modifier` returns 0 below -3, so a loud run finished at -22 unable
+    # to heal by resting at all: kill loudly, lose the heal, have to kill to survive. The
+    # floor keeps the penalty (a rest there restores 1 against a friendly 3) and removes
+    # the lockout. See guidance/PROJECT_ASSESSMENT.md, "The ratchet under exploiter".
+    from runtime.factions import STANDING_MIN
+    assert s.standing_of(victim) == max(STANDING_MIN, st0 - 3), (
+        "victim faction standing drops per loud kill, down to the floor")
     assert s.standing_of(victim) < 0, "standing shifts negative for the victim faction"
 
     # A sigil kill is loud as well.
@@ -135,7 +142,8 @@ def test_factions():
     assert len(hunters) >= 1, "a disturbed faction dispatches at least one hunter"
     assert all(getattr(h, "is_hunter", False) for h in hunters), "hunters are flagged for intel"
     assert len(g.actors) > before_n or before_n == 0, "hunters were appended to g.actors"
-    assert s.disturbance[victim] == 0, "disturbance resets after dispatch"
+    assert s.disturbance[victim] == 2, "dispatch spends alert (-4), it does not erase it"
+    assert s.disturbance[victim] < 6, "alert falls after hunters go out"
 
     # --- HUD line renders as a non-empty string ---
     line = s.status_line(g)

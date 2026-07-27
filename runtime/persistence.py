@@ -5,6 +5,7 @@ Wire: lore_read → lost_note (ghost), standing extremes → faction shifts,
        forge_used → sanctum persistence (terrain_mod + Upheaval).
 """
 from __future__ import annotations
+from .det import droll
 
 
 class RunChronicle:
@@ -115,7 +116,7 @@ class RunChronicle:
         # Lore → lost notes (ghosts). Each read note has a chance to become a ghost.
         for note_id in self.lore_read_notes:
             # Only some notes become ghosts (deterministic by note id hash)
-            if hash(note_id) % 3 == 0:  # ~33% chance
+            if droll(note_id, 3) == 0:  # ~33% chance
                 events.append({
                     "kind": "note_lost",
                     "note": note_id,
@@ -127,6 +128,7 @@ class RunChronicle:
             if count >= 3:  # 3+ forges in a region = sanctum
                 events.append({
                     "kind": "forge_grown",
+                    "note": region_id,   # Upheaval keys forge_sanctums by note
                     "region": region_id,
                     "count": count,
                 })
@@ -136,12 +138,14 @@ class RunChronicle:
             if standing >= 5:
                 events.append({
                     "kind": "border_opens",
+                    "note": faction_id,   # Upheaval keys contested by note
                     "faction": faction_id,
                     "standing": standing,
                 })
             elif standing <= -5:
                 events.append({
                     "kind": "border_closes",
+                    "note": faction_id,
                     "faction": faction_id,
                     "standing": standing,
                 })
@@ -205,3 +209,81 @@ def chronicle() -> RunChronicle:
 def reset_chronicle():
     global _chronicle
     _chronicle = RunChronicle()
+
+
+# --------------------------------------------------------------------------- #
+# the return arrow: a run writes what it did, the next run reads it
+# --------------------------------------------------------------------------- #
+#
+# `to_upheaval_events` had zero callers. The bake-to-play-to-bake circuit was open at
+# exactly this point: `bake.py` reads one input, the markdown directory, so nothing play
+# produced could reach a later world. The only way to get an Upheaval was to edit notes by
+# hand and pass `--evolve-from`.
+#
+# This is the missing arrow, and it is deliberately the small version: a run's events are
+# appended to a file keyed by world seed, and the next run on that world loads them as its
+# Upheaval. It does not touch the bake, so the deterministic skeleton is untouched.
+#
+# It is bounded on purpose. Events are deduplicated on their identity and the store is
+# capped, so a hundred runs on one world cannot accumulate a hundred ascended notes. The
+# loop has a return arrow; it is not licence for unbounded growth.
+
+CHRONICLE_MAX = 24        # most events one world's chronicle will carry forward
+
+
+def chronicle_path() -> str:
+    import os
+    return os.path.expanduser("~/.vaultcrawl/chronicle.json")
+
+
+def _event_key(e: dict) -> tuple:
+    """Identity of an event for deduplication: the kind plus whatever it names."""
+    return (e.get("kind", ""), e.get("note", ""), e.get("faction", ""),
+            e.get("region", ""), str(e.get("pos", "")))
+
+
+def save_chronicle(seed: str, path: str = None) -> int:
+    """Append this run's events to the world's chronicle. Returns the stored count."""
+    import json, os
+    path = path or chronicle_path()
+    events = chronicle().to_upheaval_events()
+    if not events:
+        return 0
+    data = {}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        pass
+    if not isinstance(data, dict):
+        data = {}
+    merged = list(data.get(seed) or []) + events
+    seen, out = set(), []
+    for e in merged:
+        k = _event_key(e)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(e)
+    out = out[-CHRONICLE_MAX:]        # newest wins when the cap bites
+    data[seed] = out
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh)
+    except OSError:
+        return 0
+    return len(out)
+
+
+def load_chronicle_events(seed: str, path: str = None) -> list:
+    """The events earlier runs on this world left behind. Empty if there are none."""
+    import json
+    path = path or chronicle_path()
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        got = data.get(seed) or []
+        return got if isinstance(got, list) else []
+    except (OSError, ValueError, AttributeError):
+        return []

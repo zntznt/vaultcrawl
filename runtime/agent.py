@@ -13,6 +13,62 @@ from runtime.agent_action import AgentAction
 from runtime.agent_perception import agent_state
 from runtime.tactics import _stairs
 
+# Game.absorb_aspect grants its buff on the third consecutive rest on one tile.
+ABSORB_ATTEMPTS = 3
+# Game.absorb_aspect refuses past this many; the candidate has to know, or it parks the
+# agent on a damaging tile forever chasing a buff that is no longer on offer.
+ABSORB_CAP = 3
+# Below this, the HP a hazard tile costs is worth more than any aspect it can grant.
+ABSORB_MIN_HP = 55
+# Rest stops restoring at Game.TENSION_REST_CAP, so urgency to act should climb before it.
+TENSION_PRESSURE_AT = 100
+# How hard `commune_ready` pulls the agent down the stairs toward the warden.
+#
+# Was a flat 20 plus 2 per floor of closeness, so 20 to 38, against a table whose largest
+# profile weight is 15. Once commune was available nothing else could outbid descending,
+# which is why one profile spent 22 percent of all its turns steering at the warden and won
+# by commune in 8 runs of 8.
+#
+# Swept over 8 seeds per agent across all six profiles, judged on route diversity first:
+#
+#   base  aggregate       profiles winning 2+ ways   win mix
+#    20   22/48  45.8%           4 of 6             commune 11, escape 10, boss 1
+#    12   25/48  52.1%           6 of 6             commune  9, escape 16
+#     6   22/48  45.8%           6 of 6             commune  6, escape 14, boss 2
+#     0   21/48  43.8%           4 of 6             commune  8, escape 13
+#
+# 12 is taken: it is the peak on BOTH axes at once, the only arm that is both highest on
+# aggregate and unanimous on route diversity. Removing the pull entirely is worse than
+# halving it, and for a legible reason: at 0 the fight-first profile stops descending at
+# all and wins nothing. The pull is not a bug, it was just louder than every identity in
+# the table.
+COMMUNE_PULL_BASE = 12
+COMMUNE_PULL_STEP = 2
+
+
+FATIGUE_STEP = 3.0      # score penalty added each time one objective is re-chosen
+FATIGUE_MAX = 60.0      # ceiling, so a genuinely necessary action is never locked out
+FATIGUE_DECAY = 1.0     # shed per turn, for every objective not chosen this turn
+FATIGUE_FAILED = 15.0   # extra penalty when the chosen action failed at dispatch
+
+
+def _target_key(label, cand):
+    """Identify the objective a candidate is pursuing, not merely its verb.
+
+    `move` covers explore, flee, stairs, salvage, cache and more, so the verb alone cannot
+    tell repetition from progress. A tuple candidate carries its target coordinates.
+    """
+    if isinstance(cand, tuple) and len(cand) >= 3:
+        return (label, cand[1], cand[2])
+    idx = getattr(cand, "index", None)
+    return (label, idx) if idx else (label,)
+
+
+def _tension_urgency(s) -> int:
+    """Extra urgency from the vault noticing you. Identical for all six profiles."""
+    t = s.get("tension", 0) or 0
+    return max(0, (t - TENSION_PRESSURE_AT) // 10)
+
 
 PROFILES = {
     "artisan": {
@@ -38,10 +94,25 @@ PROFILES = {
         "workspace_camp": 3,
     },
     "emergent": {
+        # `stairs` was 1, the joint lowest in the table, and the stairs candidate's base
+        # state urgency is 2, so unlike `rest` that floor is live and it decided things.
+        # Emergent was bimodal: snowball to floor 26 with 46 kills, or die on floor 2 to 6
+        # inside 1,500 turns. Dying on floor 2 after 625 turns is 300 turns spent on one
+        # floor, so it was not a descent going wrong, it was never descending.
+        #
+        # Swept over eight run seeds: stairs 1 wins 3 of 8 at average floor 13.8, stairs 3
+        # wins 5 at 18.5, stairs 6 wins 2 at 13.5 (it arrives underlevelled). A starting
+        # Phase sigil plus +2 DEF also reaches 5 of 8, and is not taken because this is one
+        # number against two grants and it is what the diagnosis predicted. Doing both at
+        # once is worse than either alone, at 4 of 8, which is a reminder that eight seeds
+        # is a coarse instrument.
+        #
+        # Berlin: a weight is a preference and never a lock. `fight` stays at 15, so this
+        # still fights everything it meets; it just stops parking on floor 2 to do it.
         "fight": 15, "shield": 10, "recall": 5, "flee": 4,
         "forge": 3, "breakdown": 2, "explore": 1,
         "rest": 2, "commune": 0,
-        "parley": 0, "becalm": 0, "stairs": 1,
+        "parley": 0, "becalm": 0, "stairs": 3,
         "shove": 10, "toss": 3, "ward": 8,
         "workspace_fabricator": 10,
         "workspace_terminal": 2,
@@ -95,17 +166,37 @@ def _starting_bonus(turn: int) -> int:
 
 # Formula: score = max(profile_weight, state_bonus) + turn_bonus
 # Profile = floor (identity), state = ceiling (urgency), turn = initial push
+#
+# The trailing urgency term breaks ties. Several candidates share one profile key
+# (explore covers explore_unseen, interact, salvage and cache), so whenever the profile
+# weight sits above all their state values they score identically, and a stable sort then
+# hands the turn to whichever was appended first. That made salvage and cache unreachable
+# for every profile with explore >= 4. The term is small enough never to overturn a
+# genuine one-point difference in the floor, and it only ever prefers the candidate the
+# situation more urgently wants.
 def _score(profile, key, state_bonus, turn_bonus, reachable: bool = True) -> float:
     if not reachable:
         return 0
     floor = profile.get(key, 0)
-    return max(floor, state_bonus) + turn_bonus
+    return max(floor, state_bonus) + turn_bonus + max(0, state_bonus) * 0.01
 
 
 class UniversalBrain(Brain):
     def __init__(self, name: str = "seeker"):
         self._name = name
         self._profile = PROFILES.get(name, PROFILES["seeker"])
+        # Set every decide(): the scored candidate list, sorted, and the index actually
+        # taken. Read by the balance harness; nothing in the game loop depends on it.
+        self._last_candidates: list = []
+        self._last_choice: int | None = None
+        # Consecutive absorb-hazard rests on the current tile, so the attempt is bounded.
+        self._hazard_tile: tuple | None = None
+        self._hazard_tries: int = 0
+        # Fatigue: how often a given (label, target) has been chosen lately. Repeatedly
+        # picking the same objective without resolving it is the signature of every
+        # decision loop this codebase has had, so choosing one costs a little and the
+        # cost decays once the agent does something else.
+        self._fatigue: dict = {}
 
     @property
     def name(self) -> str:
@@ -160,6 +251,12 @@ class UniversalBrain(Brain):
         reachable = can_commune and elite_near
         # Late-game surge: floors 20+ raise commune priority for healing sustain
         late_bonus = max(0, floor - 19) * 8  # +0 at 19, +8 at 20, +48 at 26
+        # The last stair opens on any of four routes (Game.egress_ready). If it is shut,
+        # dealing with the warden is one of them, so wanting it badly is correct. Read
+        # from game state, never from the profile: every profile gets the same push and
+        # reaches for whichever route its own weights make cheapest.
+        if not s["position"].get("egress_ready", True):
+            late_bonus += 20
         # Boss proximity: if any nearby elite is the final boss, override priority
         boss_bonus = 100 if boss_near and floor >= 26 else 0
         score = _score(self.profile, "commune", 25 + late_bonus + boss_bonus, bonus, reachable)
@@ -189,16 +286,48 @@ class UniversalBrain(Brain):
             for h in s["hostiles"]:
                 if h.get("tier", 1) >= 3 or h.get("is_boss"):
                     if "parley" in s["encounter_options"]:
-                        state = s.get("faction_standings", {}).get(h.get("faction", ""), 0) * 3
+                        standing = s.get("faction_standings", {}).get(h.get("faction", ""), 0)
+                        # `standing * 3` unguarded, which goes NEGATIVE when a house
+                        # dislikes you: parley is the one action that buys standing back,
+                        # so its urgency fell exactly as the need for it rose. At the -22
+                        # a loud run used to reach it scored -66.
+                        #
+                        # The clamp is insurance, not a balance change. `_score` takes
+                        # max(profile_floor, state) and every profile's parley floor is at
+                        # least 0, so with standing bounded at STANDING_MIN this is
+                        # behaviourally identical to what it replaces. Building the
+                        # inversion into a real urgency ladder was tried and measured at
+                        # exactly zero effect over 48 runs, so it is not here; this only
+                        # stops the bug returning if that floor is ever moved.
+                        state = max(0, standing) * 3
                         if s.get("danger_ahead"):
                             state += 10
                         # Gradient: when standing >= 1 and elite within 10 tiles, strongly prefer parley
-                        standing = s.get("faction_standings", {}).get(h.get("faction", ""), 0)
                         if standing >= 1 and h.get("dist", 99) <= 10:
                             state += 15
                         score = _score(self.profile, "parley", state, bonus, True)
                         candidates.append(("parley", score, AgentAction("negotiate", target=h["name"])))
                     break
+
+        # ---- KEEPER (an NPC standing beside you is someone to talk to) ----
+        # DialogueSystem exposes Keeper tiles as points of interest, so the agent already
+        # walks to them, but no candidate ever spoke on arrival: the quest, offering and
+        # gossip tree had a path to its door and no hand to knock. Scored off the same
+        # `parley` weight as negotiating with a hostile, so whisper reaches for it and
+        # emergent rarely does, by preference rather than by any lock.
+        _dlg = game.system("dialogue")
+        _keepers = set(id(n) for n in getattr(_dlg, "npcs", []) or [])
+        keeper_near = bool(_keepers) and any(
+            id(game.actor_at(actor.x + dx, actor.y + dy)) in _keepers
+            for dx in (-1, 0, 1) for dy in (-1, 0, 1) if (dx, dy) != (0, 0)
+        )
+        if keeper_near:
+            state = 12
+            if s["knowledge"]["truths_read"] >= 2 or s["matter"]["total"] >= 2:
+                state += 6      # you have something to offer, so the door is worth knocking on
+            score = _score(self.profile, "parley", state, bonus, True)
+            if score > 0:
+                candidates.append(("keeper", score, AgentAction("interact")))
 
         # ---- BECALM (score higher than fight when resources available) ----
         adj_hostiles = s.get("adjacent_hostiles", [])
@@ -215,11 +344,17 @@ class UniversalBrain(Brain):
                 state += 15
             state += s.get("factions", {}).get("reputation_sum", 0) * 2
             state += 8  # base preference for non-violence
+            state += _tension_urgency(s)   # the non-violent way to spend complacency
             score = _score(self.profile, "becalm", state, bonus, True)
             candidates.append(("becalm", score, AgentAction("becalm")))
 
         # ---- FORGE ----
         reachable = bool(s["matter"]["total"] >= 2 and s["nav"]["free_sigil_slots"] > 0)
+        if reachable:
+            _fs = game.system("forge")
+            if _fs is not None and hasattr(_fs, "can_forge"):
+                # Matter and a free slot are not enough: the forge also wants proficiency.
+                reachable = _fs.can_forge(game)
         if reachable:
             slotted = {sig.get("ability") for sig in s["sigils"]}
             for ability in ("Recall", "Ward", "Phase", "Echo", "Rally"):
@@ -335,7 +470,9 @@ class UniversalBrain(Brain):
                          and len(s.get("near_hostiles", [])) <= 2)
         if reachable:
             from runtime.wear import RECIPE_COSTS
-            affordable = [r for r in known if RECIPE_COSTS.get(r, 99) <= s["matter"]["total"]]
+            # sorted, because `known` is a set: iterating it raw made which recipe the
+            # agent crafted depend on PYTHONHASHSEED rather than on the game seed.
+            affordable = sorted(r for r in known if RECIPE_COSTS.get(r, 99) <= s["matter"]["total"])
             # Hazard-reactive consumables get priority when hazards are nearby
             hazard_consumables = {"trap_kit", "crystal_seed", "sparkwire", "frost_ampoule",
                                    "root_tendril", "noise_lure", "wardstone"}
@@ -502,28 +639,54 @@ class UniversalBrain(Brain):
                     candidates.append((ws_key, score, ("workspace", ws[0], ws[1])))
 
         # ---- REST ----
+        # Wider window and steeper urgency. While `wait` healed, stalls topped the agent up
+        # for free and this branch barely mattered; with that gone it is the only heal in
+        # the cascade, and at (100-hp)//5 it scored ~12 when hurt, losing every turn to
+        # deploy and forge. Profiles still differ by their `rest` floor, and the urgency
+        # term is identical for all six.
         reachable = (len(s.get("adjacent_hostiles", [])) == 0
-                     and len(s.get("near_hostiles", [])) == 0 and hp_pct < 55)
+                     and len(s.get("near_hostiles", [])) == 0 and hp_pct < 70)
         if reachable:
-            state = (100 - hp_pct) // 5
+            state = (100 - hp_pct) // 3
             score = _score(self.profile, "rest", state, bonus, True)
             if score > 0:
                 candidates.append(("rest", score, AgentAction("rest")))
 
         # ---- ABSORB-HAZARD (rest on hazard to gain aspect buff) ----
+        here = (s["position"]["x"], s["position"]["y"])
         hazard_on_player = any(
-            s["position"]["x"] == hz["x"] and s["position"]["y"] == hz["y"]
-            for hz in s.get("hazard_tiles", [])
+            here == (hz["x"], hz["y"]) for hz in s.get("hazard_tiles", [])
         )
-        if hazard_on_player and len(s.get("adjacent_hostiles", [])) == 0 and len(s.get("near_hostiles", [])) == 0:
-            # Can absorb aspects — rest 3 turns on hazard tile for permanent buff
-            score = _score(self.profile, "rest", 15, bonus, True)
+        if here != self._hazard_tile:
+            self._hazard_tile, self._hazard_tries = here, 0
+        # Game.absorb_aspect needs 3 consecutive rests on one tile. Give it exactly that
+        # many and no more: the tile may carry a hazard this candidate can see but that
+        # absorb_aspect cannot use, and without a cap the agent rests on it forever
+        # chasing a buff that can never land.
+        #
+        # It also has to know what standing there costs. Hazard tiles and weather are
+        # roughly ninety percent of all HP the player loses; combat is a tenth of it. The
+        # agent was parking in acid for a buff and paying more for it than the buff is
+        # worth, and once the aspect budget is full it was paying for nothing at all.
+        absorbed = len(getattr(actor, "_absorbed_aspects", []) or [])
+        if (hazard_on_player and self._hazard_tries < ABSORB_ATTEMPTS
+                and absorbed < ABSORB_CAP and hp_pct >= ABSORB_MIN_HP
+                and not s.get("adjacent_hostiles") and not s.get("near_hostiles")):
+            # Worth less the closer it gets to costing the run.
+            urgency = 15 - (100 - hp_pct) // 5
+            score = _score(self.profile, "rest", urgency, bonus, True)
             if score > 0:
+                self._hazard_tries += 1
                 candidates.append(("absorb_hazard", score, AgentAction("rest")))
 
         # ---- WEATHER CLEAR ----
+        # Weather is the second largest drain in the game after hazard tiles, and this
+        # scored a flat 3, so the agent stood in acrid haze taking chip damage for
+        # thousands of turns rather than spend one matter to stop it. Urgency now rises as
+        # the weather actually costs you.
         if s["weather_hazard"] and s["matter"]["total"] >= 1 and len(s.get("adjacent_hostiles", [])) == 0:
-            score = _score(self.profile, "rest", 3, bonus, True)
+            urgency = 3 + (100 - hp_pct) // 8
+            score = _score(self.profile, "rest", urgency, bonus, True)
             candidates.append(("clear_weather", score, AgentAction("interact")))
 
         # ---- FIGHT ----
@@ -535,6 +698,10 @@ class UniversalBrain(Brain):
             if hp_pct < 30:
                 state -= 15
             state += s["vitals"]["defense"]
+            # Complacency has to be spent, and killing is one of the two sinks. Same
+            # pressure for every profile: max(profile_floor, state) still lets a fighter
+            # reach for this and a pacifist reach for becalm instead.
+            state += _tension_urgency(s)
             score = _score(self.profile, "fight", state, bonus, True)
             candidates.append(("fight", score,
                 AgentAction("move", dx=(t["x"]>actor.x)-(t["x"]<actor.x),
@@ -554,7 +721,8 @@ class UniversalBrain(Brain):
             boss_floor = s["position"].get("boss_floor", 99)
             distance = boss_floor - s["position"]["floor"]
             if distance > 0 and distance <= 10:
-                commune_pull = 20 + (10 - distance) * 2  # stronger pull when closer
+                # stronger pull when closer
+                commune_pull = COMMUNE_PULL_BASE + (10 - distance) * COMMUNE_PULL_STEP
         stuck_pull = 5 if no_targets else 0
         if s["position"]["on_stairs"]:
             candidates.append(("descend", _score(self.profile, "stairs", 2 + commune_pull + stuck_pull, bonus, True),
@@ -566,12 +734,63 @@ class UniversalBrain(Brain):
                                     AgentAction("move", dx=step[0], dy=step[1])))
 
         # ---- Pick highest ----
+        # Candidates are kept on the brain so a harness can read what was decided and,
+        # more usefully, how close the runner-up was. A game with hard choices produces
+        # narrow margins often; a dominant strategy produces one wide margin every turn.
         if not candidates:
+            self._last_candidates, self._last_choice = [], None
             return AgentAction("wait")
 
-        candidates.sort(key=lambda c: c[1], reverse=True)
-        winner = candidates[0][2]
+        # Fatigue decays for everything, then is charged against each candidate's score.
+        # This is what stops a candidate that never resolves from winning every turn for
+        # the rest of the run, which is how absorb_hazard, deploy and locus each came to
+        # own a fifth of the decision budget.
+        for k in list(self._fatigue):
+            self._fatigue[k] -= FATIGUE_DECAY
+            if self._fatigue[k] <= 0:
+                del self._fatigue[k]
+        if self._fatigue:
+            candidates = [(lbl, sc - self._fatigue.get(_target_key(lbl, cand), 0.0), cand)
+                          for lbl, sc, cand in candidates]
 
+        candidates.sort(key=lambda c: c[1], reverse=True)
+        self._last_candidates = candidates
+
+        # Walk the list in score order and take the first candidate that resolves to a
+        # real action. A candidate whose target turns out to be unreachable used to
+        # collapse the whole decision to `wait`, which handed the turn to the next-best
+        # option's worst case instead of to the next-best option.
+        for idx, (_label, _cand_score, cand) in enumerate(candidates):
+            act = self._resolve(game, actor, s, cand)
+            if act is not None:
+                self._last_choice = idx
+                key = _target_key(_label, cand)
+                self._fatigue[key] = min(FATIGUE_MAX,
+                                         self._fatigue.get(key, 0.0) + FATIGUE_STEP
+                                         + FATIGUE_DECAY)
+                self._last_key = key
+                return act
+
+        self._last_choice = None
+        self._last_key = None
+        return AgentAction("wait")
+
+    def note_result(self, ok: bool) -> None:
+        """Tell the brain whether the action it just chose actually worked.
+
+        Without this the brain has no idea a verb is broken. `deploy` raised TypeError on
+        every call for the life of the project, was swallowed by dispatch's blanket except,
+        and still won 27% of decisions because nothing ever told the scorer it had failed.
+        """
+        if ok:
+            return
+        key = getattr(self, "_last_key", None)
+        if key is not None:
+            self._fatigue[key] = min(FATIGUE_MAX,
+                                     self._fatigue.get(key, 0.0) + FATIGUE_FAILED)
+
+    def _resolve(self, game, actor, s, winner):
+        """Turn a candidate payload into an AgentAction, or None if it cannot be acted on."""
         if isinstance(winner, tuple):
             kind = winner[0]
             if kind == "consumable":
@@ -605,16 +824,17 @@ class UniversalBrain(Brain):
                                 best, bd, bt = (x, y), d, step_toward_safe(game, actor, x, y)
                 if bt and bt != (0, 0):
                     return AgentAction("move", dx=bt[0], dy=bt[1])
-                return AgentAction("wait")
+                return None
             elif kind in ("salvage", "cache", "poi", "workspace", "recover"):
                 tx, ty = winner[1], winner[2]
+                # Arriving at a deployed sigil is the point of the recover candidate, so
+                # check it before pathing: standing on the tile yields no step.
+                if kind == "recover" and max(abs(actor.x - tx), abs(actor.y - ty)) <= 1:
+                    return AgentAction("recover")
                 step = step_toward(game, actor, tx, ty, safe=True)
                 if step != (0, 0):
-                    # If we arrive at a deployed sigil, recover it
-                    if kind == "recover" and max(abs(actor.x - tx), abs(actor.y - ty)) <= 1:
-                        return AgentAction("recover")
                     return AgentAction("move", dx=step[0], dy=step[1])
-                return AgentAction("wait")
+                return None
             elif kind == "toss_toward":
                 # Toss matter toward a hazard tile to draw enemies onto it
                 tx, ty = winner[1], winner[2]
@@ -624,9 +844,9 @@ class UniversalBrain(Brain):
                 dy = 1 if ty > py else (-1 if ty < py else 0)
                 if dx != 0 or dy != 0:
                     return AgentAction("toss", dx=dx, dy=dy)
-                return AgentAction("wait")
+                return None
             else:
-                return AgentAction("wait")
+                return None
 
         return winner
 

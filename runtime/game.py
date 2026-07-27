@@ -12,6 +12,7 @@ from .dungeon import free_floor_tiles, generate_level
 from .entities import apply_item, make_boss, make_enemy, make_item, make_player
 from .sense import make_brain
 from .upheaval import Upheaval, diminish, empower, make_echo, title as _title
+from .det import droll
 
 MAP_W, MAP_H = 56, 20
 
@@ -22,8 +23,91 @@ ROOM_NOUN = {"hub": "Hall", "bridge": "Gallery", "orphan": "Sealed Alcove",
 # communion with the deepest thought: either path resolves the run without violence
 COMMUNE_TRUTHS = 2   # marginalia + lore fragments read
 COMMUNE_COST = 4     # total salvaged matter, any mix
+# What communing with the WARDEN costs, in truths, before the standing discount.
+#
+# It used to be nothing. The code said so: "always free, reaching the boss is enough". Every
+# other commune in the game is priced at COMMUNE_TRUTHS with a standing discount, or paid in
+# matter, and the single commune that ENDS THE RUN was the one exception. That is why it took
+# 16 of 26 wins, and why the profile that most reliably walks up to the warden won that way
+# in 8 runs of 8 and no other way at all: not a preference, just the cheapest thing on the
+# board being free.
+#
+# Priced like any other elite now. The standing discount still applies, so a house that
+# vouches for you can still make it free, which is the intended shape.
+BOSS_COMMUNE_TRUTHS = 2
 BECALM_COST = 2      # matter per tier to placate a lesser hostile
 LEASH = 3            # sandbox: a creature's territory (and pursuit range) around home
+TENSION_ALERT = 200  # complacency at which the vault notices you and sends something
+TENSION_REST_CAP = 300  # above this, holding still stops restoring anything
+# Fraction of max HP mended on reaching a new floor.
+#
+# A previous pass cut this from //5 to //10 on the argument that it was the largest heal
+# in the game and was handed to the exact action that wins. That argument was incomplete.
+# The player has no power curve at all (entities.py: "the player never gains stats during
+# a run"), so this is the only resource in the game that scales with depth, and halving it
+# made a twenty-six floor descent unsurvivable: win rate fell 3 to 2 to 1 of 6 across
+# three passes while every other number improved.
+#
+# Swept three times. The first ran against a single deterministic scenario, before the
+# harness could vary a run, so it was reading a binary rather than a rate. The second, over
+# three run seeds per agent, gave //4 33%, //3 38%, //2 38%, and //3 was taken because the
+# curve saturated above it and anything more generous was free healing.
+#
+# The third sweep is why it now sits at //4. Four passes of repair later the game had drifted
+# UP to 29 of 48, 60.4%, at the top edge of the 40-60 target band, so the knob was swept in
+# the other direction over 8 seeds per agent across all six profiles:
+#
+#     //3  29/48  60.4%      //4  27/48  56.2%      //5  27/48  56.2%
+#
+# It saturates in this direction too: //4 and //5 are the same aggregate, so //4 is taken as
+# the smaller change. This is the right lever for a whole-game adjustment precisely because
+# the player has no power curve, which makes the mend the only thing every profile depends on
+# equally; a profile-side knob would have moved one agent and called it balance.
+DESCEND_MEND_DIV = 4
+EGRESS_TRUTHS_MAX = 8   # ceiling for the truths route on a large vault
+EGRESS_TRUTHS_MIN = 3   # floor, so a tiny vault still asks for something
+# Tenths of the vault's notes the truths route asks for. Was a flat `notes // 2`, i.e. 5.
+#
+# The docstring's intent is "half the notes", but half the NOTES is not half the notes you
+# can reach. Measured by walking a full 26-floor descent and counting what is offered
+# without reading any of it: of 10 notes in the sample vault, only 8 are ever placed as a
+# mark, so asking for 5 was asking for 63 percent of the obtainable supply rather than 50.
+# The gap is why the route was satisfied in 3 runs of 48 while standing managed 33.
+#
+# Swept over 8 seeds per agent across all six profiles, judged on both axes that matter,
+# because a cheaper threshold revives the route AND raises the win rate:
+#
+#   tenths  threshold  aggregate        truths route     profile spread
+#     5         5      27/48  56.2%      3/48   6.3%      3 to 6 wins
+#     4         4      26/48  54.2%      6/47  12.8%      4 to 5 wins
+#     3         3      23/48  47.9%      9/46  19.6%      2 to 6 wins
+#
+# 4 is taken. The route doubles, the aggregate is unchanged inside noise and stays in the
+# 40-60 band, and the profile spread is the tightest this project has measured: every
+# profile between 50 and 62.5 percent. 3 revives the route further and moves the aggregate
+# nearer the middle, but it widens the spread back to 25-75 and drops exploiter to 2 of 8,
+# which undoes an earlier fix; a route is not worth a profile.
+EGRESS_TRUTHS_TENTHS = 4
+# Standing with the warden's house that opens the last stair instead.
+#
+# Was 3, and an independent census found standing at 3 or better in 33 of 48 runs. That is
+# not an achievement a route asks for, it is a thing that happens to a run on its way past,
+# and once `escape` was split into the routes it had been hiding it turned out to carry 65
+# percent of all victories on its own.
+#
+# Swept over 8 seeds per agent across all six profiles, judged on the win mix first:
+#
+#   gate  aggregate      top route   mix
+#     3   26/48  54.2%      65%      commune  8, standing 17, truths 1
+#     5   25/48  52.1%      56%      commune 10, standing 14, truths 1
+#     7   22/48  45.8%      45%      commune 10, standing  6, truths 2, boss_killed 4
+#
+# 7 is taken. It is the first setting at which ALL FOUR routes are live in a single batch:
+# felling the warden goes from a rounding error to 4 wins, and cartographer alone takes all
+# four routes across its eight runs. The aggregate drops to the lower half of the 40-60
+# band, which is the price of the cheapest route no longer being cheap, and every profile
+# still wins at least two ways.
+EGRESS_STANDING = 7
 FRIEND_STANDING = 4  # reputation at which a house stops fighting the one you control
 
 
@@ -55,7 +139,8 @@ class _Place:
 class Game:
     def __init__(self, manifest: dict, width: int = MAP_W, height: int = MAP_H,
                  upheaval=None, systems=None, sandbox: bool = False,
-                 site_cache: str = None, sprawl: float = 1.0):
+                 site_cache: str = None, sprawl: float = 1.0, run_seed=None,
+                 chronicle_out: bool = False):
         self.site_cache = site_cache   # path for the grown-world cache (sandbox)
         self.sprawl = max(1.0, float(sprawl))
         self.m = manifest
@@ -70,7 +155,10 @@ class Game:
         self.announced: set = set()
         self._flavored: set = set()   # note ids whose flavor has been shown once
         self._truths_spent = 0        # read truths traded away via confide()
-        self.seed = manifest["seed"]
+        # `run_seed` varies the run without touching the world. The baked seed alone made
+        # every run of one agent on one world byte-identical, so a harness running the same
+        # game a hundred times was reporting a binary as though it were a rate.
+        self.seed = manifest["seed"] if run_seed is None else f"{manifest['seed']}:{run_seed}"
         self.width, self.height = width, height
         self.floor = 0
         self.max_floor = max((b["depth"] for b in manifest["bosses"]), default=1)
@@ -89,6 +177,15 @@ class Game:
         self.message_tags: list[str] = []
         self.alive = True
         self.won = False
+        # Which of the four routes actually ended the run. `won` alone is a bool, which is
+        # how a 90% win rate looked healthy while every single win was the same win.
+        self.win_path: str = ""
+        # Whether this run hands its events to the next run on this world. Off by default
+        # so the evaluation harness cannot pick up cross-run state without asking for it.
+        self.chronicle_out: bool = chronicle_out
+        # Whether the warden has been dealt with, either way. The last stair reads these.
+        self._boss_felled: bool = False
+        self._boss_communed: bool = False
         self._resting = False
         self._consecutive_rest = 0
         self._tension: int = 0              # complacency counter — rises on idle, decays on action
@@ -185,11 +282,47 @@ class Game:
                 if len(bridge) >= 2:
                     know._reveal(self, bridge[0])
                     know._reveal(self, bridge[1])
-            self.player.max_hp += 8
-            self.player.hp += 8
+            # A Phase sigil, and less raw HP than before.
+            #
+            # Cartographer was the only profile that started with no sigil at all, and one
+            # of only two whose `fight` weight is negative. The brain's panic branch has
+            # exactly one escape: cast Phase. So the one profile that refuses to fight was
+            # also the one with no way out of a fight, and it was the only profile that
+            # never won a single run. whisper, the other pacifist, starts with Phase and
+            # wins most of its runs.
+            #
+            # Measured over four run seeds: no sigil wins 0 of 4, adding Phase wins 3 of 4.
+            # The +8 max HP it used to carry was compensating for the missing escape and
+            # bought nothing once the escape existed: +8 and +4 give byte-identical runs.
+            # Trimmed to +4, which matches seeker's shape of a sigil plus a modest stat.
+            self.player.max_hp += 4
+            self.player.hp += 4
+            # +1 DEF, because cartographer dies early or wins late and nothing in between.
+            #
+            # Its three wins all ended at standing 7 to 22 by the escape route, and three of
+            # its five losses were on floor 5 or 13 inside 1,600 turns. A profile with
+            # `fight` at -5 flees below 90 percent HP and kills 2 to 6 things a run, so it
+            # cannot clear a threat, and an early elite that corners it simply kills it.
+            #
+            # Swept over eight run seeds: +0 wins 3 by one route, +1 wins 4 by two,
+            # +2 wins 4 by one, +3 wins 2. Taking +1: it matches the best win count, and it
+            # is the only value that produced a second victory route, which is the actual
+            # complaint about this profile. Note the response is NOT monotonic, so eight
+            # seeds is a coarse instrument here and +1 is picked on route diversity rather
+            # than on a clean gradient.
+            #
+            # Another +4 max HP on top of this gives byte-identical runs, the same result
+            # as when +8 was trimmed to +4. Raw HP is inert for this profile; what it
+            # lacked was a way to take a hit at all.
+            self.player.defense = getattr(self.player, "defense", 0) + 1
+            sigs = self.system("sigils")
+            if sigs and len(sigs.slots) < sigs.max_slots(self):
+                sigs.slots.append({"ability": "Phase", "base": "Phase",
+                                   "durability": 2, "note": "forged", "role": "bridge"})
             self.player._known_recipes.add("prophecy_ink")
             self.player._known_recipes.add("lantern_oil")
-            self.log("You feel the resilience of countless maps and Prophecy Ink + Lantern Oil recipes.")
+            self.log("You start with a Phase sigil, a mapmaker's resilience, and "
+                     "Prophecy Ink + Lantern Oil recipes.")
             ms = self.system("marginalia")
             if ms:
                 ms.read = getattr(ms, "read", 0) + 1
@@ -210,6 +343,21 @@ class Game:
         elif agent_name == "exploiter":
             if salv:
                 salv.inventory(self).add({"brass": 1}, quality=2)
+            # +1 DEF, for the same reason cartographer got a sigil.
+            #
+            # Exploiter's highest weight by a wide margin is `shield` (15), and it was the
+            # only profile whose kit gave it nothing to shield with: two escape sigils and
+            # no defensive stat at all. It ground the middle floors, took the most damage
+            # per floor of any profile, and won 0 of 8 run seeds.
+            #
+            # Swept over eight run seeds: +0 DEF wins 0, +1 wins 3, +2 wins 5. Taking +1
+            # rather than +2 because 5 of 8 puts it above the target band and would make
+            # the fight-first profile the second strongest; +1 clears "never wins" without
+            # that. It also leaves emergent at +2 as the defensive profile.
+            #
+            # Starting state, which is the Berlin-legal lever. Nothing branches on the
+            # profile at decision time.
+            self.player.defense = getattr(self.player, "defense", 0) + 1
             sigs = self.system("sigils")
             if sigs and sigs.slots:
                 for s in sigs.slots:
@@ -234,7 +382,7 @@ class Game:
                 nodes = self.m.get("graph", {}).get("nodes", {})
                 non_player = [nid for nid in nodes if nid != self.player.source]
                 if non_player:
-                    choice = non_player[hash(agent_name + "seed") % len(non_player)]
+                    choice = non_player[droll(agent_name + "seed", len(non_player))]
                     know._reveal(self, choice)
             self.player.max_hp += 4
             self.player.hp += 4
@@ -242,9 +390,28 @@ class Game:
             if sigs and len(sigs.slots) < sigs.max_slots(self):
                 sigs.slots.append({"ability": "Recall", "base": "Recall",
                                    "durability": 2, "note": "forged", "role": "hub"})
+            # And the panic escape, which it did not have.
+            #
+            # The brain's panic branch (low HP, hostiles near) can do exactly one thing:
+            # cast Phase. Seeker started with Ward and Recall, so it could not take that
+            # branch at all, which is the same gap cartographer had. Three of seeker's five
+            # losses ended with its standing at the floor and a hunter finishing it, which
+            # is precisely the situation the panic branch exists for.
+            #
+            # Not a general rule, and it is worth saying so: artisan has never carried
+            # Phase either and sits mid-table, so a missing escape does not by itself
+            # explain a weak profile. It explained this one.
+            #
+            # Swept over eight run seeds: without Phase 4 of 8 at average floor 22.5, with
+            # it 5 of 8 at 23.6. +2 DEF was measured on the same seeds and changed nothing
+            # (4 of 8), so this is about having an escape rather than about durability.
+            if sigs and len(sigs.slots) < sigs.max_slots(self):
+                sigs.slots.append({"ability": "Phase", "base": "Phase",
+                                   "durability": 2, "note": "forged", "role": "bridge"})
             self.player._known_recipes.add("brewers_yeast")
             self.player._known_recipes.add("echo_shard")
-            self.log("You start with a forged Recall sigil and Brewer's Yeast + Echo Shard recipes.")
+            self.log("You start with forged Recall and Phase sigils and "
+                     "Brewer's Yeast + Echo Shard recipes.")
             ms = self.system("marginalia")
             if ms:
                 ms.read = getattr(ms, "read", 0) + 1
@@ -255,7 +422,7 @@ class Game:
             if fcs:
                 factions_list = list(getattr(fcs, "standing", {}).keys())
                 if factions_list:
-                    target = factions_list[hash(agent_name) % len(factions_list)]
+                    target = factions_list[droll(agent_name, len(factions_list))]
                     current = fcs.standing.get(target, 0)
                     fcs.standing[target] = min(4, current + 1)
             # Whisper starts with diplomatic insight: 2 marginalia truths pre-read
@@ -440,7 +607,14 @@ class Game:
             with open(path, "r", encoding="utf-8") as fh:
                 data = j.load(fh)
             for entry in data.get(self.seed, []):
-                self._graves[tuple(entry["pos"])] = entry["text"]
+                # Accumulate, do not overwrite. The graves FILE already appends every
+                # death, but this assigned by position, so a tile that had killed you
+                # five times loaded as one record. `_animate_graves` scales the echo off
+                # `text.count("slain by")`, which meant `deaths` was pinned at 2 forever
+                # and the escalation its code describes could not happen.
+                pos = tuple(entry["pos"])
+                prior = self._graves.get(pos)
+                self._graves[pos] = (prior + "\n" + entry["text"]) if prior else entry["text"]
         except (OSError, ValueError, KeyError):
             pass
 
@@ -465,6 +639,30 @@ class Game:
             with open(path, "w", encoding="utf-8") as fh:
                 j.dump(data, fh)
         except OSError:
+            pass
+        self._close_chronicle()
+
+    def _close_chronicle(self):
+        """Hand this run's events to the next run on this world.
+
+        Opt-in: `chronicle_out` is None unless the caller asked for it, so the evaluation
+        harness stays clean-state and reproducible. Cross-run state leaking into the
+        benchmarks is the bug that invalidated a whole balance pass; this is the same
+        class of state, and it does not get to do that silently.
+        """
+        if not getattr(self, "chronicle_out", None):
+            return
+        try:
+            from .persistence import save_chronicle
+            fcs = self.system("factions")
+            if fcs is not None:
+                from .persistence import chronicle
+                for fid, standing in getattr(fcs, "standing", {}).items():
+                    chronicle().record_faction_end(fid, standing)
+            # The world's own seed, not the run-salted one: a chronicle belongs to a
+            # world, and `run_seed` exists to vary runs within it.
+            save_chronicle(str(self.m.get("seed", self.seed)))
+        except Exception:
             pass
             from .dungeon import Level
             level = Level(w=d["w"], h=d["h"],
@@ -668,6 +866,11 @@ class Game:
             if not free:
                 break
             self.actors.append(make_echo(note, *self.spot_for(note, free)))
+            try:
+                from runtime.attractors import tracker
+                tracker().record_ghost_seen()   # a lost note haunting the world it seeded
+            except Exception:
+                pass
 
         # arrival is a threshold, not a manual: the world's name, where you stand,
         # and ONE line in the note's own voice. Rules live in the sidebar/help.
@@ -1202,101 +1405,100 @@ class Game:
         return None
 
     def emit(self, etype: str, **data):
-        """Broadcast a semantic event to every system's on_event hook."""
-        for s in self.systems:
-            s.on_event(self, etype, data)
-        if etype == "forge_used":
-            pos = data.get("pos", (self.player.x, self.player.y))
-            self.emit("noise", pos=pos, volume=6)
-            # Chronicle: forge activity persists between runs (Upheaval sanctums)
-            try:
-                from runtime.persistence import chronicle
-                r = self.region_for(self.floor)
-                if r:
-                    chronicle().record_forge(r["id"])
-            except Exception:
-                pass
-        elif etype == "corpse_spawned":
-            pos = data.get("pos")
-            if pos:
-                self.emit("noise", pos=pos, volume=4)
-        elif etype == "lore_read":
-            note_id = data.get("note", "")
-            # Chronicle: lore-reading creates ghosts in future runs
-            try:
-                from runtime.persistence import chronicle
-                chronicle().record_lore(note_id)
-            except Exception:
-                pass
-            # Recipe discovery from lore study
-            try:
-                from runtime.recipes import discover_from_lore
-                recipe = discover_from_lore(self)
-                if recipe:
-                    self.player._known_recipes.add(recipe)
-                    self.log(f"Your studies reveal the craft of {recipe}.")
-            except Exception: pass
-            if note_id and hash(f"{self.seed}:{self.turn}:lore_chain") % 100 < 30:
-                know = self.system("knowledge")
-                if know:
-                    nodes = self.m.get("graph", {}).get("nodes", {})
-                    if note_id in nodes:
-                        neighbors = nodes[note_id].get("neighbors", [])
-                        unrevealed = [n for n in neighbors if not know.is_known(n)]
-                        if unrevealed:
-                            choice_idx = hash(f"{self.seed}:{self.turn}:lore_chain:{note_id}") % len(unrevealed)
-                            choice = unrevealed[choice_idx]
-                            know.reveal(choice)
+        """Broadcast to every system. Nothing else.
 
-        # ---- Orphaned event listeners (Phase 1d: wire dormant hooks) ----
-        elif etype == "communed":
-            # Faction celebration: all factions note the communion
-            fcs = self.system("factions")
-            if fcs:
-                for fac in list(getattr(fcs, "standing", {}).keys()):
-                    try:
-                        fcs.standing[fac] = fcs.standing.get(fac, 0) + 1
-                    except Exception:
-                        pass
-            self.log("The world stills. Every faction felt that.")
-        elif etype == "becalmed":
-            # Creatures nearby flee from the pacified one
-            for a in list(self.actors):
-                if a.allegiance == "monster" and max(abs(a.x - self.player.x), abs(a.y - self.player.y)) <= 8:
-                    a.allegiance = "wild"
-                    a.brain = None
-            self.log("The violence subsides. Nearby creatures lose their taste for blood.")
-        elif etype == "recruited":
-            # Room becomes settled ground when a companion joins
-            idx = self.room_at(self.player.x, self.player.y)
-            if idx is not None:
-                self._town_rooms.add(idx)
-                for tile in self.room_tiles(idx) if hasattr(self, 'room_tiles') else []:
-                    self._town_tiles.add(tile)
-            self.log("The room settles around your new bond.")
-        elif etype == "aspect_absorbed":
-            # Weather clears in a radius around the absorption
-            if hasattr(self, '_weather_suppressed'):
-                px, py = self.player.x, self.player.y
-                for y in range(max(0, py - 3), min(self.level.h, py + 4)):
-                    for x in range(max(0, px - 3), min(self.level.w, px + 4)):
-                        self._weather_suppressed[(x, y)] = 30
-            self.log("The weather recoils from what you have become.")
-        elif etype == "weather_cleared":
-            # Flora regrows when weather clears
-            flora = self.system("flora")
-            if flora and hasattr(flora, 'plants'):
-                px, py = self.player.x, self.player.y
-                for y in range(max(0, py - 3), min(self.level.h, py + 4)):
-                    for x in range(max(0, px - 3), min(self.level.w, px + 4)):
-                        if self.level.walkable(x, y):
-                            try:
-                                flora.plants.add((x, y))
-                            except Exception:
-                                pass
-            self.log("The clearing air invites life back.")
+        This used to be three lines of broadcast followed by ninety lines of if/elif doing
+        five systems' jobs: writing faction standing directly, rewriting actor allegiance
+        and nulling brains, adding town tiles, and reaching into flora.plants, all behind
+        silent excepts. Six of thirteen event types had no system listener at all and were
+        serviced only from here. They are listeners now, which is what makes them show up
+        in the composition graph.
+
+        One system raising must not silence the systems after it. The old loop was
+        unguarded, which is the opposite of the policy `on_interact` uses.
+        """
+        for s in self.systems:
+            try:
+                s.on_event(self, etype, data)
+            except Exception:
+                if getattr(self, "debug", False):
+                    raise
+                self.log(f"({getattr(s, 'name', 'a system')} failed on {etype})")
 
     # ---- floor lifecycle ----
+    def _win(self, path: str):
+        """Record a victory and which route produced it.
+
+        boss_killed felled the warden
+        commune     communed with it
+        diplomacy   swayed it in a parley
+        truths      read enough of the vault that the last stair opened, and left
+        standing    earned the warden's house enough trust that it opened, and left
+
+        `escape` used to be a fifth value covering the last two at once, and that is why
+        it looked like the dominant strategy: it was not a strategy, it was two different
+        achievements sharing a label. It survives only as a fallback for a stair opened by
+        a route this method does not know about.
+        """
+        if self.won:
+            return
+        self.won = True
+        self.win_path = path
+        self._close_chronicle()
+
+    def egress_ready(self) -> tuple[bool, str, str]:
+        """Whether the last stair will open, and what is missing if it will not.
+
+        Escape is a legitimate ending and stays reachable: a kill-only victory would make
+        a pacifist profile strictly inferior and the whole diplomacy stack decorative,
+        which is the Berlin violation this project cares most about. What it should not be
+        is free. It cost one `descend`, checked before the floor was even generated, while
+        every other route required standing next to a twelve-attack warden. The agents
+        were pricing that menu correctly by always taking it.
+
+        So: four routes, any one of which opens the way.
+
+          - the warden is dead
+          - the warden has been communed with
+          - you carry EGRESS_TRUTHS truths, having read the vault instead
+          - you stand at EGRESS_STANDING with the warden's own house
+
+        A pure function of game state. It must never read the brain's profile name: the
+        profiles differ only in which of these four is cheapest for them, never in which
+        are available.
+        """
+        if getattr(self, "_boss_felled", False) or getattr(self, "_boss_communed", False):
+            return True, "", "warden"
+        truths = 0
+        for sys_name in ("marginalia", "history"):
+            s = self.system(sys_name)
+            truths += int(getattr(s, "read", 0) or 0) if s else 0
+        need = self.egress_truths_needed()
+        if truths >= need:
+            return True, "", "truths"
+        fcs = self.system("factions")
+        if fcs is not None:
+            boss_region = next((r for r in self.m.get("regions", [])
+                                if r.get("sourceNoteId") == self.final_boss_source), None)
+            fid = (boss_region or {}).get("factionId") or self._region_faction.get(
+                (boss_region or {}).get("id", ""), "")
+            if fid and fcs.standing_of(fid) >= EGRESS_STANDING:
+                return True, "", "standing"
+        return False, (f"Fell the warden, commune with it, carry {need} truths "
+                       f"(you have {truths}), or earn standing {EGRESS_STANDING} with "
+                       f"its house."), ""
+
+    def egress_truths_needed(self) -> int:
+        """Truths the last stair asks for, scaled to the vault.
+
+        A note yields its marginalia once per run, so a fixed threshold is a threshold
+        about vault size rather than about play: at 8 it was unreachable on the ten-note
+        sample and trivial on a large one. Half the notes, bounded.
+        """
+        notes = len(self.m.get("graph", {}).get("nodes", {})) or 1
+        return max(EGRESS_TRUTHS_MIN,
+                   min(EGRESS_TRUTHS_MAX, notes * EGRESS_TRUTHS_TENTHS // 10))
+
     def descend(self):
         if self.sandbox:
             t = self.level.tiles[self.player.y][self.player.x]
@@ -1312,10 +1514,22 @@ class Game:
             self.log("No way through here; doors (>) wait in each district's "
                      "heart, stairs (<) climb home.")
             return
+        if self.floor >= self.max_floor and not self.won:
+            ok, why, route = self.egress_ready()
+            if not ok:
+                self.log(f"The way down is shut. {why}")
+                return
+            self._egress_route = route
         self.floor += 1
-        # Victory: descending past the final boss without killing it = escape victory
+        # Victory: leaving past the warden. Named for the ROUTE that opened the stair.
+        #
+        # `escape` was not a route at all, it was the label every route got when the stair
+        # opened and the player walked through it. Two genuinely different achievements,
+        # reading the vault and earning a house's trust, were reported as one thing, and
+        # that one thing then looked like the dominant strategy at two thirds of all wins.
+        # It was not a strategy, it was a missing distinction.
         if self.floor > self.max_floor and not self.won:
-            self.won = True
+            self._win(getattr(self, "_egress_route", "") or "escape")
             self.log("You slip past the final warden and into the deep quiet. You escape."
                      " You win."
                      )
@@ -1329,8 +1543,12 @@ class Game:
             self.player._base_max_hp = self.player.max_hp
         else:
             self.player.x, self.player.y = px, py
-            # rest between floors: a fixed fraction, not a stat gain (no power creep)
-            self.player.hp = min(self.player.max_hp, self.player.hp + self.player.max_hp // 5)
+            # A reduced mend between floors. At max_hp // 5 this handed +20 HP twenty-six
+            # times for performing the exact action that wins the game, so the winning
+            # strategy was also the largest heal in it. Halved: descending still relieves,
+            # but it no longer pays for the whole descent.
+            self.player.hp = min(self.player.max_hp,
+                                 self.player.hp + self.player.max_hp // DESCEND_MEND_DIV)
         penalty = self._companion_penalty()
         self.player.max_hp = max(4, self.player._base_max_hp - penalty)
         self.player.hp = min(self.player.hp, self.player.max_hp)
@@ -1494,6 +1712,11 @@ class Game:
             if not free:
                 break
             self.actors.append(make_echo(note, *self.spot_for(note, free)))
+            try:
+                from runtime.attractors import tracker
+                tracker().record_ghost_seen()   # a lost note haunting the world it seeded
+            except Exception:
+                pass
             self.log(f"† The ruins of '{_title(note)}' stir here.")
 
         # Early-floor safety: no elite blocks the path to stairs
@@ -1726,6 +1949,33 @@ class Game:
                 return True
         return None
 
+    def _commune_discount(self, target) -> int:
+        """Truths knocked off a commune by standing with the target's house.
+
+        Factored out of the elite path so the warden is priced by the same rule rather
+        than by a special case that made the run-winning commune the only free one.
+        """
+        fcs = self.system("factions")
+        faction = getattr(target, "faction", "")
+        standing = 0
+        if fcs and faction:
+            try:
+                standing = fcs.standing.get(faction, 0)
+            except Exception:
+                standing = 0
+        return 1 if standing >= 4 else (0 if standing >= 2 else -1)
+
+    def _spend_commune(self, needed: int, bag) -> None:
+        """Pay a commune: truths first, marginalia before history, then matter."""
+        spent = 0
+        for sys_name in ("marginalia", "history"):
+            ms = self.system(sys_name)
+            while ms and getattr(ms, "read", 0) > 0 and spent < needed:
+                ms.read -= 1
+                spent += 1
+        if spent < needed and bag is not None and bag.total() >= COMMUNE_COST:
+            _spend_matter(bag, COMMUNE_COST)
+
     def commune(self):
         """Commune with a creature. Final boss: win. Any elite: lower guard, gain standing."""
         p = self.player
@@ -1734,12 +1984,19 @@ class Game:
         salv = self.system("salvage")
         bag = salv.inventory(self) if salv is not None else None
 
-        # Final boss commune: win condition (always free — reaching the boss is enough)
+        # Final boss commune: the win condition, and now priced like every other commune.
         boss = next((a for a in self.actors if a.is_boss
                       and a.source == self.final_boss_source), None)
         if boss and max(abs(boss.x - p.x), abs(boss.y - p.y)) <= 1:
+            need = max(0, BOSS_COMMUNE_TRUTHS - self._commune_discount(boss))
+            if truths < need and (bag is None or bag.total() < COMMUNE_COST):
+                self.log(f"The deepest thought does not know you yet: {need} truths, "
+                         f"or {COMMUNE_COST} matter as an offering.")
+                return False
+            self._spend_commune(need, bag)
             self.actors.remove(boss)
-            self.won = True
+            self._boss_communed = True
+            self._win("commune")
             self.log("You commune with the deepest thought in the vault. You win.")
             return True
 
@@ -1754,28 +2011,13 @@ class Game:
         # Standing discount: high-favor factions demand fewer truths
         faction = getattr(elite, "faction", "")
         fcs = self.system("factions")
-        faction_standing = 0
-        if fcs and faction:
-            try:
-                faction_standing = fcs.standing.get(faction, 0)
-            except Exception:
-                pass
-        discount = 1 if faction_standing >= 4 else (0 if faction_standing >= 2 else -1)
-        needed = max(0, COMMUNE_TRUTHS - discount)  # 2, 1, or 0 based on standing
+        needed = max(0, COMMUNE_TRUTHS - self._commune_discount(elite))  # 2, 1, or 0
         elite_cost = needed  # store for the can't-afford message
 
         if truths < needed and (bag is None or bag.total() < COMMUNE_COST):
             return False
 
-        # Pay cost: spend needed truths (from marginalia first, then history)
-        spent = 0
-        for sys_name in ("marginalia", "history"):
-            ms = self.system(sys_name)
-            while ms and getattr(ms, "read", 0) > 0 and spent < needed:
-                ms.read -= 1
-                spent += 1
-        if spent < needed and bag and bag.total() >= COMMUNE_COST:
-            _spend_matter(bag, COMMUNE_COST)
+        self._spend_commune(needed, bag)
 
         elite.allegiance = "wild"
         elite.brain = None
@@ -1797,7 +2039,7 @@ class Game:
         for a in list(self.actors):
             if a is not self.player and a.hp > 0 and a.allegiance == "monster":
                 if self.room_at(a.x, a.y) == room_idx:
-                    if hash(f"{self.seed}:{self.turn}:ripple:{a.source}") % 100 < 50:
+                    if droll(f"{self.seed}:{self.turn}:ripple:{a.source}", 100) < 50:
                         a.allegiance = "wild"
                         a.brain = None
         self.log(f"You commune with {elite.name}. It lowers its guard. +{heal_amount} HP.")
@@ -1846,11 +2088,11 @@ class Game:
         if standing >= 3:
             pass  # automatic
         elif standing >= 1:
-            if hash(f"{self.seed}:{self.turn}:becalm:{target.source}") % 100 >= 50:
+            if droll(f"{self.seed}:{self.turn}:becalm:{target.source}", 100) >= 50:
                 self.log(f"{target.name} remains wary of you.")
                 return False
         else:
-            if hash(f"{self.seed}:{self.turn}:becalm:{target.source}") % 100 >= 25:
+            if droll(f"{self.seed}:{self.turn}:becalm:{target.source}", 100) >= 25:
                 self.log(f"{target.name} refuses your gesture.")
                 return False
 
@@ -1972,7 +2214,8 @@ class Game:
             self.log(f"{target.name} regards you with recognition.")
             target.allegiance = "npc"
             if getattr(target, 'is_boss', False) and target.source == self.final_boss_source:
-                self.won = True
+                self._boss_communed = True
+                self._win("diplomacy")
                 self.log("The final boss lays down its arms. You have won through diplomacy.")
         elif choice == "flee":
             if salv and salv.inventory(self).total() >= 2:
@@ -1998,6 +2241,14 @@ class Game:
         target._home = None                    # its road is yours now
         from .sense import make_brain
         target.brain = make_brain(self, target, name="companion")
+        # A bond settles the ground it was made on. This is Game's own town state, so it
+        # belongs at the emit site rather than in a listener reaching back into Game.
+        idx = self.room_at(self.player.x, self.player.y)
+        if idx is not None:
+            self._town_rooms.add(idx)
+            for tile in (self.room_tiles(idx) if hasattr(self, "room_tiles") else []):
+                self._town_tiles.add(tile)
+            self.log("The room settles around your new bond.")
         self.emit("recruited", actor=target, pos=(target.x, target.y))
         fcs = self.system("factions")
         faction = getattr(target, "faction", "")
@@ -2009,8 +2260,12 @@ class Game:
             except Exception:
                 pass
         try:
-            from runtime.persistence import chronicle
-            chronicle().record_companion_recruited()
+            # This called `chronicle().record_companion_recruited()`. RunChronicle has no
+            # such method and never has, so it raised AttributeError straight into this
+            # except. The method lives on AttractorTracker, which is what `companion_flux`
+            # actually scores.
+            from runtime.attractors import tracker
+            tracker().record_companion_recruited()
         except Exception:
             pass
         if hasattr(self.player, '_base_max_hp'):
@@ -2078,7 +2333,7 @@ class Game:
         except Exception: pass
         return True
 
-    def wait(self):
+    def wait(self, allow_heal: bool = True):
         """Pass the turn in place. On settled ground, waiting is REST.
         Three consecutive waits enter camp mode: faster healing, status recovery.
         Outside towns, resting still provides a small heal if no hostiles are near.
@@ -2096,8 +2351,11 @@ class Game:
         room_clear = False
         if room_idx is not None:
             room_tiles = self.room_tiles(room_idx) if hasattr(self, 'room_tiles') else set()
+            # Membership in the room, not distance from the player. Measuring distance made
+            # this identical to `not near_hostile`, so the deep rest always applied and the
+            # documented 1 HP corridor rest never happened once.
             room_clear = all(
-                not self.hostile(self.player, a) or max(abs(a.x-self.player.x), abs(a.y-self.player.y)) > 4
+                not self.hostile(self.player, a) or (a.x, a.y) not in room_tiles
                 for a in self.actors
             ) if room_tiles else False
 
@@ -2114,7 +2372,18 @@ class Game:
             self.player.hp = min(self.player.hp, self.player.max_hp)
 
         # non-town resting: small heal if safe and no hostiles nearby
-        can_rest = on_town or (not near_hostile and self.player.hp < self.player.max_hp)
+        # `heal=False` is a bare turn pass. Waiting and resting used to be the same call,
+        # so a navigation stall or a cancelled action paid the agent 3 HP for standing
+        # still, and roughly three thousand of those landed in a single run.
+        # Resting is self-limiting: complacency rises while you hold still, and past the
+        # cap the ground stops giving anything back. Tension only falls through action,
+        # by killing (-20) or becalming (-15), and both of those cost faction standing or
+        # matter. That is what ties healing to the one zero-sum ledger the game has.
+        too_watched = self._tension >= TENSION_REST_CAP
+        can_rest = allow_heal and not too_watched and (
+            on_town or (not near_hostile and self.player.hp < self.player.max_hp))
+        if allow_heal and too_watched and self.player.hp < self.player.max_hp:
+            self.log("You are too watched to rest here.")
         if can_rest:
             if on_town:
                 self._consecutive_rest += 1
@@ -2128,10 +2397,18 @@ class Game:
                         self.player._slowed = 0
                         self.player.speed = getattr(self.player, "_base_speed", 1.0)
             from .body_parts import heal_body
-            # Healing: cleared room (3 HP), town rest (2-3 HP), otherwise 1 HP
+            # Where you can heal is a diplomatic fact, not a geometric one. The house that
+            # owns this ground sets the base rate: tolerated, you sleep; unwelcome, you do
+            # not. A cleared room still rests better than a corridor.
             heal = 1
-            if room_clear:
-                heal = 3
+            fcs = self.system("factions")
+            if fcs is not None and not on_town:
+                try:
+                    heal = fcs.rest_modifier(self)
+                except Exception:
+                    heal = 1
+            if room_clear and heal > 0:
+                heal = min(3, heal + 1)
                 self.log("The room is clear. You rest deeply.")
             if on_town:
                 heal = 3 if self._resting else 2
@@ -2140,9 +2417,8 @@ class Game:
             heal_body(self.player, heal)
             tag = f"+{heal} HP"
             self.log(f"You rest ({tag}).")
-            self.absorb_aspect()
         # Emergency heal: spend 1 matter for +3 HP when below 50% and no hostiles near
-        elif not near_hostile and self.player.hp * 100 < self.player.max_hp * 50:
+        elif allow_heal and not near_hostile and self.player.hp * 100 < self.player.max_hp * 50:
             salv = self.system("salvage")
             if salv and salv.inventory(self).total() >= 1:
                 bag = salv.inventory(self)
@@ -2150,7 +2426,12 @@ class Game:
                 bag.pay({richest: 1})
                 heal_body(self.player, 3)
                 self.log(f"You spend {richest} to staunch your wounds (+3 HP).")
+        # Absorbing a hazard aspect is about holding a tile, not about being wounded, so it
+        # counts every rest turn. Gating it on can_rest meant a rester at full HP never
+        # advanced the counter and could hold a tile forever for a buff that never came.
+        self.absorb_aspect()
         self.turn += 1
+        self._tick_tension(resting=allow_heal)
         self._tick_effects()
         self.enemies_act()
         self._restore_winded()
@@ -2158,6 +2439,30 @@ class Game:
             s.on_player_act(self)
 
     def interact(self):
+        # Speaking to whoever is beside you comes first. DialogueSystem.on_event listens
+        # for `interact` and nothing in real play ever emitted it, so its entire quest,
+        # offering and gossip tree ran only in a demo and a test. Eight-directional,
+        # because the rest of the game is, and ahead of the weather and corpse branches
+        # below because a person standing next to you outranks the weather.
+        # Only a Keeper the dialogue system actually owns. Any creature pacified by a
+        # parley also carries allegiance "npc", and preempting on those hijacked the other
+        # things `interact` does, most visibly clearing weather, and cost every profile
+        # its run.
+        dlg = self.system("dialogue")
+        keepers = set(id(n) for n in getattr(dlg, "npcs", []) or [])
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                who = self.actor_at(self.player.x + dx, self.player.y + dy)
+                if who is not None and id(who) in keepers:
+                    self.emit("interact", target=who)
+                    self.turn += 1
+                    self._tick_effects()
+                    self.enemies_act()
+                    for s in self.systems:
+                        s.on_player_act(self)
+                    return
         """Contextual interaction with what's underfoot: flora, structures, decay, etc.
         Iterates all systems, collects handlers, and consumes the turn if any fire."""
         if not self.alive or self.won:
@@ -2188,6 +2493,8 @@ class Game:
             self._tick_effects()
             self.enemies_act()
             self._restore_winded()
+        else:
+            self.log("Nothing here to interact with.")
         for s in self.systems:
             s.on_player_act(self)
         # Craft wires: auto-cast and condition triggers
@@ -2199,8 +2506,6 @@ class Game:
             CraftSystem.apply_wires(self, "player_hp_check", hp_pct=hp_pct)
         except Exception:
             pass
-        else:
-            self.log("Nothing here to interact with.")
 
     def repair_part(self):
         """Cogmind-style: salvage a corpse at your feet to repair your worst body part.
@@ -2309,9 +2614,14 @@ class Game:
                 self.log("No space to deploy.")
                 return False
 
-        # Create deployed entity based on sigil type
+        # Create deployed entity based on sigil type.
+        # Actor is (x, y, glyph, name, hp, max_hp, atk). This used to be called as
+        # Actor("deployed_sigil", *deployed_pos), which raised TypeError on every single
+        # invocation and was swallowed by dispatch's blanket except, so deploy has never
+        # once succeeded and recover has never had anything to recover. The name and hp
+        # below are per-ability, so the constructor values are placeholders.
         from runtime.entities import Actor
-        entity = Actor("deployed_sigil", *deployed_pos)
+        entity = Actor(deployed_pos[0], deployed_pos[1], "&", "Deployed Sigil", 3, 3, 0)
         entity.allegiance = "companion"
         entity.source = sigil.get("note", "")
         entity._deployed_sigil = sigil_index
@@ -2367,9 +2677,12 @@ class Game:
         sigs = self.system("sigils")
         if sigs is None:
             return False
+        # Adjacent, not underfoot. deploy() places the entity on a neighbouring tile and a
+        # deployed sigil is an Actor, so it blocks movement: requiring the player to stand
+        # on it made recover unreachable in play, which is why it never once succeeded.
         for a in list(self.actors):
             if getattr(a, "_is_deployed", False):
-                if a.x == self.player.x and a.y == self.player.y:
+                if max(abs(a.x - self.player.x), abs(a.y - self.player.y)) <= 1:
                     # Re-slot with 1 durability
                     from runtime.forge import ForgeSystem
                     sigil = {"note": a.source, "ability": a._deploy_ability,
@@ -2699,7 +3012,8 @@ class Game:
         if actor in self.actors:
             self.actors.remove(actor)
         if getattr(actor, 'is_boss', False) and actor.source == self.final_boss_source and not self.won:
-            self.won = True
+            self._boss_felled = True
+            self._win("boss_killed")
             self.log("The deepest thought in the vault falls silent. You win.")
         if getattr(actor, 'is_player', False):
             try:
@@ -2727,6 +3041,11 @@ class Game:
             try:
                 from runtime.persistence import chronicle
                 chronicle().record_companion_death(actor.name, cause)
+            except Exception:
+                pass
+            try:
+                from runtime.attractors import tracker
+                tracker().record_companion_died()
             except Exception:
                 pass
         if hasattr(self.player, '_base_max_hp'):
@@ -2930,12 +3249,15 @@ class Game:
         if self._rest_tile_turns < 3:
             return
 
-        weather = self.system("weather")
-        if weather is None:
-            self._rest_tile_turns = 0
-            return
-        props = getattr(weather, 'props', {})
-        tile_props = props.get(current_tile, set()) if isinstance(props, dict) else set()
+        # Any system that writes tile props can offer an aspect, not just weather. The
+        # agent's absorb-hazard candidate reads System.hazard_tiles across the whole stack,
+        # so reading only weather here made the two disagree: it would hold a reaction-laid
+        # acid tile waiting on a buff that only a weather tile could ever grant.
+        tile_props: set = set()
+        for sys_ in self.systems:
+            props = getattr(sys_, 'props', None)
+            if isinstance(props, dict):
+                tile_props |= set(props.get(current_tile, set()) or ())
         if not tile_props:
             self._rest_tile_turns = 0
             return
@@ -3086,11 +3408,12 @@ class Game:
                            and max(abs(e.x - dfn.x), abs(e.y - dfn.y)) <= 1]
             if adj_enemies:
                 import random as _rng
-                chain = adj_enemies[hash(f"{self.seed}:{self.turn}:static") % len(adj_enemies)]
+                chain = adj_enemies[droll(f"{self.seed}:{self.turn}:static", len(adj_enemies))]
                 chain.hp -= 1
                 self.log(f"Static arcs from {dfn.name} to {chain.name}.")
                 if chain.hp <= 0 and getattr(chain, 'is_boss', False) and chain.source == self.final_boss_source:
-                    self.won = True
+                    self._boss_felled = True
+                    self._win("boss_killed")
                     self.kill(chain, "static discharge")
                     self.log("The deepest thought in the vault falls silent. You win.")
         pname = {"head": "head", "torso": "chest", "legs": "legs"}.get(part, part)
@@ -3113,7 +3436,8 @@ class Game:
             return
         # a non-player actor died
         if dfn.is_boss and dfn.source == self.final_boss_source:
-            self.won = True
+            self._boss_felled = True
+            self._win("boss_killed")
             self.log("The deepest thought in the vault falls silent. You win.")
         # friend_died trigger
         from .sense import apply_trigger as _trig
@@ -3308,12 +3632,21 @@ class Game:
             if p[2] <= 0:
                 self._pulses.remove(p)
 
-    def _tick_tension(self):
-        """Complacency rises on idle, decays on action. High tension = camp risk."""
-        rate = 3 if self._resting else 1
-        self._tension += rate
+    def _tick_tension(self, resting: bool = False):
+        """Complacency rises on idle, decays on action. High tension = camp risk.
+
+        This was called only from try_move, so the one activity it is meant to price,
+        holding still, was the one activity that never advanced it. It also only ever
+        added, which made it a one-way ratchet: measured at 1,709 against a threshold of
+        200, so past the first stretch of resting it was pinned forever. Now it does what
+        its name says. Resting raises it; doing anything else works it back down.
+        """
+        if resting or self._resting:
+            self._tension += 3
+        else:
+            self._tension = max(0, self._tension - 2)
         # decay on kills: handled in attack() — subtract 20 per kill
-        if self._tension >= 200 and self.sandbox and self._on_surface():
+        if self._tension >= TENSION_ALERT and self._on_surface():
             from random import Random
             rng = Random(f"{self.seed}:tension:{self.turn}")
             if rng.random() < 0.30:
@@ -3372,7 +3705,11 @@ class Game:
                 continue
             if not self.level.walkable(*pos):
                 continue
-            deaths = text.count("slain by") + 1
+            # One record per death now that the loader accumulates. This was
+            # `count(...) + 1` against a record that could only ever hold one death, so
+            # it was the constant 2: every echo had the same HP, the same attack, the
+            # same two specials, no matter how many times that tile had killed you.
+            deaths = max(1, text.count("slain by"))
             if rng.random() < 0.08 * deaths:  # more deaths = higher chance
                 from .entities import Actor
                 echo = Actor(x=pos[0], y=pos[1], glyph="†", name=f"Echo of the Fallen",
@@ -3383,6 +3720,11 @@ class Game:
                 echo.quality = min(deaths, 4)
                 echo.flavor = text[:80]
                 self.actors.append(echo)
+                try:
+                    from runtime.attractors import tracker
+                    tracker().record_ghost_seen()
+                except Exception:
+                    pass
                 self.log(f"† A grave marker shudders — {echo.name} rises!", ambient=True)
 
     def compose_frame(self):

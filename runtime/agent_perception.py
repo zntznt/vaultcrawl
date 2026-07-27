@@ -84,6 +84,8 @@ def agent_state(game, actor) -> dict:
         "max_floor": getattr(game, "max_floor", 1),
         "boss_floor": getattr(game, "max_floor", 1),
         "commune_ready": False,
+        "egress_ready": True,
+        "egress_blocked_by": "",
     }
 
     weather_sys = game.system("weather")
@@ -615,6 +617,13 @@ def agent_state(game, actor) -> dict:
 
     # Commune gradient: agent senses the boss when truths >= 2 or matter >= 4
     position["commune_ready"] = (truths_read >= 2 or matter_total >= 4)
+    # Whether the last stair will open, and why not. Without this the agent walks to the
+    # bottom, finds the way shut, and has no idea which of the four routes to go earn.
+    try:
+        (position["egress_ready"], position["egress_blocked_by"],
+         position["egress_route"]) = game.egress_ready()
+    except Exception:
+        position["egress_ready"], position["egress_blocked_by"] = True, ""
 
     return {
         "vitals": vitals,

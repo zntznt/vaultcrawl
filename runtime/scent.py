@@ -12,6 +12,7 @@ from __future__ import annotations
 import random
 
 from runtime.systems import System
+from .det import drng
 
 _SCENT_DECAY = 1         # amount scent drops per turn
 _DIFFUSIVITY = 100        # parts per thousand — how much spreads to neighbours
@@ -55,7 +56,7 @@ class ScentSystem(System):
         """Decay all scent values, then diffuse from high to low neighbours."""
         if not self.grid:
             return
-        rng = random.Random(f"{hash(tuple(sorted(self.grid)))}:decay")
+        rng = drng(f"{sorted(self.grid)}:decay")
         # decay
         for pos in list(self.grid):
             self.grid[pos] = max(0, self.grid[pos] - _SCENT_DECAY)

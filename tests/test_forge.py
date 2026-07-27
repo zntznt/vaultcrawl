@@ -127,6 +127,10 @@ def test_auto_forge_recovers_loop():
     slots_before = len(sig.slots)
     assert forge.status_line(g) == "Forge: ready", "affordable craft advertises readiness"
 
+    # Auto-forge is off by default now: it fired every turn the player held matter, so
+    # every balance number was measured against a forge nobody chose to use. The
+    # mechanism still works, it just has to be asked for.
+    forge.auto = True
     forge.on_player_act(g)               # auto-forge fires the loop
 
     assert len(sig.slots) == slots_before + 1, "auto-forge crafted a sigil"

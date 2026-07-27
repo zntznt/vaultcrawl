@@ -1,9 +1,14 @@
 """Reactive matter — Caves of Qud-style environmental physics/chemistry.
 
 A region's ``element`` seeds the floor with reactive tile properties; those
-properties then interact each turn (fire spreads and burns out, charged + wet
-becomes a live chain-shock, acid corrodes, ice quenches flame, sacred ground
-mends). You fight the *environment* as much as the monster: every effect is a
+properties then interact each turn. Eight of the fifteen possible pairs do
+something (see ``_PAIR_REACTIONS``): water and hallowed ground put out fire,
+ice smothers it and leaves a puddle, water and ice and hallowed ground each
+take acid apart, hallowed ground earths a charge, and charged + wet is the live
+chain-shock. All six props bite: fire, acid, ice and the chain deal damage, and
+hallowed ground mends everything except what it is the opposite of. Actors
+carry fire, so a creature that catches alight sets light to the ground it runs
+over. You fight the *environment* as much as the monster: every effect is a
 small bit of positioning pressure, never power creep.
 
 Self-contained ``System`` subclass — reads game state, mutates only through the
@@ -43,6 +48,52 @@ _ELEMENT_OPPOSITE = {
     "flammable": "frozen", "frozen": "flammable",
     "corrosive": "sacred", "sacred": "corrosive",
 }
+
+# --- element chemistry: what happens when two props share a tile -------------------
+#
+# There were two interactions in the whole system: fire is quenched by adjacent ice, and
+# charged plus wet makes a live chain. Two of fifteen possible pairs, so water did not put
+# out fire and acid, despite the module docstring, corroded nothing.
+#
+# Each entry is (props_removed, prop_added, log_line). Symmetric by construction: the key
+# is a frozenset, so order cannot matter. Same-tile only, which keeps the rule something a
+# player can predict by looking at one square.
+_PAIR_REACTIONS = {
+    # water puts out fire, and both are spent doing it
+    frozenset({"fire", "wet"}):     (("fire", "wet"), None, "Steam hisses up."),
+    # ice smothers flame; the ice is spent, the tile is left wet
+    frozenset({"fire", "ice"}):     (("fire", "ice"), "wet", "The flame gutters out."),
+    # running water carries acid away
+    frozenset({"acid", "wet"}):     (("acid",), None, "The acid thins and runs off."),
+    # opposites on the element wheel: each cancels the other
+    frozenset({"acid", "sacred"}):  (("acid", "sacred"), None, "The acid is unmade."),
+    # hallowed ground does not burn
+    frozenset({"fire", "sacred"}):  (("fire",), None, "The fire will not take here."),
+    # acid freezes to an inert crust
+    frozenset({"acid", "ice"}):     (("acid", "ice"), None, "The acid crusts over."),
+    # a charge earths itself through hallowed ground
+    frozenset({"charged", "sacred"}): (("charged",), None, "The charge earths itself."),
+    # charged + wet is the live chain, handled by _chain_shock_tiles: it is a property of
+    # a whole connected component rather than of one tile, so it stays where it is.
+}
+
+# Ice conducts as readily as water does, so a charge crossing a frozen tile still runs.
+_CONDUCTORS = ("charged", "wet", "ice")
+
+_CHILL_DAMAGE = 1   # ice bites. It dealt nothing, which made half the affinity table dead.
+
+# --- actors carry fire ------------------------------------------------------------
+#
+# Every ignite() and add_prop() call site in the codebase writes to a *tile*, never to an
+# actor, so the chemistry was strictly tile-local and one step deep: a thing could stand in
+# fire and be hurt, but it could never carry the fire anywhere. This is the seam that turns
+# it into propagating chemistry. A creature that catches alight sets light to the ground it
+# runs over, which is how a fire ends up somewhere nobody placed it.
+BURN_TURNS = 3       # how long a catch lasts if nothing puts it out
+BURN_DAMAGE = 1      # per turn, before elemental affinity
+BURN_CATCH_P = 0.5   # chance per turn of catching while standing in flame
+# Standing in any of these puts you out immediately.
+_DOUSING = ("wet", "ice")
 
 # on-map glyphs (within the reactions glyph budget)
 _GLYPH = {
@@ -151,6 +202,16 @@ class ReactionSystem(System):
     def _add(self, pos, prop):
         self.props.setdefault(pos, set()).add(prop)
 
+    def _remove(self, pos, prop):
+        have = self.props.get(pos)
+        if not have:
+            return
+        have.discard(prop)
+        if prop == "fire":
+            self.fire_life.pop(pos, None)
+        if not have:
+            del self.props[pos]
+
     def _tiles_with(self, prop) -> set:
         return {pos for pos, s in self.props.items() if prop in s}
 
@@ -197,6 +258,8 @@ class ReactionSystem(System):
             self.last_player_env_damage = 0
             return
 
+        self._resolve_pairs(game)
+
         fire_tiles = self._tiles_with("fire")
         acid_tiles = self._tiles_with("acid")
         ice_tiles = self._tiles_with("ice")
@@ -218,6 +281,8 @@ class ReactionSystem(System):
             chained_any = True
         if ppos in acid_tiles:
             p_dmg += 1
+        if ppos in ice_tiles:
+            p_dmg += _CHILL_DAMAGE
         eff = game.system("effects")
         if eff is not None and eff.can_drift(game):
             p_dmg = 0   # 'drift' effect: you go weightless over hazard, unharmed
@@ -247,10 +312,14 @@ class ReactionSystem(System):
             if epos in live:
                 chained_any = True
                 # a live chain-shock bites via this tile's own conductor (charged|wet)
-                shock_el = "charged" if "charged" in props else "wet"
+                shock_el = next((c for c in _CONDUCTORS if c in props), "wet")
                 e_dmg += self._affinity(home, shock_el) * self.rng.randint(1, 2)
             if epos in acid_tiles:
                 e_dmg += self._affinity(home, "corrosive") * 1
+            if epos in ice_tiles:
+                # Ice dealt nothing at all, so `flammable` creatures could never meet the
+                # 2x from their opposite: half the affinity table was unreachable.
+                e_dmg += self._affinity(home, "frozen") * _CHILL_DAMAGE
             if e_dmg > 0:
                 en.hp -= e_dmg
                 if en.hp <= 0:
@@ -263,13 +332,112 @@ class ReactionSystem(System):
                     game.kill(en, "environment")
                     continue
             if epos in sacred_tiles:
-                en.hp = min(en.max_hp, en.hp + 1)
+                # Hallowed ground mends most things and burns what it is the opposite of.
+                # It used to heal corrosive natives too, which made `sacred` the one
+                # element that could never matter to anything.
+                if _ELEMENT_OPPOSITE.get(home) == "sacred":
+                    en.hp -= 1
+                    if en.hp <= 0:
+                        game.emit("enemy_killed", enemy=en, cause="environment")
+                        game.log(f"The {en.name} cannot abide hallowed ground.")
+                        game.kill(en, "environment")
+                        continue
+                else:
+                    en.hp = min(en.max_hp, en.hp + 1)
 
         if chained_any:
             game.log("Chain shock!")
 
-        # 2) evolve fire: quench against ice, decay, then spread to dry floor
+        # 2) burning actors carry the fire with them
+        self._tick_burning(game, fire_tiles)
+
+        # 3) evolve fire: quench against ice, decay, then spread to dry floor
         self._evolve_fire(game, fire_tiles, ice_tiles)
+
+    def _tick_burning(self, game, fire_tiles):
+        """Catch, burn, spread, and go out. The only part of the chemistry that moves.
+
+        Order matters and is deterministic: douse first so a creature that reaches water
+        this turn is out before it takes damage, then burn, then let what is still alight
+        set fire to the ground it stands on.
+        """
+        for actor in [game.player] + list(game.actors):
+            if getattr(actor, "hp", 0) <= 0:
+                continue
+            pos = (actor.x, actor.y)
+            props = self.props.get(pos, ())
+            burning = getattr(actor, "_burning", 0)
+
+            if burning and any(d in props for d in _DOUSING):
+                actor._burning = 0
+                if actor.is_player:
+                    game.log("The water puts you out.")
+                continue
+
+            if not burning and pos in fire_tiles:
+                if self.rng.random() < BURN_CATCH_P:
+                    actor._burning = BURN_TURNS
+                    if actor.is_player:
+                        game.log("You catch fire!")
+                    elif self._near_player(game, pos):
+                        game.log(f"The {actor.name} catches fire.")
+                continue
+
+            if not burning:
+                continue
+
+            actor._burning = burning - 1
+            if actor.is_player:
+                # The environment cap already applied this turn; burning is on top of it,
+                # which is what makes catching alight worth avoiding rather than shrugging off.
+                # Unlike the capped hazard damage above, burning CAN kill: it has to be
+                # routed through the death path or the player walks around on 0 HP.
+                # Same shape as the bleeding tick in game.py.
+                game.player.hp -= BURN_DAMAGE
+                if game.player.hp <= 0:
+                    game.player.hp = 0
+                    game.kill(game.player, "fire")
+                    game.alive = False
+                    game._save_death(cause="fire")
+                    game.log("You burn to death.")
+                    return
+            else:
+                home = self._enemy_home_element(game, actor)
+                actor.hp -= self._affinity(home, "flammable") * BURN_DAMAGE
+                if actor.hp <= 0:
+                    game.emit("enemy_killed", enemy=actor, cause="environment")
+                    game.log(f"The {actor.name} burns away, unnoticed.")
+                    game.kill(actor, "environment")
+                    continue
+            # and it sets light to wherever it is standing
+            if self._is_floor(game, pos) and "fire" not in props:
+                self.ignite(*pos, life=2)
+
+    def _resolve_pairs(self, game):
+        """React any two props sharing a tile, before anyone stands on the result.
+
+        Deterministic and order-independent: the reactions are keyed by frozenset and a
+        tile resolves at most one pair per turn, so a three-prop tile settles over two
+        turns rather than depending on which pair we happened to look at first.
+        """
+        spoken = set()
+        for pos in list(self.props):
+            have = self.props.get(pos)
+            if not have or len(have) < 2:
+                continue
+            for pair, (remove, add, line) in _PAIR_REACTIONS.items():
+                if pair <= have:
+                    for prop in remove:
+                        self._remove(pos, prop)
+                    if add:
+                        self._add(pos, add)
+                    if line not in spoken and self._near_player(game, pos):
+                        game.log(line)
+                        spoken.add(line)
+                    break
+
+    def _near_player(self, game, pos, radius: int = 6) -> bool:
+        return max(abs(pos[0] - game.player.x), abs(pos[1] - game.player.y)) <= radius
 
     def _chain_shock_tiles(self) -> set:
         """Connected charged|wet components that contain BOTH are live this turn."""

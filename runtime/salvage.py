@@ -221,12 +221,10 @@ class SalvageSystem(System):
                               source=s.get("note", ""), name=s.get("ability", ""))
         inv(game.player).add(comps, quality=s.get("quality", 0))
         game.log(f"You break down the {s.get('ability', 'sigil')} sigil ({_summary(comps)}).")
-        # Breakdown yields a truth — knowledge recovered from shattered form
-        try:
-            ms = game.system("marginalia")
-            if ms:
-                ms.read = getattr(ms, "read", 0) + 1
-        except Exception: pass
+        # No truth from breakdown. A sigil forges for 2 matter and broke down into matter
+        # plus a truth, while trash heaps respawn on a timer, so truths were mintable
+        # indefinitely at about 2 matter each. Understanding comes from reading the vault,
+        # not from melting your own equipment.
         return comps
 
     # ---- query API ----------------------------------------------------------

@@ -62,6 +62,8 @@ class MarginaliaSystem(System):
         self.corpus: dict = {}
         self.ground: dict = {}   # (x, y) -> note_id whose words are buried here
         self.read: int = 0
+        # Notes already read this run. Truths are finite: a note has only so much to say.
+        self.spent: set = set()
 
     def on_world_start(self, game):
         self.corpus = game.m.get("corpus", {}) or {}
@@ -76,8 +78,11 @@ class MarginaliaSystem(System):
             return
         rng = random.Random(f"{game.seed}:{game.floor}:marginalia")
         room_notes = getattr(game, "room_notes", {}) or {}
+        # Skip notes already read. on_floor_enter re-scattered with a floor-stable seed,
+        # so re-entering a floor put the same two marks back in the same places and let
+        # them be read again: truths were unbounded, printable by walking a loop.
         rooms = [(i, nid) for i, nid in sorted(room_notes.items())
-                 if self._community_for(game, nid)]
+                 if self._community_for(game, nid) and nid not in self.spent]
         rng.shuffle(rooms)
         taken = {(game.player.x, game.player.y), game.level.stairs}
         taken |= {(a.x, a.y) for a in game.actors}
@@ -89,12 +94,30 @@ class MarginaliaSystem(System):
                 self.ground[pos] = nid
 
     def on_player_act(self, game):
-        nid = self.ground.pop((game.player.x, game.player.y), None)
+        pos = (game.player.x, game.player.y)
+        nid = self.ground.pop(pos, None)
         if nid is None:
             return
         comm = self._community_for(game, nid)
         rng = random.Random(f"{game.seed}:{game.floor}:marginalia:{game.turn}")
         line = weave(comm, nid, rng) if comm else ""
+        if not line:
+            # A note is spent only when it actually says something.
+            #
+            # This burned the note either way: `spent` was added to before `weave` was
+            # even called, so a note that wove nothing was gone from every later floor
+            # and paid nothing for it. The truths route needs 5 of the roughly 8 notes a
+            # descent ever places, so each silent step cost it an eighth of its supply.
+            #
+            # It never fires on the sample corpus, where weave pays 100 times out of 100
+            # on all ten notes, so this is free here. It is a guard for a vault whose
+            # notes are too thin to weave from, which is exactly the vault that can least
+            # afford to lose the route.
+            #
+            # The mark still leaves this floor's ground, so standing on it does not
+            # re-roll every turn; the note simply stays eligible to be scattered again.
+            return
+        self.spent.add(nid)
         if line:
             self.read += 1
             game.log(f'Marginalia, in your own hand: "{line}"')

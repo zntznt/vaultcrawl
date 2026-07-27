@@ -31,6 +31,35 @@ from runtime.systems import System
 
 LOUD_CAUSES = ("melee", "sigil")  # heard by the faction; environment kills are quiet
 
+# --------------------------------------------------------------------------- #
+# pursuit: the one loop in this codebase allowed a gain above 1
+# --------------------------------------------------------------------------- #
+#
+# Every feedback loop here was capped or subcritical, which is why nothing ever ran away.
+# The alert track was the clearest case: 4 disturbance dispatched 1 to 2 hunters, and
+# killing both loudly returned 2 disturbance, so the loop returned half of what it cost
+# and always died out. Hunter tier read the FLOOR and nothing else, so provoking a house
+# repeatedly in its own country produced the same two guards, forever.
+#
+# `pursuit` is a per-faction memory of how many times that house has had to come after
+# you. Each dispatch deepens it; a deeper pursuit sends MORE hunters and needs LESS alert
+# to send them. From pursuit 2 a wave returns more disturbance than the next wave costs,
+# so it compounds instead of settling.
+#
+# It has to terminate, and it does, four ways, all of them the player's to reach:
+#   1. LEAVE. Pursuit decays every floor spent outside that house's country. Its own
+#      country is where it can find you.
+#   2. GO QUIET. An environment kill is a thread the search loses; it cools pursuit as
+#      well as alert, because the house never learns there was anything to pursue.
+#   3. MAKE PEACE. A friend with standing calling the hunters off already existed; now it
+#      clears the pursuit rather than only the current wave.
+#   4. A hard ceiling, so a player who does none of the above meets something finite.
+PURSUIT_MAX = 4          # ceiling on how deep a grudge can get
+PURSUIT_DECAY = 1        # per floor spent out of that house's country
+STANDING_THAW = 1        # hostility recovered per floor spent out of that country
+STANDING_MIN = -2        # how far heard kills can sink you: -3 is where healing stops
+_PURSUIT_FLOOR_ALERT = 2  # the alert threshold can never fall below this
+
 # faction standing perks — ranked unlocks from reputation thresholds
 _FACTION_PERK_TABLE = {
     "default": [
@@ -54,6 +83,7 @@ class FactionSystem(System):
 
     def __init__(self):
         self.disturbance: dict[str, int] = {}
+        self.pursuit: dict[str, int] = {}     # faction_id -> how deep the grudge runs
         self.standing: dict[str, int] = {}
         self._names: dict[str, str] = {}
         self._relations: dict[str, list] = {}
@@ -77,9 +107,6 @@ class FactionSystem(System):
 
     def on_world_start(self, game):
         self._build(game)
-
-    def on_floor_enter(self, game):
-        self._allies_called = set()   # reset per floor
 
     def faction_name(self, fid):
         if not fid:
@@ -108,6 +135,30 @@ class FactionSystem(System):
     def standing_of(self, faction_id) -> int:
         """Current favor with a faction (0 if never interacted with)."""
         return self.standing.get(faction_id, 0)
+
+    def rest_modifier(self, game) -> int:
+        """How much a rest restores on this floor, given who owns the ground.
+
+        Standing 0, where a player who has engaged nobody permanently sits, heals 1
+        instead of 3. Negative standing heals nothing and is heard: sleeping in hostile
+        country raises that house's alert toward its hunter threshold.
+
+        Identical for every profile. Differentiation comes from starting standing in
+        `Game.starting_kit` and from what each profile does about it, never from a
+        per-profile branch here.
+        """
+        region = game.region_for(game.floor) or {}
+        fid = region.get("factionId") or game._region_faction.get(region.get("id", ""), "")
+        standing = self.standing_of(fid) if fid else 0
+        if standing < 0 and fid:
+            # Sleeping in hostile country is heard.
+            self.disturbance[fid] = self.disturbance.get(fid, 0) + 1
+        # A gradient, not a cliff, and neutral ground still rests at the old rate. An
+        # earlier cut returned 0 for any negative standing, so a single loud kill locked a
+        # run out of healing for good: 185 rests delivering 12 HP across a whole run.
+        # Neutral heals 3 as it always did; a house that trusts you heals 4; being hated
+        # is what costs you, and only badly hated leaves you nothing.
+        return max(0, min(4, 3 + standing))
 
     # ---- helpers ---------------------------------------------------------------
     def _current_region_id(self, game):
@@ -148,6 +199,32 @@ class FactionSystem(System):
 
     # ---- kills feed the diplomacy graph (via the bus) -------------------------
     def on_event(self, game, etype, data):
+        if etype == "communed":
+            # Every house notes a communion. This wrote self.standing directly from inside
+            # Game.emit and did NOT emit standing_changed, so terrain_mod never saw it:
+            # one code path silently outside the bus while every other standing change
+            # announced itself.
+            self._build(game)
+            for fac in list(self.standing.keys()):
+                self.standing[fac] = self.standing.get(fac, 0) + 1
+                game.emit("standing_changed", faction=fac,
+                          standing=self.standing[fac], cause="communed")
+            game.log("The world stills. Every faction felt that.")
+            return
+        if etype == "becalmed":
+            # Violence subsides around a pacified creature. Rewriting allegiance and
+            # nulling brains from inside the bus dispatcher is exactly what
+            # SYSTEMS_SPEC says a system must not have done to it by Game.
+            calmed = 0
+            for a in list(game.actors):
+                if a.allegiance == "monster" and max(abs(a.x - game.player.x),
+                                                     abs(a.y - game.player.y)) <= 8:
+                    a.allegiance = "wild"
+                    a.brain = None
+                    calmed += 1
+            if calmed:
+                game.log("The violence subsides. Nearby creatures lose their taste for blood.")
+            return
         if etype != "enemy_killed":
             return
         self._build(game)
@@ -167,7 +244,21 @@ class FactionSystem(System):
         fac = self.faction_of(getattr(enemy, "source", ""))
         if fac:
             self.disturbance[fac] = self.disturbance.get(fac, 0) + 1
-            self.standing[fac] = self.standing.get(fac, 0) - 1
+            # Bottomed out, because this is the ratchet.
+            #
+            # Standing fell 1 per heard kill with nothing underneath it. Measured at end of
+            # run, a loud profile finished at -10 to -22 off ~135 heard kills while a quiet
+            # one sat near 0. `rest_modifier` returns 0 below standing -3, so past that the
+            # player cannot heal by resting at all: kill loudly, lose the heal, have to
+            # kill to survive. Probed by removing the gate outright, the profile that lives
+            # in that state went from 1 win in 8 to 5, and from floor 15 to floor 22, so
+            # this is the constraint and not a theory about one.
+            #
+            # STANDING_MIN keeps the penalty and removes the lockout: at the floor a rest
+            # still restores 1 against a friendly 3, so being hated costs two thirds of the
+            # heal rather than all of it. Same shape as the pursuit decay in D4, which is a
+            # steep loop given a terminating condition rather than a cap.
+            self.standing[fac] = max(STANDING_MIN, self.standing.get(fac, 0) - 1)
             s = self.standing[fac]
             game.emit("standing_changed", faction=fac, standing=s)
             # antagonizing a faction pleases everyone who already opposes it
@@ -188,21 +279,62 @@ class FactionSystem(System):
         if fac and self.disturbance.get(fac, 0) > 0:
             # nobody reports in; the search loses a thread
             self.disturbance[fac] = max(0, self.disturbance[fac] - 1)
+        if fac and self.pursuit.get(fac, 0) > 0:
+            # Termination 2. The house cannot pursue what it never saw happen, so going
+            # quiet is a way out of an escalation that is already running.
+            self.pursuit[fac] = max(0, self.pursuit[fac] - 1)
         name = getattr(enemy, "name", "a creature")
         game.log(f"{name} dies unseen; no one comes looking.")
 
     # ---- the world reacts on the next descent ---------------------------------
     def on_floor_enter(self, game):
+        # This class defined on_floor_enter twice; the earlier one lost to this and its
+        # per-floor ally reset never ran, so the call_ally perk could not re-fire.
+        self._allies_called = set()
         self._build(game)
         rng = random.Random(f"{game.seed}:{game.floor}:factions")
         region = game.region_for(game.floor)
         anchor = region.get("sourceNoteId", "")
         region_id = region.get("id", "")
 
+        # Termination 1: leaving is the exit. Pursuit only holds in the house's own
+        # country, so every floor spent elsewhere lets the grudge cool.
+        here = (region.get("factionId")
+                or getattr(game, "_region_faction", {}).get(region_id, ""))
+        for fac in list(self.pursuit.keys()):
+            if fac != here and self.pursuit[fac] > 0:
+                self.pursuit[fac] = max(0, self.pursuit[fac] - PURSUIT_DECAY)
+
+        # A grudge fades the same way the pursuit does, and for the same reason.
+        #
+        # Standing had no floor and no decay: it fell 1 per heard kill, forever. Measured
+        # at end of run, a loud profile finished at standing -10 to -22 while a quiet one
+        # sat near 0. That is not a difficulty curve, it is a one-way ratchet, and it is
+        # load-bearing in the worst way, because `rest_modifier` returns 0 below standing
+        # -3. Past that point the player cannot heal by resting in that house's country at
+        # all, so the loop closes: kill loudly, lose standing, lose healing, have to kill
+        # to survive, lose more standing. Gain above 1 and no exit.
+        #
+        # Giving the faction's pursuit a decay and not giving reputation one was the
+        # asymmetry. Both now cool while you are somewhere else. Hostility only: a house
+        # forgetting it hates you is a grudge fading, and it is the exit that makes the
+        # escalation survivable. A house forgetting it LIKES you would be a different rule
+        # and would quietly tax the diplomatic route, so it is not made here.
+        for fac in list(self.standing.keys()):
+            if fac != here and self.standing[fac] < 0:
+                self.standing[fac] = min(0, self.standing[fac] + STANDING_THAW)
+                game.emit("standing_changed", faction=fac,
+                          standing=self.standing[fac], cause="time")
+
         # --- Escalation: a sufficiently disturbed faction sends hunters ---
-        tier = min(5, 1 + game.floor // 4)
+        floor_tier = min(5, 1 + game.floor // 4)
         for fac in list(self.disturbance.keys()):
-            if self.disturbance.get(fac, 0) < 4:
+            grudge = self.pursuit.get(fac, 0)
+            # The threshold FALLS as the grudge deepens: a house that has already had to
+            # come after you twice does not wait as long the third time. This is the term
+            # that takes the loop past gain 1.
+            need = max(_PURSUIT_FLOOR_ALERT, 4 - grudge)
+            if self.disturbance.get(fac, 0) < need:
                 continue
             # Phase 3: Standing favor — call off hunters if a faction trusts you
             caller = None
@@ -217,9 +349,15 @@ class FactionSystem(System):
                 game.log(f"{cname} intervenes — the hunters of {fname} stand down. "
                          f"({cname} standing: {self.standing[caller]}).")
                 self.disturbance[fac] = max(0, self.disturbance[fac] - 4)
+                # Termination 3: peace ends the grudge, not just the current wave.
+                self.pursuit[fac] = 0
                 continue
             fname = self.faction_name(fac)
-            count = rng.randint(1, 2)
+            # Termination 4: the ceiling. A wave is 1 to 2 hunters plus one per level of
+            # grudge, so the escalation is steep but never unbounded.
+            grudge = min(PURSUIT_MAX, grudge)
+            count = rng.randint(1, 2) + grudge
+            tier = min(5, max(floor_tier, 1 + grudge))
             free = free_floor_tiles(
                 game.level, {(game.player.x, game.player.y), game.level.stairs}
                 | {(a.x, a.y) for a in game.actors})   # don't dispatch onto an occupied tile
@@ -244,8 +382,14 @@ class FactionSystem(System):
                 game.actors.append(hunter)
                 spawned += 1
             if spawned:
-                game.log(f"⚔ {fname} dispatches hunters.")
-            self.disturbance[fac] = 0  # alert spent
+                if grudge:
+                    game.log(f"⚔ {fname} hunts you in earnest now ({spawned}).")
+                else:
+                    game.log(f"⚔ {fname} dispatches hunters.")
+                self.pursuit[fac] = min(PURSUIT_MAX, grudge + 1)
+            # Alert is spent, not erased. Zeroing it let a player farm the spawn cycle
+            # back to a clean slate indefinitely; now repeated provocation compounds.
+            self.disturbance[fac] = max(0, self.disturbance[fac] - 4)
 
         # --- Diplomacy (water-ritual): a region that favors you grants passage ---
         cur = region.get("factionId")

@@ -76,7 +76,15 @@ def _flood(tiles, cells, rng, w, h):
                 body += 1
             for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                 n = (x + dx, y + dy)
-                if n not in seen and rng.random() < 0.75:
+                # The frontier has to stay inside the region. It used to expand through
+                # ANY neighbour, so the blob walked off the region and off the map onto the
+                # open integer plane: `seen` grew without bound while `body` only counts
+                # eligible cells, and with a 0.75 expansion chance in four directions the
+                # frontier grows about three per pop and never empties. On the shipped
+                # example world that made `Game(sandbox=True)` fail to finish in ten
+                # minutes and eat enough memory to get the test suite OOM-killed.
+                # Bounded by cellset, `seen` can never exceed the region, so it terminates.
+                if n in cellset and n not in seen and rng.random() < 0.75:
                     seen.add(n)
                     frontier.append(n)
 
