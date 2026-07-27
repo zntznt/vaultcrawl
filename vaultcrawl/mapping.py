@@ -163,9 +163,12 @@ def activity_map(notes, seed: str = "", use_mtime: bool = False) -> dict:
     across the sample vault. Min-max then amplifies those milliseconds to the full 0..1
     range, so the numbers look plausibly graded while encoding nothing but the order git
     happened to write the files in. A fresh clone therefore baked a different world than
-    the author's: different archetypes, and, through `region.activity`, a different number
-    of enemies on every floor. `activity` is not flavour, whatever `CLAUDE.md` said: six
-    mechanical consumers in the runtime read it back out of the manifest.
+    the author's: different creature archetypes, which carry different family actions,
+    glyphs and sense profiles. `activity` is not flavour, whatever `CLAUDE.md` said: six
+    mechanical consumers in the runtime read it back out of the manifest, including the
+    enemy count per floor, the parley goal, and whether a room gets a cache. (On the sample
+    vault the count happens not to move, because `round(activity * 2)` lands on the same
+    integer either way; on another vault it would.)
 
     **Min-max is the wrong estimator anyway.** Even on a vault whose mtimes are real and
     meaningful, touching one note rescales every other note's activity. Rank is scale-free

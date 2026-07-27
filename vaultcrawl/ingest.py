@@ -8,9 +8,9 @@ absolute paths -- so copying the vault to another machine yields the identical w
 
 That last sentence was false for as long as it had been written. The seed was clean, but
 `activity` was min-max normalised from mtimes and reached the mechanical layer, so a clone
-really did bake a different world: different creature archetypes, and a different number of
-enemies on every floor. mtimes are now read but unused unless a caller opts in with
-`use_mtime_activity`; the default source is a stable per-note hash, which reproduces what
+really did bake a different world: different creature archetypes, and with them different
+family actions, glyphs and sense profiles. mtimes are now read but unused unless a caller
+opts in with `use_mtime_activity`; the default is a stable per-note hash, which reproduces
 recency actually supplied (a spread uncorrelated with graph position) without the clock.
 See mapping.activity_map().
 """

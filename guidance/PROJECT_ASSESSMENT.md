@@ -2635,8 +2635,43 @@ Two needed rewriting first, and the reason is worth keeping:
   `activitySource` marker alone made them unequal. The marker is not the feature; it compares
   activity values now.
 
-### Cost
+### Cost: the new baseline, and a prediction of mine that was wrong
 
-`examples/world.json` is regenerated, which moves the balance baseline: region activity
-changed, so `round(activity * 2)` changed, so the enemy count per floor changed. Re-measured
-below, per invariant 7.
+`examples/world.json` is regenerated, so the world every balance number was measured against
+is a different world. Re-measured per invariant 7, clean `~/.vaultcrawl`, `PYTHONHASHSEED=0`,
+8 runs per profile.
+
+**I predicted the mechanism wrongly.** The plan and the commit message both said region
+activity would change `round(activity * 2)` and therefore the enemy count per floor. It does
+not: the bonus is `[1, 1]` in the old world and `[1, 1]` in the new one. Activity moved
+(`0.501, 0.523` to `0.489, 0.611`) but never across a rounding boundary. What actually changed
+is the bestiary, three archetypes of seven (`chorus` to `myriad`, `scribe` to `gloom`, `seraph`
+to `warden`, and those carry different family actions, glyphs and sense profiles), plus the
+parley goal, cache richness, area kinds, interiors and landmark types, which are the other five
+consumers.
+
+| | before (22 of 48) | after (16 of 48) |
+|---|---|---|
+| aggregate | 45.8% | **33.3%** |
+| artisan | 2 | 3 |
+| cartographer | 5 | 4 |
+| emergent | 3 | 1 |
+| exploiter | 4 | 1 |
+| seeker | 4 | 1 |
+| whisper | 4 | 6 |
+| win paths | commune 10, standing 6, boss_killed 4, truths 2 | commune 6, standing 5, boss_killed 3, truths 2 |
+
+**33.3% is below the 40 to 60 band, and it is not being retuned here.** Retuning is a separate
+decision and mixing it into a determinism fix would make both unreadable.
+
+**It is also not distinguishable from noise, and saying otherwise would overclaim.** The drop is
+12.5 points; the standard error of the difference between two 48-run binomials at these rates is
+9.9 points, so `z = 1.26` and two-tailed `p` is about 0.21. Worse for the claim: 12.5 points is
+*exactly* the per-arm noise budget `CLAUDE.md` already tells you to assume. Four profiles moved
+down and two moved up, which is not a clean signal either. So the honest statement is: the point
+estimate is below the band, and 48 runs cannot tell whether the world is genuinely harder or
+this is the documented flakiness. Resolving it means more runs, not more tuning.
+
+What did not degrade: all four win routes are still live, the top route is 38% of wins (it was
+45%), and every profile still wins at least one way, so nothing became unreachable. The spread
+across profiles is wider than before, 12.5% to 75%, with whisper now the strongest.

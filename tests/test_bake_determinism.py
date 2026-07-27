@@ -8,8 +8,8 @@ files in. Measured on this repo: a 5.3 millisecond spread, amplified by min-max 
 0..1 range.
 
 It was not cosmetic. `activity` is read back out of the manifest by six mechanical
-consumers, the loudest being `runtime/game.py`'s `n = 2 + floor//4 + round(activity * 2)`,
-the number of enemies on every floor. It also reached `_archetype_for`, and archetype picks
+consumers, among them `runtime/game.py`'s `n = 2 + floor//4 + round(activity * 2)`, the
+number of enemies on every floor. It also reached `_archetype_for`, and archetype picks
 the creature's glyph, and glyph picks its sense profile: a `scribe` is a mind_seer that
 senses thought through walls, a `gloom` is plain sighted. A file timestamp decided what a
 creature could perceive.
