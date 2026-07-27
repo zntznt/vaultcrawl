@@ -100,10 +100,17 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
    Do not run the suite concurrently with `agent_eval`: together they OOM.
 6. `ponytail:` comments mark deliberate shortcuts. Prefer deleting over adding.
    (Two: `vaultcrawl/evolve.py` and `vaultcrawl/corpus.py`. This said zero, which was wrong.)
-7. **Balance changes must be measured, not argued.** `runtime/pressure.py` reports decision
-   margin, label share, win-path split and policy divergence. Run the eval from a clean
-   `~/.vaultcrawl` with `PYTHONHASHSEED=0` or the numbers are not comparable to anyone
-   else's. See `guidance/PROJECT_ASSESSMENT.md` for the current baseline.
+7. **Balance changes must be measured, not argued, and 8 seeds is not a measurement.**
+   `runtime/pressure.py` reports decision margin, label share, win-path split and policy
+   divergence. Run the eval from a clean `~/.vaultcrawl` with `PYTHONHASHSEED=0` or the
+   numbers are not comparable to anyone else's. **Use `--runs 48`, not 8.** Measured on one
+   world and one commit, going from 8 to 48 seeds moved every profile, four of them by two
+   or three wins' worth: artisan 37.5 to 18.8%, cartographer 50 to 22.9%, emergent 12.5 to
+   29.2%, whisper 75 to 50%. The old "+/-1 win per 8-seed arm" guidance understated the
+   spread by about three times. The current baseline is **77 of 288, 26.7%, 95% interval
+   [22.0, 32.1]**, which is below the 40-60 band; see `guidance/PROJECT_ASSESSMENT.md`.
+   `agent_eval` writes per-run rows into `eval_stats.json`, so use those for spread rather
+   than quoting a mean.
 
 ## Known issues
 

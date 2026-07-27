@@ -2675,3 +2675,109 @@ this is the documented flakiness. Resolving it means more runs, not more tuning.
 What did not degrade: all four win routes are still live, the top route is 38% of wins (it was
 45%), and every profile still wins at least one way, so nothing became unreachable. The spread
 across profiles is wider than before, 12.5% to 75%, with whisper now the strongest.
+
+---
+
+## The band, settled at 288 runs
+
+The 48-run figure could not tell a real shift from noise, so the sample was widened to 48
+seeds per profile. Clean `~/.vaultcrawl`, `PYTHONHASHSEED=0`, run after the boss-placement
+crash fix.
+
+**77 of 288, 26.7%, Wilson 95% interval [22.0, 32.1].** The band is 40 to 60. The interval
+lies **entirely below it**, so this is no longer a judgement call: the agents lose.
+
+| profile | wins | rate | 95% interval | median floor | IQR |
+|---|---|---|---|---|---|
+| whisper | 24/48 | **50.0%** | [36.4, 63.6] | 26.0 | 15.0 to 27.0 |
+| emergent | 14/48 | 29.2% | [18.2, 43.2] | 21.0 | 13.0 to 26.0 |
+| cartographer | 11/48 | 22.9% | [13.3, 36.5] | 12.0 | 7.0 to 26.0 |
+| exploiter | 11/48 | 22.9% | [13.3, 36.5] | 24.0 | 12.2 to 26.0 |
+| artisan | 9/48 | 18.8% | [10.2, 31.9] | 20.0 | 12.5 to 26.0 |
+| seeker | 8/48 | 16.7% | [8.7, 29.6] | 25.5 | 12.0 to 26.0 |
+
+**whisper is the only profile whose interval touches the band at all.** Every other one is
+entirely below 40.
+
+### What the 8-seed arms were actually measuring
+
+Nothing you could rely on. The same profiles, same world, same code, at 8 seeds and then 48:
+
+| profile | 8 seeds | 48 seeds |
+|---|---|---|
+| artisan | 37.5% | 18.8% |
+| cartographer | 50.0% | 22.9% |
+| emergent | 12.5% | 29.2% |
+| exploiter | 12.5% | 22.9% |
+| seeker | 12.5% | 16.7% |
+| whisper | 75.0% | 50.0% |
+
+Every one moved, four of them by two or three wins' worth, against a documented budget of
+one win per arm. `CLAUDE.md`'s "+/-1 win of noise per 8-seed arm" understates it by a factor
+of about three. **Any conclusion in this document drawn from an 8-seed arm should be treated
+as unmeasured** until it is redone at 48. The aggregate figures are safer, being six arms
+pooled, but the per-profile claims are not.
+
+One thing the wider sample did NOT change: the first 8 seeds of each profile reproduce their
+earlier results exactly (artisan 3, cartographer 4, emergent 1, exploiter 1). So this is a
+sampling effect, not run-to-run flakiness, and not the boss-placement fix either.
+
+### The characterisation, and it holds
+
+Raw kill counts confound with how long a profile survives, so normalise by turns:
+
+| profile | kills | turns | kills per 1000 turns | median floor | win rate |
+|---|---|---|---|---|---|
+| emergent | 35.3 | 4566 | **7.73** | 21.0 | 29.2% |
+| exploiter | 18.6 | 5128 | 3.63 | 24.0 | 22.9% |
+| seeker | 11.6 | 5237 | 2.22 | 25.5 | 16.7% |
+| artisan | 13.1 | 7036 | 1.86 | 20.0 | 18.8% |
+| cartographer | 5.9 | 3430 | 1.72 | 12.0 | 22.9% |
+| whisper | 6.6 | 6891 | **0.96** | 26.0 | 50.0% |
+
+emergent kills at **eight times** whisper's rate. That is not a survival artifact, and it is
+far too large to be sampling noise, though it cannot carry an interval because the eval
+recorded only means. (Fixed going forward: the dump now carries per-run rows.)
+
+So the berserker and the diplomat are real, and they were never authored. They fall out of
+scoring weights. Two corrections to the earlier reading, both from the 8-seed arms:
+
+- **"emergent dies shallow" is false.** Median floor 21 and the second-best win rate. It is
+  violent and it is effective.
+- **"whisper ends at nearly full health" is false.** 96.9 average HP at 8 seeds, 52.0 at 48.
+- **whisper is not the least violent.** cartographer is, marginally, at 1.72 per 1000 turns.
+
+The sharpest character is one nobody named: **seeker reaches a median floor of 25.5, deeper
+than every profile except whisper, and wins least of all at 16.7%.** It arrives and it cannot
+finish.
+
+### Route concentration is back
+
+Across all 77 wins: **standing 38 (49%)**, boss_killed 18 (23%), commune 16 (21%), truths 5
+(6%). The earlier pass drove the top route down to 45% of wins at 48 runs; at 288 it is 49%
+and `standing` is the clear monoculture. `truths` at 6% is close to vestigial.
+
+Per profile, the routes each one actually uses:
+
+| profile | routes |
+|---|---|
+| artisan | standing 7, commune 2 |
+| cartographer | standing 5, boss_killed 3, commune 2, truths 1 |
+| emergent | commune 5, standing 5, boss_killed 3, truths 1 |
+| exploiter | boss_killed 5, standing 5, commune 1 |
+| seeker | standing 4, commune 2, boss_killed 2 |
+| whisper | standing 12, boss_killed 5, commune 4, truths 3 |
+
+Every profile still wins at least two ways and three win all four, so nothing is unreachable.
+But **artisan wins only two ways**, and exploiter is the only profile that does not lead with
+`standing`.
+
+### What this does not say
+
+It does not say the world got harder when the bake was fixed. That comparison is now
+untestable at the precision that matters: the old 22/48 was an 8-seed measurement, and the
+table above shows 8-seed measurements move by up to three wins. Re-running the old world at
+48 seeds would settle it and has not been done.
+
+It also does not license a retune. 26.7% is a measurement, not a target, and deciding what to
+do about it is a separate piece of work from finding out.
