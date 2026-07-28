@@ -60,15 +60,15 @@ rather than rhetorical:
 - **They are harness-shaped.** The 500-turn floor abandonment and the anti-stall BFS in
   `run_agent` (`agent_eval.py:126`, `:201`) are properties of the evaluation, not of the game.
 
-So 50% would not mean the game is fairly tuned for a person, and 26.7% does not mean it is
-punishing. The number means something in two ways only: compared against its own recorded
+So 50% would not mean the game is fairly tuned for a person, and the low twenties does not mean
+it is punishing. The number means something in two ways only: compared against its own recorded
 history, and read through the conditions below.
 
 ### The health checklist
 
 This is the actual contract. Every line is checkable from one `eval_stats.json` at 144 runs or
-more. Current readings are the 288-run death measurement, six profiles, on the corrected
-telemetry: before it, panic turns were recorded as repeats of the previous decision and
+more. Current readings are the 288-run pass after the graded-name fix, six profiles, on the
+corrected telemetry: before it, panic turns were recorded as repeats of the previous decision and
 `label_share` was truncated to the top 8 of about 30 before `policy_divergence` was computed
 from it, so every figure in this table older than that was drawn from a contaminated
 distribution.
@@ -76,12 +76,15 @@ distribution.
 | condition | field | limit | current |
 |---|---|---|---|
 | every profile can win | `agent_stats[a].win_rate` | above 0 for all six | 6 of 6 |
-| every route is used | pooled `agent_stats[a].win_paths` | all 4 present | 4 of 4 |
-| no route dominates | pooled `win_paths` | top route at most 60% | 50% |
+| every route is used | pooled `agent_stats[a].win_paths` | all present | 5 of 5 |
+| no route dominates | pooled `win_paths` | top route at most 60% | 44% |
 | no verb is broken | `agent_stats[a].emergence.broken_verbs` | empty | empty |
 | decisions are contested | `pressure.uncontested_share` | at most 0.05 | 0.000 |
-| the decision space is used | `pressure.labels_used` | at least 20 | 25.1 to 30.4 |
-| profiles actually differ | `policy_divergence` | every pair above 0.10 | 0.151 to 0.506 |
+| the decision space is used | `pressure.labels_used` | at least 20 | 23.0 to 29.9 |
+| profiles actually differ | `policy_divergence` | every pair above 0.10 | 0.114 to 0.562 |
+
+`diplomacy`, the final warden laying down its arms at parley, fired for the first time in the
+run recorded here, which is why the route count is five rather than four.
 
 The first three and the last are Berlin conditions wearing measurement clothes. A profile that
 cannot win is class-locked in effect whatever the code says; a route nobody takes is a system
@@ -99,8 +102,10 @@ band. The only absolute call is degeneracy: sustained below 10% or above 80% mea
 broken rather than mistuned, because at those extremes the runs stop discriminating between
 designs at all.
 
-Current: **76 of 288, 26.4%, [21.6, 31.8]**, against 77 of 288, 26.7%, [22.0, 32.1] before the
-telemetry corrections and 34 of 144, 23.6% [17.4, 31.2] as an independent reproduction.
+Current: **63 of 288, 21.9%, [17.5, 27.0]**, against 76 of 288, 26.4% before the graded-name
+fix, 77 of 288, 26.7% before the telemetry corrections, and 34 of 144, 23.6% [17.4, 31.2] as an
+independent reproduction. The last of those steps is a measured cost of unblocking a mis-scored
+branch, not noise being chased; see `PROJECT_ASSESSMENT.md`.
 
 ### When it moves, diagnose before you tune
 

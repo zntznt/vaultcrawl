@@ -3020,3 +3020,83 @@ that fires also changes what the agent spends its turns doing.
 `policy_divergence` rose from 0.123-0.439 because it is now computed from whole policies rather
 than each profile's top 8 labels. All seven conditions hold. Route concentration at 50% is the
 closest to its limit, as it was before.
+
+## The graded-name fix: correct, real, and it did not restore the heal
+
+288 runs after the fix, same protocol. **The pre-registered mechanism check failed, so this is
+reported as a failure before anything else.**
+
+| | before | after |
+|---|---|---|
+| wins | 76/288, 26.4% [21.6, 31.8] | **63/288, 21.9% [17.5, 27.0]** |
+| deaths | 157 | 184 |
+| stalls | 55 | 41 |
+| median death floor | 12 | 10 |
+| `recall` share | 0.00% | **0.00 to 0.02%** |
+| `sigil_escape` share | 0.00% | **0.00%** |
+
+The intervals overlap, so the aggregate drop is not significant on its own. But five of six
+profiles fell, and there is a mechanism, which is worth more than the interval.
+
+### Why the heal still starves
+
+The string match was real and is fixed. It was not the reason `recall` never fires. Counting the
+three HEAL conditions separately over whole runs:
+
+| | artisan | cartographer | seeker |
+|---|---|---|---|
+| turns | 6,984 | 1,202 | 6,203 |
+| **holding no sigil at all** | **6,690 (96%)** | **684 (57%)** | **5,776 (93%)** |
+| holding a Recall | 245 | 54 | 353 |
+| below 60% HP with a Recall and a wound | 0 | 3 | 87 |
+
+**The slots are empty almost all the time.** On the one profile that did get 87 chances, it took
+the heal about once. So there are two faults behind the 0.00%, and the string match was only the
+first.
+
+### The second fault, which the fix exposed
+
+`deploy` and `recover` both score on the **`explore`** profile key (`agent.py:635`, `:641`), a
+key belonging to a different activity entirely, worth 15 to cartographer and 8 to seeker. HEAL
+scores on `recall`, worth 3 to 6, with urgency `(100 - hp) // 4`. At 50% HP that is 12 against a
+deploy candidate at 18 to 31. **Deploy outbids the heal, and deploying a Recall takes it out of
+the slots**, after which the heal cannot fire at all.
+
+Before the fix this was invisible because deploy was gated on the same broken string match, so
+the branch was unreachable for graded sigils. Unblocking it did exactly what the label shares
+show:
+
+| label | artisan | cartographer | emergent | exploiter | seeker | whisper |
+|---|---|---|---|---|---|---|
+| deploy | 0.47 to **1.78** | 0.54 to **3.55** | 0.08 to **1.09** | 0.32 to **1.10** | 0.41 to **1.55** | 0.54 to **1.60** |
+| recover | 3.26 to **7.31** | 0.77 to **5.01** | 0.27 to **2.63** | 0.85 to **3.30** | 3.55 to **6.40** | 1.17 to **3.71** |
+
+Deploy triples to sevenfold, recover follows it, and average sigils forged falls on every profile
+(whisper 3.25 to 1.62). The agent now spends its turns putting sigils on the floor and picking
+them up again, and is unarmed in between.
+
+**Correction to the previous entry.** "It is holding the heal and cannot read the label" was true
+of the string match and wrong as a complete account: the agent usually holds nothing at all. The
+label-blindness was real and worth fixing on its own terms, but it was not the cause of the
+0.00%.
+
+### Kept, and what comes next
+
+The fix stays. Deploy was producing nameless entities with no effect, the Recall beacon tick
+raised `AttributeError` the first time it ever reached execution, and the locus handed out
+duplicates of what you already carried. Those are defects whatever the win rate does, and this
+tranche pre-registered adoption on that basis.
+
+The named next lever is **the deploy and recover scoring**, which is a mis-keyed candidate rather
+than a balance number: an action that removes your survival tool should not be scored on the
+weight for exploring, and should not outbid using it. That is one tranche, and it should be
+measured against the 63 of 288 recorded here.
+
+One small gain to record: `diplomacy` appeared as a **fifth win route** (whisper, seed 46), the
+final warden laying down its arms at parley. Route concentration also fell, top route 50% to 44%.
+
+### Health checklist
+
+All seven still hold: 6 of 6 profiles win, all routes used, top route 44%, no broken verbs,
+`uncontested_share` 0.000, `labels_used` 23.0 to 29.9, `policy_divergence` 0.114 to 0.562. The
+divergence floor is now close to its 0.10 limit and is worth watching.

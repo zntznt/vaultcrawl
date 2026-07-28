@@ -115,11 +115,12 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
    `agent_eval` writes per-run rows into `eval_stats.json`, so use those for spread rather
    than quoting a mean. **Deaths are 74% of losses and they are attrition, not burst**: median
    worst single-turn fall is 17% of max HP, no run in 288 ever took a 50% hit, and every dying
-   run spent dozens of turns below 25% HP. `recall`, `sigil_escape` and `panic_phase` fire on
-   0.00% of decisions because five sites in `agent.py` match a sigil by exact string
-   (`== "Recall"`) against an `ability` that carries a quality prefix (`"Legendary Recall"`,
-   with `base` empty). The agent holds the heal and cannot read the label; that is the named
-   next lever, not a balance constant.
+   run spent dozens of turns below 25% HP. `recall` and `sigil_escape` still fire on 0.00% of
+   decisions, and the reason is **not** the graded-name blindness that was fixed in `9353050`:
+   the agent holds no sigil at all on 93 to 96% of turns, because `deploy` and `recover` are
+   scored on the `explore` profile key (worth 15 to cartographer) while HEAL is scored on
+   `recall` (worth 3 to 6), so the agent deploys its heal instead of casting it. **That
+   mis-keyed candidate is the named next lever, not a balance constant.**
    The rows also carry `egress_open`/`egress_route`/`egress_why`, which
    record what the last stair wanted at the moment the run ended, so **price a threshold from
    an evaluation you already have before spending an hour on an arm.** Counting the stalled
