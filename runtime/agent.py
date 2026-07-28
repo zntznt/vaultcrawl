@@ -73,7 +73,7 @@ def _tension_urgency(s) -> int:
 PROFILES = {
     "artisan": {
         "forge": 15, "breakdown": 10, "explore": 6,
-        "shield": 4, "recall": 4, "rest": 3,
+        "shield": 4, "recall": 4, "rest": 3, "sigil": 6,
         "fight": 1, "flee": 2, "commune": 1,
         "parley": 1, "becalm": 2, "stairs": 2,
         "shove": 3, "toss": 2, "ward": 2,
@@ -83,7 +83,7 @@ PROFILES = {
         "workspace_camp": 2,
     },
     "cartographer": {
-        "explore": 15, "shield": 5, "recall": 6, "rest": 5,
+        "explore": 15, "shield": 5, "recall": 6, "rest": 5, "sigil": 5,
         "forge": 2, "breakdown": 2,
         "fight": -5, "flee": 3, "commune": 2,
         "parley": 2, "becalm": 1, "stairs": 2,
@@ -109,7 +109,7 @@ PROFILES = {
         #
         # Berlin: a weight is a preference and never a lock. `fight` stays at 15, so this
         # still fights everything it meets; it just stops parking on floor 2 to do it.
-        "fight": 15, "shield": 10, "recall": 5, "flee": 4,
+        "fight": 15, "shield": 10, "recall": 5, "flee": 4, "sigil": 8,
         "forge": 3, "breakdown": 2, "explore": 1,
         "rest": 2, "commune": 0,
         "parley": 0, "becalm": 0, "stairs": 3,
@@ -121,7 +121,7 @@ PROFILES = {
     },
     "exploiter": {
         "shield": 15, "fight": 10, "forge": 6, "flee": 5,
-        "recall": 4, "rest": 3, "explore": 3,
+        "recall": 4, "rest": 3, "explore": 3, "sigil": 8,
         "breakdown": 2, "commune": 0,
         "parley": 1, "becalm": 1, "stairs": 2,
         "shove": 4, "toss": 8, "ward": 4,
@@ -132,7 +132,7 @@ PROFILES = {
     },
     "seeker": {
         "forge": 8, "explore": 8, "fight": 8, "shield": 8,
-        "recall": 6, "rest": 5, "flee": 5, "breakdown": 5,
+        "recall": 6, "rest": 5, "flee": 5, "breakdown": 5, "sigil": 6,
         "commune": 3, "parley": 3, "becalm": 3, "stairs": 3,
         "shove": 5, "toss": 5, "ward": 5,
         "workspace_fabricator": 6,
@@ -142,7 +142,7 @@ PROFILES = {
     },
     "whisper": {
         "parley": 15, "commune": 10, "becalm": 10, "flee": 6,
-        "rest": 5, "explore": 8, "recall": 3,
+        "rest": 5, "explore": 8, "recall": 3, "sigil": 4,
         "forge": 1, "breakdown": 1, "shield": 1,
         "fight": -5, "stairs": 2,
         "shove": 1, "toss": 6, "ward": 1,
@@ -297,7 +297,11 @@ class UniversalBrain(Brain):
                 candidates.append(("beacon", score, ("workspace", bx, by)))
 
         # ---- HEAL ----
-        reachable = (hp_pct < 60 and s["can_heal_meaningfully"] and s["vitals"]["hp"] < s["vitals"]["max_hp"])
+        # Named, not the shared `reachable` scratch variable, because the DEPLOY block far
+        # below needs this exact gate and `reachable` is reassigned a dozen times between
+        # here and there.
+        heal_reachable = (hp_pct < 60 and s["can_heal_meaningfully"] and s["vitals"]["hp"] < s["vitals"]["max_hp"])
+        reachable = heal_reachable
         if reachable:
             for i, sig in enumerate(s["sigils"]):
                 if sig.get("verb") == "Recall":
@@ -607,6 +611,10 @@ class UniversalBrain(Brain):
                 candidates.append(("locus", score, ("salvage", loc[0], loc[1])))
 
         # ---- DEPLOY SIGIL (check all sigils, pick best) ----
+        # Scored on `sigil`, not `explore`. Borrowing the exploration weight meant a
+        # cartographer valued putting a sigil on the floor at 15, the same as mapping the
+        # level, while casting the same sigil to heal scored on `recall` at 6. The agent
+        # held no sigil at all on 93 to 96% of turns and `recall` fired on 0.00% of them.
         best_deploy_score = 0
         best_deploy_action = None
         for i, sig in enumerate(s["sigils"]):
@@ -614,16 +622,30 @@ class UniversalBrain(Brain):
             deployable = {"Recall", "Phase", "Rally", "Ward", "Echo"}
             if ability not in deployable:
                 continue
+            # Do not spend the sigil you are about to cast. `reachable` above is the HEAL
+            # branch's own gate, so this suppresses deploying Recall only while casting it
+            # is actually on the table. State-based and identical for all six profiles:
+            # a preference, not a lock, and any profile still deploys Recall freely at
+            # full HP or when healing would not help.
+            if ability == "Recall" and heal_reachable:
+                continue
             has_hostiles = bool(s.get("near_hostiles"))
             has_hazards = bool(s.get("hazard_tiles"))
             state = 8
             if has_hostiles: state += 5
             if has_hazards: state += 5
-            if ability == "Recall" and hp_pct < 50: state += 10
+            # Deploying Recall used to gain +10 here at exactly the HP where the HEAL
+            # branch wants to cast it, so the two candidates spiked together and deploy
+            # won: at 40% HP, HEAL scored max(6, 15) = 15 against deploy's max(15, 18) = 18.
+            # The agent put its healing sigil on the floor instead of casting it. A Recall
+            # Beacon does heal 2 HP a turn in radius 3, so deploying it is not nonsense,
+            # but nothing scores standing in that radius, so the agent walked away from
+            # the beacon it had just paid a sigil for. Until something values the aura,
+            # the instant cast is the honest choice in a crisis.
             if ability == "Echo" and s["position"]["floor"] >= getattr(game, "max_floor", 26) - 3: state += 15
             if ability == "Ward" and has_hostiles: state += 8
             if ability == "Rally" and len(s.get("companions", [])) > 0: state += 8
-            score = _score(self.profile, "explore", state, bonus, True)
+            score = _score(self.profile, "sigil", state, bonus, True)
             if score > best_deploy_score:
                 best_deploy_score = score
                 best_deploy_action = AgentAction("deploy", index=i)
@@ -639,7 +661,7 @@ class UniversalBrain(Brain):
                     recover_pos = (a.x, a.y)
                     break
         if recover_pos:
-            score = _score(self.profile, "explore", 6, bonus, True)
+            score = _score(self.profile, "sigil", 6, bonus, True)
             if score > 0:
                 candidates.append(("recover", score, ("recover", recover_pos[0], recover_pos[1])))
 
