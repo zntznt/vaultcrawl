@@ -11,6 +11,7 @@ import random
 from .dungeon import free_floor_tiles, generate_level
 from .entities import apply_item, make_boss, make_enemy, make_item, make_player
 from .sense import make_brain
+from .sigils import base_ability
 from .upheaval import Upheaval, diminish, empower, make_echo, title as _title
 from .det import droll
 
@@ -379,7 +380,7 @@ class Game:
             sigs = self.system("sigils")
             if sigs and sigs.slots:
                 for s in sigs.slots:
-                    if s.get("ability") == "Ward":
+                    if base_ability(s) == "Ward":
                         s["durability"] = 3
                         break
             # Pre-forged Phase sigil for escape
@@ -495,7 +496,7 @@ class Game:
         sigs = self.system("sigils")
         if sigs:
             for s in sigs.slots:
-                if s.get("ability") == "Ward":
+                if base_ability(s) == "Ward":
                     s["durability"] = max(s.get("durability", 2), 5)
                     break
 
@@ -2667,7 +2668,11 @@ class Game:
         if sigs is None or sigil_index >= len(sigs.slots):
             return False
         sigil = sigs.slots[sigil_index]
-        ability = sigil.get("ability", sigil.get("base", ""))
+        # The VERB, not the display name. `sigil["ability"]` reads "Legendary Recall" once
+        # graded, so every per-ability branch below missed, and a deployed graded Recall
+        # became a nameless entity with no heal aura. Storing the verb on the entity also
+        # fixes the deployed-sigil tick, which reads `_deploy_ability` back.
+        ability = base_ability(sigil)
         px, py = self.player.x, self.player.y
 
         # Find a free adjacent tile to deploy on
@@ -3219,8 +3224,13 @@ class Game:
             ability = getattr(a, "_deploy_ability", "")
             # Recall Beacon: heal allies in radius
             if ability == "Recall":
+                # `self.is_ally` has never existed. This raised AttributeError on its first
+                # execution, and only now is that reachable: the branch is gated on
+                # `_deploy_ability == "Recall"`, and until the graded-name fix the entity
+                # always carried a display name like "Legendary Recall", so the beacon heal
+                # had never once run. Same predicate the Rally branch below already uses.
                 for ally in self.actors:
-                    if self.is_ally(ally) or ally is self.player:
+                    if getattr(ally, "allegiance", "") == "companion" or ally is self.player:
                         if max(abs(ally.x - a.x), abs(ally.y - a.y)) <= 3:
                             ally.hp = min(getattr(ally, "max_hp", ally.hp),
                                           ally.hp + 2)

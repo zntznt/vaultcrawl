@@ -249,7 +249,7 @@ class UniversalBrain(Brain):
         if hp_pct < panic_cutoff:
             if s["near_hostiles"]:
                 for i, sig in enumerate(s["sigils"]):
-                    if sig.get("ability") == "Phase" or sig.get("base") == "Phase":
+                    if sig.get("verb") == "Phase":
                         return self._forced("panic_phase", AgentAction("cast", index=i))
             if s["position"]["on_stairs"]:
                 return self._forced("panic_descend", AgentAction("descend"))
@@ -300,7 +300,7 @@ class UniversalBrain(Brain):
         reachable = (hp_pct < 60 and s["can_heal_meaningfully"] and s["vitals"]["hp"] < s["vitals"]["max_hp"])
         if reachable:
             for i, sig in enumerate(s["sigils"]):
-                if sig.get("ability") == "Recall" or sig.get("base") == "Recall":
+                if sig.get("verb") == "Recall":
                     urgency = (100 - hp_pct) // 4
                     score = _score(self.profile, "recall", urgency, bonus, True)
                     candidates.append(("recall", score, AgentAction("cast", index=i)))
@@ -381,7 +381,7 @@ class UniversalBrain(Brain):
                 # Matter and a free slot are not enough: the forge also wants proficiency.
                 reachable = _fs.can_forge(game)
         if reachable:
-            slotted = {sig.get("ability") for sig in s["sigils"]}
+            slotted = {sig.get("verb") for sig in s["sigils"]}
             for ability in ("Recall", "Ward", "Phase", "Echo", "Rally"):
                 if ability not in slotted:
                     state = s["nav"]["free_sigil_slots"] * 2 + s["matter"]["total"] // 2
@@ -467,7 +467,7 @@ class UniversalBrain(Brain):
         # ---- CAST-WARD (sigil auto-shoves enemies onto hazards) ----
         if len(s.get("adjacent_hostiles", [])) > 0:
             for i, sig in enumerate(s["sigils"]):
-                if sig.get("ability") == "Ward" or sig.get("base") == "Ward":
+                if sig.get("verb") == "Ward":
                     # Ward is especially valuable when hazards are nearby
                     has_hazard_near = bool(s.get("hazard_tiles"))
                     state = 15 + (10 if has_hazard_near else 0)
@@ -543,8 +543,7 @@ class UniversalBrain(Brain):
             elif away == (0, 0) and len(s["adjacent_hostiles"]) >= 2:
                 # --- Tier 2: Phase/Ward fallback when truly cornered ---
                 for i, sig in enumerate(s["sigils"]):
-                    ability = sig.get("ability", sig.get("base", ""))
-                    if ability in ("Phase", "Ward"):
+                    if sig.get("verb") in ("Phase", "Ward"):
                         score = _score(self.profile, "flee", 20, bonus, True)
                         candidates.append(("sigil_escape", score,
                                           AgentAction("cast", index=i)))
@@ -611,7 +610,7 @@ class UniversalBrain(Brain):
         best_deploy_score = 0
         best_deploy_action = None
         for i, sig in enumerate(s["sigils"]):
-            ability = sig.get("ability", sig.get("base", ""))
+            ability = sig.get("verb", "")
             deployable = {"Recall", "Phase", "Rally", "Ward", "Echo"}
             if ability not in deployable:
                 continue

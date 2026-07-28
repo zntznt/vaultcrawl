@@ -9,6 +9,7 @@ sensible defaults. The snapshot is pure data — no methods, no side effects.
 from __future__ import annotations
 
 from runtime.sense import hostiles, is_dangerous, points_of_interest
+from runtime.sigils import base_ability
 from runtime.tactics import _stairs
 
 
@@ -133,6 +134,11 @@ def agent_state(game, actor) -> dict:
             sigils_list.append({
                 "ability": s.get("ability", ""),
                 "base": s.get("base", ""),
+                # What the sigil DOES, with any quality prefix removed. `ability` is the
+                # display name and becomes "Legendary Recall" once graded, while `base` is
+                # left empty by the grader, so every consumer that matched either one by
+                # equality went blind at exactly the moment a sigil got good. Match on this.
+                "verb": base_ability(s),
                 "durability": s.get("durability", 0),
             })
 
