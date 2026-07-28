@@ -11,6 +11,7 @@ import random
 from .dungeon import free_floor_tiles, generate_level
 from .entities import apply_item, make_boss, make_enemy, make_item, make_player
 from .sense import make_brain
+from .sigils import base_ability
 from .upheaval import Upheaval, diminish, empower, make_echo, title as _title
 from .det import droll
 
@@ -141,6 +142,20 @@ class Game:
                  upheaval=None, systems=None, sandbox: bool = False,
                  site_cache: str = None, sprawl: float = 1.0, run_seed=None,
                  chronicle_out: bool = False):
+        # A Game IS a run, so the per-run module globals are cleared here rather than
+        # being every caller's job to remember. `reset_run_state()` already existed and
+        # said "call this at the start of every run", but only agent_eval and
+        # run_agents.py ever did, so anything else that built two Games in one process
+        # carried the first one's skill tiers into the second. Measured before the fix:
+        # the identical configuration, with a fresh HOME each time, gave matter totals of
+        # 3, 4, 5, 7, 7, 7, 9, 9 over eight runs in one process, while one run per fresh
+        # interpreter gave 3 every time. The harnesses that already call it are unharmed;
+        # the call is idempotent.
+        try:
+            from .stack import reset_run_state
+            reset_run_state()
+        except Exception:
+            pass
         self.site_cache = site_cache   # path for the grown-world cache (sandbox)
         self.sprawl = max(1.0, float(sprawl))
         self.m = manifest
@@ -234,7 +249,11 @@ class Game:
         for s in self.systems:
             s.on_world_start(self)
         if self.up.total:
-            self.messages.append(
+            # through log(), not straight onto self.messages. Appending directly skipped
+            # message_tags, so the two lists desynced by one for the rest of the run and
+            # show_log's `len(tags) == len(msgs)` guard then silently disabled every
+            # category filter. This was the only direct append in the runtime.
+            self.log(
                 f"~ The world has shifted since you last descended: {self.up.total} upheaval(s). ~")
         if sandbox:
             self._load_graves()
@@ -361,7 +380,7 @@ class Game:
             sigs = self.system("sigils")
             if sigs and sigs.slots:
                 for s in sigs.slots:
-                    if s.get("ability") == "Ward":
+                    if base_ability(s) == "Ward":
                         s["durability"] = 3
                         break
             # Pre-forged Phase sigil for escape
@@ -477,7 +496,7 @@ class Game:
         sigs = self.system("sigils")
         if sigs:
             for s in sigs.slots:
-                if s.get("ability") == "Ward":
+                if base_ability(s) == "Ward":
                     s["durability"] = max(s.get("durability", 2), 5)
                     break
 
@@ -985,7 +1004,7 @@ class Game:
                         return True
         return False
 
-    def log(self, msg: str, ambient: bool = False):
+    def log(self, msg: str, ambient: bool = False, ambient_rank: int = 0):
         # every log line is a sentence; names now begin with "the ..." so the first
         # letter is capitalized here, once, instead of at 16 call sites
         for i, ch in enumerate(msg):
@@ -993,8 +1012,8 @@ class Game:
                 if ch.islower():
                     msg = msg[:i] + ch.upper() + msg[i + 1:]
                 break
-        # ambient (weather/atmosphere) lines are mood, not events: they don't halt a
-        # travel-glide. Track the count so a front-end can tell if the newest line is one.
+        # ambient lines don't halt a travel-glide, so a front-end needs to know whether
+        # the newest line is one.
         self._last_was_ambient = ambient
         # dedup consecutive identical lines — but never dedup combat messages
         tag = "ambient" if ambient else self._tag_for(msg)
@@ -1002,11 +1021,38 @@ class Game:
             self._dup_n += 1
             self.messages[-1] = msg if self._dup_n == 1 else f"{msg} (x{self._dup_n})"
             return
+        # The one-ambient-line-per-turn cap is the design panel's, and it is global on
+        # purpose: several unrelated producers write to this channel and none of them can
+        # see the others, so the budget cannot live in any one of them. It matters because
+        # the message pane is five lines, and an unbudgeted ambient channel pushes the blow
+        # that is killing you off the screen.
+        #
+        # It sits BELOW the dedup, deliberately. Four lightning strikes in one turn collapse
+        # into a single "(x4)" line, and a rule about how many LINES there may be has no
+        # business suppressing a counter on a line that already exists.
+        #
+        # Rank breaks the tie between different lines. A perception with a bearing you can
+        # walk to beats a murmur off a static corpus, and the murmur fires from inside
+        # try_move, before the narrator has looked at the turn: without a rank the timer
+        # would win every contested turn purely by going first, which is backwards.
+        if ambient:
+            if getattr(self, "_ambient_turn", None) == self.turn:
+                if ambient_rank <= getattr(self, "_ambient_rank", 0):
+                    return
+                i = getattr(self, "_ambient_idx", -1)
+                if 0 <= i < len(self.messages) and i < len(self.message_tags):
+                    del self.messages[i]
+                    del self.message_tags[i]
+                    self._last_logged = None
+            self._ambient_turn = self.turn
+            self._ambient_rank = ambient_rank
         self._last_logged = msg
         self._dup_n = 1
         tag = "ambient" if ambient else self._tag_for(msg)
         getattr(self, "message_tags", []).extend([tag])
         self.messages.append(msg)
+        if ambient:
+            self._ambient_idx = len(self.messages) - 1
 
     def _tag_for(self, msg: str) -> str:
         """Categorize a message for filtered log display."""
@@ -1477,16 +1523,24 @@ class Game:
         if truths >= need:
             return True, "", "truths"
         fcs = self.system("factions")
+        standing = None
         if fcs is not None:
             boss_region = next((r for r in self.m.get("regions", [])
                                 if r.get("sourceNoteId") == self.final_boss_source), None)
             fid = (boss_region or {}).get("factionId") or self._region_faction.get(
                 (boss_region or {}).get("id", ""), "")
-            if fid and fcs.standing_of(fid) >= EGRESS_STANDING:
-                return True, "", "standing"
+            if fid:
+                standing = fcs.standing_of(fid)
+                if standing >= EGRESS_STANDING:
+                    return True, "", "standing"
+        # Report the standing you HAVE, not just the one you need. The truths clause always
+        # said "(you have N)" and the standing clause never did, so a run that stalled here
+        # recorded which gates existed but not how close it came to any of them. That is the
+        # difference between "it lost" and "it was one point of standing short".
+        have = f" (you have {standing})" if standing is not None else ""
         return False, (f"Fell the warden, commune with it, carry {need} truths "
-                       f"(you have {truths}), or earn standing {EGRESS_STANDING} with "
-                       f"its house."), ""
+                       f"(you have {truths}), or earn standing {EGRESS_STANDING}{have} "
+                       f"with its house."), ""
 
     def egress_truths_needed(self) -> int:
         """Truths the last stair asks for, scaled to the vault.
@@ -1565,6 +1619,20 @@ class Game:
 
         rng.shuffle(free)
 
+        # Give this floor its note map BEFORE anything asks which room a note owns.
+        # `_assign_rooms` rebuilds `room_notes` from `self.level.rooms`, and the boss
+        # placement below calls `spot_for` -> `room_of_note`, which indexes
+        # `self.level.rooms[i]` with those keys. Placing the boss first meant reading the
+        # PREVIOUS floor's map against the CURRENT floor's level: harmless while the room
+        # counts happened to match, an IndexError the moment the new floor had fewer rooms,
+        # and a boss placed by a stale map even when it did not crash. It only fires on the
+        # final floor, which is the win-condition floor, so the crash landed exactly where
+        # a run was about to be decided. Found by a 288-run eval; the 48-run one never
+        # reached the seeds that trigger it.
+        region = self.region_for(self.floor)
+        self.region_name = region["name"]
+        self._assign_rooms(region)
+
         # Boss floor: ensure boss spawns adjacent to player so it's encountered
         if self.floor == self.max_floor:
             for b in self.m["bosses"]:
@@ -1575,9 +1643,6 @@ class Game:
                         py = by
                     break
 
-        region = self.region_for(self.floor)
-        self.region_name = region["name"]
-        self._assign_rooms(region)
         anchor = region["sourceNoteId"]
         pool = self.enemies_by_region.get(region["id"]) or self.m["enemies"]
 
@@ -2439,6 +2504,15 @@ class Game:
             s.on_player_act(self)
 
     def interact(self):
+        """Contextual interaction: a Keeper beside you first, then what is underfoot,
+        flora, structures, decay and the rest. Iterates all systems, collects handlers,
+        and consumes the turn if any fire.
+
+        This docstring sat stranded in the middle of the body, below the Keeper block
+        that was later prepended above it, where Python evaluated it as a no-op string
+        and no tool read it. tests/test_keys.py::test_no_orphaned_docstrings now fails
+        on that shape, because it is how `travel` lost its `def` line and went unnoticed.
+        """
         # Speaking to whoever is beside you comes first. DialogueSystem.on_event listens
         # for `interact` and nothing in real play ever emitted it, so its entire quest,
         # offering and gossip tree ran only in a demo and a test. Eight-directional,
@@ -2463,8 +2537,6 @@ class Game:
                     for s in self.systems:
                         s.on_player_act(self)
                     return
-        """Contextual interaction with what's underfoot: flora, structures, decay, etc.
-        Iterates all systems, collects handlers, and consumes the turn if any fire."""
         if not self.alive or self.won:
             return
         weather = self.system("weather")
@@ -2596,7 +2668,11 @@ class Game:
         if sigs is None or sigil_index >= len(sigs.slots):
             return False
         sigil = sigs.slots[sigil_index]
-        ability = sigil.get("ability", sigil.get("base", ""))
+        # The VERB, not the display name. `sigil["ability"]` reads "Legendary Recall" once
+        # graded, so every per-ability branch below missed, and a deployed graded Recall
+        # became a nameless entity with no heal aura. Storing the verb on the entity also
+        # fixes the deployed-sigil tick, which reads `_deploy_ability` back.
+        ability = base_ability(sigil)
         px, py = self.player.x, self.player.y
 
         # Find a free adjacent tile to deploy on
@@ -3148,8 +3224,13 @@ class Game:
             ability = getattr(a, "_deploy_ability", "")
             # Recall Beacon: heal allies in radius
             if ability == "Recall":
+                # `self.is_ally` has never existed. This raised AttributeError on its first
+                # execution, and only now is that reachable: the branch is gated on
+                # `_deploy_ability == "Recall"`, and until the graded-name fix the entity
+                # always carried a display name like "Legendary Recall", so the beacon heal
+                # had never once run. Same predicate the Rally branch below already uses.
                 for ally in self.actors:
-                    if self.is_ally(ally) or ally is self.player:
+                    if getattr(ally, "allegiance", "") == "companion" or ally is self.player:
                         if max(abs(ally.x - a.x), abs(ally.y - a.y)) <= 3:
                             ally.hp = min(getattr(ally, "max_hp", ally.hp),
                                           ally.hp + 2)
@@ -3672,7 +3753,17 @@ class Game:
                         e = make_enemy(spec, fx, fy)
                         e.faction = self._region_faction.get(spec.get("regionId", ""), "")
                         self.actors.append(e)
-                        self.log("Something stirs in the wild, drawn by your lingering.", ambient=True)
+                        # It is placed at least 9 tiles out, which is past sight, so this
+                        # is a sound-band perception: a bearing and a place, and no word
+                        # about what it is. It used to say only "something stirs in the
+                        # wild", which named a real arrival the player had no way to find.
+                        from .narrator import bearing as _bearing
+                        _idx = self.room_at(fx, fy)
+                        _where = (self.room_label(_idx) if _idx is not None else None) \
+                            or self.region_name or "the dark"
+                        self.log(f"Something moves out there to the "
+                                 f"{_bearing(fx - self.player.x, fy - self.player.y)}, "
+                                 f"toward {_where}.", ambient=True)
 
     def _tick_aspect(self):
         """Track time spent in current region. 50+ turns grants the region's aspect."""

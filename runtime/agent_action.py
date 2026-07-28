@@ -1,5 +1,11 @@
-"""AgentAction — the 14-verb vocabulary every brain speaks, and the dispatch
+"""AgentAction, the 19-verb vocabulary every brain speaks, and the dispatch
 function that turns each verb into a deterministic game call.
+
+Nineteen, counted off dispatch() below. Four documents said fourteen and two of them
+went on to enumerate sixteen, a different sixteen each. runtime/metrics.py was the only
+place in the repo that had it right. Two of the nineteen, `talk` and `ascend`, are
+dispatched but emitted by no brain; `talk` is a strictly worse duplicate of `becalm`,
+scanning four neighbours where `becalm` scans eight.
 
 A brain returns an AgentAction; dispatch() applies it and returns True when the
 action spent the player's turn, False when nothing happened (so the runner can
@@ -12,8 +18,9 @@ from dataclasses import dataclass
 
 @dataclass
 class AgentAction:
-    kind: str   # move, wait, cast, shield, shove, interact, descend, ascend,
-                # forge, rest, talk, toss, negotiate, breakdown, commune, becalm
+    kind: str   # move, wait, cast, shield, shove, interact, descend, ascend, forge,
+                # rest, talk, toss, negotiate, breakdown, becalm, craft_consumable,
+                # commune, deploy, recover
     dx: int = 0
     dy: int = 0
     index: int = 0      # sigil slot index for cast

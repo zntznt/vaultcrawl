@@ -74,12 +74,12 @@ codebase-wide sloppiness.
 
 | # | Finding | Evidence |
 |---|---------|----------|
-| F1 | Four player verbs are unreachable dead code | `runtime/play.py:1135,1145,1160,1162` |
+| ~~F1~~ | ~~Four player verbs are unreachable dead code~~ CLOSED, see "F1 closed" below | `runtime/play.py`, `tests/test_keys.py` |
 | F2 | 20 of 66 test modules collect zero tests under pytest | `tests/test_integration.py` et al |
 | F3 | 16 collected tests fail on HEAD | 7 modules, see below |
 | ~~F4~~ | ~~No CI runs any test~~ CLOSED, see "F4 closed" below | `.github/workflows/ci.yml` |
 | F5 | Stated invariants unenforced and broadly violated | `CLAUDE.md:79,80,85` |
-| F6 | mtime reaches the mechanical layer of the bake | `vaultcrawl/mapping.py:103,291` |
+| ~~F6~~ | ~~mtime reaches the mechanical layer of the bake~~ CLOSED, see "F6 closed" below | `vaultcrawl/mapping.py` `activity_map()` |
 | F7 | Brain registry collision makes `ExploiterBrain` unreachable | `runtime/tactics.py:145` vs `runtime/agent.py:637` |
 | F8 | Eval harness runs 26 systems, the game runs 28 | `runtime/agent_eval.py:57` vs `runtime/play.py:1274` |
 | F9 | Sandbox versus classic selected by TTY detection | `runtime/play.py:1288-1290` |
@@ -93,7 +93,12 @@ codebase-wide sloppiness.
 
 ## Correctness
 
-### F1. Four player verbs are unreachable dead code
+### F1. Four player verbs are unreachable dead code [CLOSED]
+
+*Closed. The finding as written follows, and it was right about the mechanism and wrong about
+the price: it cost seven systems' interaction handlers and the whole quest-acquisition path, not
+four verbs. See "F1 closed" at the end of this document.*
+
 
 `runtime/play.py`. The `f` (forge) handler opens at line 1123. Inside it, `if i is not None:`
 at line 1128. The next four branches are indented as `elif`s of *that* conditional rather
@@ -261,7 +266,11 @@ the letter. It is not compliant with the spirit, and it means a seeded run is no
 across processes. `test_integration.py` has a determinism section; it is one of the twenty
 modules pytest never collects.
 
-### F6. mtime reaches the mechanical layer of the bake
+### F6. mtime reaches the mechanical layer of the bake [CLOSED]
+
+*Closed. The finding as written follows, and it understated the reach: the bake was the
+smaller half, and six mechanical consumers in the RUNTIME read `activity` back out of
+the manifest. See "F6 closed" at the end of this document.*
 
 Verified experimentally: copy `sample_vault` twice, `touch -d "2020-01-01"` one copy, bake
 both, diff. Result: 24 field differences, 11 of them numeric. `activity` diverges on every
@@ -392,7 +401,11 @@ profiles "reach floor 3 of 26 and stop". That was wrong. `runtime/play.py:1205` 
 that is what was asked of it, not because the agent stalls. The agent is far more capable
 than that measurement implied.
 
-### F11. Verb vocabulary has drifted from every document
+### F11. Verb vocabulary has drifted from every document [CLOSED]
+
+*Closed. `AGENT_SPEC.md`, `CLAUDE.md`, `README.md` and the `agent_action.py` docstring and
+dataclass comment all say 19 now, and all list the same 19. The two dead verbs below are
+recorded rather than removed.*
 
 `AGENT_SPEC.md:83` says 14 verbs. Its own list at `:86-87` enumerates 16. The dataclass
 docstring at `runtime/agent_action.py:15-16` lists a *different* 16. `dispatch()` implements
@@ -488,6 +501,9 @@ The project is close to several things it has not quite reached. Ordered by leve
 **1. A trustworthy build.** This is the prerequisite for everything else. CI that runs both
 test harnesses, a determinism check that bakes twice and diffs, and a grep for em dashes.
 Roughly a day of work, and it converts the spec corpus from documentation into enforcement.
+
+*Done. See "F1 closed". The count below was wrong: seven, not eight, and two of the eight
+named were already reachable.*
 
 **2. A human game as deep as the agent's.** F1 alone restores four verbs. Beyond that, the
 agent has eight verbs the human lacks. The engine is already there; the binding layer is the
@@ -2256,3 +2272,831 @@ A module that silently stopped running its assertions would still pass.
 **One interpreter.** Python 3.12, matching `pages.yml`. The failure set was cross-checked at
 module level on both 3.11 and 3.12 and is version-stable, so the pin is safe, but nothing tests
 any other version.
+
+---
+
+## F1 closed
+
+F1 called itself "the single highest-value fix in the repo" and "a four-line dedent". The first
+was right and the second was not, in three ways.
+
+### The dedent was not the whole of it
+
+`b` is the `yubn` down-left diagonal. `moves = dict(_DIRKEYS)` is consulted before the first
+`elif`, so dedenting `elif k == ord("b")` into the chain would have left breakdown exactly as
+unreachable as before, while looking repaired. It is `B` now, and `test_no_key_is_shadowed`
+asserts no key in the table collides with movement.
+
+### `a` was worth far more than a verb
+
+`Game.interact()` is the only site in the runtime that emits `interact`. That is the only
+trigger for `DialogueSystem.on_event`, which holds the only call to `quests.offer()`. So while
+`a` was dead, **a human could not acquire a quest at all**, and the `on_interact` handler in
+`flora`, `decay`, `reactions`, `sacrifice`, `structures`, `fauna` and `factions` had never once
+run in interactive play, along with `Game.clear_weather` and `Game.repair_part`. F1 counted four
+verbs. The bill was seven systems' interaction handlers and a severed quest economy.
+
+### Two crashes were sitting in the same file, and one outranked F1
+
+Neither is a verb gap. Both were found by building a headless driver for the dispatch chain, and
+neither is visible by reading.
+
+- **`draw()` raised NameError on any graded creature in the viewport.** It coloured grades with
+  `[(G, BOLD), ...]`, and `G`, `B`, `M`, `Y` and `BOLD` are locals of `_init_palette`, a
+  *sibling* function, not an enclosing scope. Python resolved them as module globals and found
+  none. `put()` swallows only `curses.error`, so it propagated. With the real system stack this
+  fires on the first frame, so **the default interactive mode did not survive to its first
+  keypress**. It is keyed on viewport position rather than fog, so a graded creature you could
+  not see was enough. This was a worse bug than F1 and no document had it.
+- **`g` raised NameError because `travel` had no `def` line.** Deleted at some point, so its
+  docstring became a no-op expression and its body became the tail of `autoexplore`. Pressing
+  `g`, an advertised key, killed the process. Pressing `o` took one explore step and then asked
+  which way you wanted to travel.
+
+A third, quieter: `menu = " ".join(...)` in the debug handler makes `menu` local to the whole
+dispatch loop, leaving `interactive()`'s `menu()` unbound for every other caller in it. That
+broke `e`, and would have broken the sacrifice shrine the moment `a` was revived.
+
+### The corrections F1 and the Potential section needed
+
+- "The agent has eight verbs the human lacks" is right by accident and wrong in membership.
+  `becalm` and `negotiate` were already reachable through the `t` talk window, and the human's
+  parley is the better one: it runs every move with a `resolve(recruit=)` branch, while the
+  agent gets one round with the last move hardcoded and can never recruit. The correct set is
+  **seven**, and it included `interact`, which F1's list omitted.
+- The gap runs both ways and nothing had said so. The human has four verbs the agent lacks:
+  `confide`, `recruit`, body-action `player_cast`, and `EffectSystem.wear`.
+
+### What was built
+
+Every one of the 19 verbs in `dispatch()` now has a key. `deploy`, `recover` and
+`craft_consumable` had none at all; the craft picker needed paging, because both existing
+pickers read a single keystroke in 1..9 and there are 25 recipes, so a plain menu would have
+left the tail of the list as unreachable as a key nothing dispatches.
+
+`KEY_TABLE` in `runtime/play.py` is now the one place the key set is written down. The status
+line and a new `?` screen both render from it. `tests/test_keys.py` parses the dispatch chain
+out of the source and asserts set equality with the table in **both** directions, walking each
+branch's `test` and never its body, which is exactly what makes it catch the F1 shape.
+
+Eleven tests, and each was proved load-bearing rather than assumed: reintroducing each bug in
+turn was measured to turn the module red, and reverting made it green.
+
+| bug put back | tests that failed |
+|---|---|
+| remove the `travel` def line | 3 |
+| re-indent the four keys into the `f` handler | 3 |
+| point breakdown back at `b` | 1 |
+| put the grade colours back out of scope | 7 |
+| restore the `menu` shadow | 1 |
+| craft through the unpaged menu | 1 |
+
+### Cost, and what this does not cover
+
+Three files changed: `runtime/play.py`, one docstring in `runtime/game.py`, and the new test
+module. `git diff -w` shows exactly ten deleted lines and nothing else, which is the proof that
+the dedent moved whitespace and nothing more. Nothing touched `agent_action.py` beyond its
+docstring, so the measured balance baseline (22/48, commune 10 / standing 6 / boss_killed 4 /
+truths 2) stands and needed no re-run.
+
+Not covered, and now the honest frontier:
+
+- **Perception, not verbs, is where the asymmetry now lives.** `agent_state()` computes
+  `predicted_traps`, `boss_weak_element`, `hazard_behind`, `encounter_options` and
+  `egress_ready`/`egress_route`, and none has a human equivalent on screen. A human plays the
+  endgame without being told which of the four win routes is open. No keybinding fixes that.
+- **The two players are not charged the same for the same verb.** `cast`, `toss`, `recover` and
+  `craft_consumable` are free for the agent and cost a human a turn, and a human's `wait()` also
+  heals. Every cell of that is a balance number and half live in `agent_action.py`.
+- **The first press of `o` does nothing**, because `KnowledgeSystem.seen` is written only in
+  `on_player_act`, so at turn 0 the player's own tile reads as unexplored at distance 0.
+- The dispatch chain is still a 200-line `elif`. It is now covered, which is the precondition
+  for restructuring it into a handler registry and knowing nothing moved.
+
+---
+
+## Potential #3 closed: the ambient narrator
+
+"A perceptible world" was ranked third by leverage and called "the highest-value unbuilt
+feature in the repo". `DESIGN_PLACE_PANEL.md` steps 5 and 6b are now built
+(`runtime/narrator.py`, `tests/test_narrator.py`) and that document is closed.
+
+### The premise in this document was wrong, and worth correcting
+
+"Twelve systems currently run every turn and are invisible" fails three ways:
+
+- **Eleven tick per turn, not twelve.** `FactionSystem` has no `on_player_act`; it is
+  event-driven and floor-gated.
+- **`render_overlay` and `status_line` are both live.** `compose_frame` calls every
+  `render_overlay`, and `play.py` calls `status_line` directly. Six systems already draw to
+  the map: flora `;`, decay `%`, reactions, structures, terrain_mod `†`, marginalia `"`.
+- **The real mechanism is a deliberate, documented priority order.** `play.py` ranks status
+  lines and everything ambient sorts last, so it truncates first, with the reason in a
+  comment: "on a short terminal the ambience is what falls off the bottom, never your build,
+  wealth, or reputation." That is a design choice, not an oversight.
+
+`ReactionSystem`, which this document listed among the silent, is the **loudest** system in
+the stack. What is actually silent is narrower: `SenseField` and `ScentSystem` rewrite
+full-map dicts every turn and emit nothing at all; `DecaySystem`'s 1 HP per turn corpse
+miasma has no message; all fauna predation and breeding is silent.
+
+### A fairness bug, not an ambience gap
+
+Acrid haze damaged the player **every third turn and mentioned it every fifteenth**, so five
+HP went missing per line. Worse, the line was tagged `ambient=True`, and an ambient line is
+specifically what tells a travel glide *not* to stop, so a player could be chipped toward
+death mid-glide and never be halted. It now speaks whenever it damages, and not as ambience.
+Damage is not atmosphere.
+
+### What the narrator is
+
+One system, appended last in the stack, that only ever reads and logs. It diffs corpses and
+elemental tiles between turns, gates the result through the player's own sense profile,
+takes the single most salient percept, re-asks live state whether the thing is still there,
+and speaks at most one line. Sight names what it found; sound and smell give a bearing and
+stay ignorant, which is `SENSES_SPEC.md`'s identifying-versus-locating split doing real work.
+
+The cap moved into `Game.log` and is global, because several unrelated producers share the
+channel and none can see the others. It sits below the duplicate collapse so four strikes
+still read as one "(x4)". Ranked, so a line you can walk to beats a place murmur off a static
+corpus, which otherwise won every contested turn by firing earlier in the turn.
+
+### Twelve tests, each proved load-bearing
+
+Reintroducing each bug was measured to turn the module red. Two of the first drafts were
+**not** load-bearing and had to be rewritten, which is the part worth recording:
+
+- The cardinal-rule test passed with the guard deleted. In ordinary play the narrator diffs
+  and speaks inside one turn, so the referent never has an opportunity to vanish in between:
+  the test was checking the invariant, not the guard. The guard is now exercised directly.
+- The wait-to-listen test passed with the advantage removed, in two separate drafts, one
+  wandering and one pacing in place. `wait` also rests, heals and ticks tension, so no
+  walking control holds the world equal and what it measured was geography. The rate is now
+  tested at the decision rather than at the outcome.
+
+### The parity test found something bigger than the narrator
+
+The balance guard began by comparing two whole playthroughs, with and without the system,
+and reported a difference. The difference was not the narrator. **Four runs of the identical
+configuration, each with its own fresh HOME, in one process, gave matter totals of 3, 4, 5
+and 7.** An inert system that did nothing at all "changed" the result the same way.
+
+So a playthrough is not a stable measuring stick, even within a process and even with the
+documented `~/.vaultcrawl` leak controlled for. This is worse than the "cross-run state
+leaks into benchmarks" note above, which is about state carried between processes.
+
+~~The strongest candidate by inspection, not proven: `senses.py` stores `id(a)`, a memory
+address, into the scent map and later compares against it to decide whose scent is whose.~~
+
+**That guess was wrong, and it was investigated the next day.** It is not `id()` and it is
+not addresses. See "The drift, diagnosed" below. The tell was in the numbers already
+printed above and I did not read it: 3, 4, 5, 7 is *monotonic*, and address noise is not.
+
+The test now asserts the property directly, fingerprinting game state around the hook, which
+is both immune to that noise and a stronger claim: not "the outcome happened to match" but
+"this system wrote nothing".
+
+### Left open
+
+- **Two perceptibility bugs in map rendering**, recorded in the last tranche and still true:
+  actors are stamped into the frame before `render_overlay` runs and reactions skips
+  non-floor cells, so a hazard under a creature is invisible; and the hazard glyphs collide
+  with the step-1 fixture glyphs, so `:` is both acid and stone.
+- **Perception parity.** The five things `agent_state()` computes that no human screen shows,
+  including which of the four win routes is open, are still agent-only. Deliberately out of
+  scope here.
+- **The place-voice timer** is still a static corpus on a cadence, which is the shape the
+  panel's own Stop-doing section warns about. It now loses the turn to any real perception,
+  which is a smaller change than deleting it.
+
+---
+
+## The drift, diagnosed
+
+The previous section guessed that the within-process drift came from `senses.py` storing
+`id(a)`, a memory address, into the scent map. **That guess was wrong.** The real cause is
+duller and more embarrassing, and the evidence against the guess was already printed in the
+same paragraph: 3, 4, 5, 7 is monotonic, and address noise is not.
+
+### What it actually is
+
+`reset_run_state()` in `runtime/stack.py` already existed, already did the right thing, and
+its own docstring already said "call this at the start of every run". **Only
+`agent_eval.py` and `run_agents.py` ever called it.** `Game.__init__` did not. So every
+other path that built two games in one process, which is the entire test suite, every
+scenario script and `play.py`, carried the previous run's skill tiers into the next one.
+
+The specific channel: `salvage._collect_heaps` adds the foraging tier to every scrap heap
+you pick, and `exercise_skill("foraging")` accumulates that tier in a module-level
+singleton with no per-run reset.
+
+### How it was found, since the first two attempts went the wrong way
+
+| step | result |
+|---|---|
+| Eight runs in one process | 3, 4, 5, 7, 7, 7, 9, 9 |
+| One run per fresh interpreter, four times | 3, 3, 3, 3 |
+| Diff of module-level container sizes between runs | nothing changed size |
+| Diff of the two runs' message traces | **196 entries each, byte-identical** |
+| Per-turn fingerprint of actors, corpses, plants, matter | identical until turn 203, where **only** matter differs |
+| Spy on every `Inventory.add` | turn 204, `_collect_heaps`: `{'scrap': 1}` in one run, `{'scrap': 2}` in the other |
+
+The monotonic sequence should have been the first clue and was not. The identical message
+traces were the second: matter changed with no log line saying so, which pointed straight
+at a silent grant rather than at anything to do with pathing or perception.
+
+### The second bug, which is why nobody noticed the first
+
+`_collect_heaps` logged `heap["matter"]`, the base amount, while granting `matter`, the base
+plus the foraging tier. So a skilled forager was told a smaller number than they received,
+and, worse, **two runs that granted different amounts produced byte-identical logs.** The
+leak was invisible to any check that read the transcript, which is what the integration
+audit does.
+
+### The fix
+
+One call, moved to where a run actually begins: `reset_run_state()` at the top of
+`Game.__init__`. A Game is a run. The two harnesses that already called it are unaffected,
+since the call is idempotent. After it, eight runs in one process give 3 every time,
+matching a fresh interpreter.
+
+`tests/test_run_isolation.py` pins all three: two games in one process agree, skills do not
+survive a new Game, and the heap reports what it gave. Each was proved load-bearing by
+reverting its fix.
+
+### Two things this changes about earlier results
+
+- **`tests/test_integration.py`'s determinism section was green for the wrong reason.** It
+  built both games up front and played them in sequence, so with the reset in place the
+  second inherited the first's skills and it began failing. It now builds each game
+  immediately before playing it. Note honestly: that section still passes even with the
+  reset removed, because by the time it runs, foraging has saturated during the earlier
+  sections and two runs both pinned at the ceiling cannot diverge. It is correct now, but
+  it is not the guard. `test_run_isolation.py` is.
+- **Every balance number in this document was produced through `agent_eval`**, which did
+  call the reset, so the 22 of 48 baseline stands. What was confounded is anything measured
+  by building games directly, which includes any ad-hoc comparison run in a shell.
+
+### Still open
+
+The `id(a)` write in `senses.py` is still there and is still a poor idea, since a memory
+address is not a stable identifier. It is simply not the cause of this. Left as found.
+
+---
+
+## F6 closed: the bake is a pure function of the vault
+
+`CLAUDE.md` listed this first under Known Issues and framed it as a flavour-layer leak that
+happened to touch `_archetype_for`. It was bigger than that in three directions.
+
+### Archetype is not flavour
+
+`entities.py:92` maps archetype to a glyph and `senses.profile_name_for` maps glyph to a
+sense profile. A `scribe` is glyph `s`, the **mind_seer** profile that senses thought through
+walls at range 10. A `gloom` is glyph `k`, plain **sighted**. Two copies of the same vault
+with different file times bake one or the other. A file modification time decided what a
+creature could perceive.
+
+### The bake was the smaller half
+
+`activity` is written into the manifest and read back by six mechanical consumers in the
+runtime. The loudest is `runtime/game.py`'s `n = 2 + floor//4 + round(region["activity"] * 2)`,
+the number of enemies on every floor; the others are the parley goal, whether a room gets a
+cache, area-kind weighting, which interior generators fire, and the type of orphan landmarks.
+Fixing `_archetype_for` alone, which is what the old wording implies, would have left all six.
+
+### The old numbers were not even degenerate, which is why nobody noticed
+
+The expectation was that a clone flattens every mtime and `activity` collapses to a constant.
+It does not. The measured spread across `sample_vault` in this checkout is **5.3
+milliseconds** of filesystem write order, and min-max normalisation amplifies that to the
+full 0..1 range. The result looks plausibly graded while encoding nothing but the order git
+happened to write the files in.
+
+### A second environment leak, previously unrecorded
+
+`bake.py` wrote `os.path.abspath(vault_path)` into `generatedFrom.vaultPath`, so the
+committed `examples/world.json` shipped with `/Users/zntznt/Repositories/vaultcrawl/...` in
+it. An environment leak into a published artifact, and independently enough to stop any
+re-bake elsewhere from matching. It is a basename now.
+
+### The design, including the version that was wrong
+
+`activity` now comes from a stable per-note hash, ranked rather than min-max normalised.
+
+The first attempt derived it from **graph position**, calling the central core "old" and the
+leaves "the frontier", which is the story `ARCHITECTURE_SPEC.md` tells about growth rings. It
+was reproducible and it collapsed the world. `runtime/arch/areakinds.py` weights an area's
+kind from the region's ANCHOR note, which is by definition its most central, and it reads
+role, degree **and** activity. Ranking activity by centrality put every anchor in the "old
+and quiet" band, every region got the same necropolis bonus, and block-glyph variety in the
+sample world fell from four kinds to two. Centrality was already a signal there; activity had
+to be a different one. Caught by `tests/test_blocks.py`, which is exactly what that test is
+for.
+
+What the mtime version actually supplied was a spread across notes **uncorrelated** with
+graph position, since editing a note today says nothing about how many things link to it. A
+hash of the note id reproduces that character exactly and is the same on every machine.
+
+Rank rather than min-max applies to both sources: min-max divides by the span, so one note
+edited today rescales every other note in the vault.
+
+Edit recency is not deleted, it is opt-in. `--mtime-activity` restores it for someone baking
+their own live vault, and stamps `generatedFrom.activitySource` so a world that cannot be
+reproduced from the vault alone says so.
+
+### What it unlocks
+
+CI now asserts that a fresh bake **equals the committed `examples/world.json`, byte for
+byte**. That check was impossible before and it collapses three worlds into one.
+
+There really were three. `.github/workflows/pages.yml` bakes `sample_vault` over
+`examples/world.json` on the runner before capturing the demo, so the published animation was
+generated from the runner's checkout order, not from the artifact the tests validate. The job
+comment claims the site "can never drift from the current build", which was true about code
+and false about the world. It is true about both now.
+
+The old CI determinism gate baked twice **on one runner in one job**, where mtimes are
+constant by construction, so it passed unconditionally while this bug was live. It tested the
+half `CLAUDE.md` already called fixed. It is replaced by the equality check above plus a
+touch-a-note-and-rebake guard.
+
+### Tests, and two of them were weaker than they looked
+
+`tests/test_bake_determinism.py`, six tests, each proved load-bearing by reverting the fix.
+Two needed rewriting first, and the reason is worth keeping:
+
+- The two "same content, different mtimes" tests stamped every file to a **single** value per
+  arm. That looks like the harsher test and is the weakest one: min-max divides by the span,
+  and a span of zero sends every note to the same activity in both arms, so the comparison
+  passes whatever the code does. They stamp a spread now, in opposite orders, which is what a
+  clone actually produces.
+- The opt-in test compared whole manifests and passed with the flag disabled, because the
+  `activitySource` marker alone made them unequal. The marker is not the feature; it compares
+  activity values now.
+
+### Cost: the new baseline, and a prediction of mine that was wrong
+
+`examples/world.json` is regenerated, so the world every balance number was measured against
+is a different world. Re-measured per invariant 7, clean `~/.vaultcrawl`, `PYTHONHASHSEED=0`,
+8 runs per profile.
+
+**I predicted the mechanism wrongly.** The plan and the commit message both said region
+activity would change `round(activity * 2)` and therefore the enemy count per floor. It does
+not: the bonus is `[1, 1]` in the old world and `[1, 1]` in the new one. Activity moved
+(`0.501, 0.523` to `0.489, 0.611`) but never across a rounding boundary. What actually changed
+is the bestiary, three archetypes of seven (`chorus` to `myriad`, `scribe` to `gloom`, `seraph`
+to `warden`, and those carry different family actions, glyphs and sense profiles), plus the
+parley goal, cache richness, area kinds, interiors and landmark types, which are the other five
+consumers.
+
+| | before (22 of 48) | after (16 of 48) |
+|---|---|---|
+| aggregate | 45.8% | **33.3%** |
+| artisan | 2 | 3 |
+| cartographer | 5 | 4 |
+| emergent | 3 | 1 |
+| exploiter | 4 | 1 |
+| seeker | 4 | 1 |
+| whisper | 4 | 6 |
+| win paths | commune 10, standing 6, boss_killed 4, truths 2 | commune 6, standing 5, boss_killed 3, truths 2 |
+
+**33.3% is below the 40 to 60 band, and it is not being retuned here.** Retuning is a separate
+decision and mixing it into a determinism fix would make both unreadable.
+
+**It is also not distinguishable from noise, and saying otherwise would overclaim.** The drop is
+12.5 points; the standard error of the difference between two 48-run binomials at these rates is
+9.9 points, so `z = 1.26` and two-tailed `p` is about 0.21. Worse for the claim: 12.5 points is
+*exactly* the per-arm noise budget `CLAUDE.md` already tells you to assume. Four profiles moved
+down and two moved up, which is not a clean signal either. So the honest statement is: the point
+estimate is below the band, and 48 runs cannot tell whether the world is genuinely harder or
+this is the documented flakiness. Resolving it means more runs, not more tuning.
+
+What did not degrade: all four win routes are still live, the top route is 38% of wins (it was
+45%), and every profile still wins at least one way, so nothing became unreachable. The spread
+across profiles is wider than before, 12.5% to 75%, with whisper now the strongest.
+
+---
+
+## The band, settled at 288 runs
+
+The 48-run figure could not tell a real shift from noise, so the sample was widened to 48
+seeds per profile. Clean `~/.vaultcrawl`, `PYTHONHASHSEED=0`, run after the boss-placement
+crash fix.
+
+**77 of 288, 26.7%, Wilson 95% interval [22.0, 32.1].** The band is 40 to 60. The interval
+lies **entirely below it**, so this is no longer a judgement call: the agents lose.
+
+| profile | wins | rate | 95% interval | median floor | IQR |
+|---|---|---|---|---|---|
+| whisper | 24/48 | **50.0%** | [36.4, 63.6] | 26.0 | 15.0 to 27.0 |
+| emergent | 14/48 | 29.2% | [18.2, 43.2] | 21.0 | 13.0 to 26.0 |
+| cartographer | 11/48 | 22.9% | [13.3, 36.5] | 12.0 | 7.0 to 26.0 |
+| exploiter | 11/48 | 22.9% | [13.3, 36.5] | 24.0 | 12.2 to 26.0 |
+| artisan | 9/48 | 18.8% | [10.2, 31.9] | 20.0 | 12.5 to 26.0 |
+| seeker | 8/48 | 16.7% | [8.7, 29.6] | 25.5 | 12.0 to 26.0 |
+
+**whisper is the only profile whose interval touches the band at all.** Every other one is
+entirely below 40.
+
+### What the 8-seed arms were actually measuring
+
+Nothing you could rely on. The same profiles, same world, same code, at 8 seeds and then 48:
+
+| profile | 8 seeds | 48 seeds |
+|---|---|---|
+| artisan | 37.5% | 18.8% |
+| cartographer | 50.0% | 22.9% |
+| emergent | 12.5% | 29.2% |
+| exploiter | 12.5% | 22.9% |
+| seeker | 12.5% | 16.7% |
+| whisper | 75.0% | 50.0% |
+
+Every one moved, four of them by two or three wins' worth, against a documented budget of
+one win per arm. `CLAUDE.md`'s "+/-1 win of noise per 8-seed arm" understates it by a factor
+of about three. **Any conclusion in this document drawn from an 8-seed arm should be treated
+as unmeasured** until it is redone at 48. The aggregate figures are safer, being six arms
+pooled, but the per-profile claims are not.
+
+One thing the wider sample did NOT change: the first 8 seeds of each profile reproduce their
+earlier results exactly (artisan 3, cartographer 4, emergent 1, exploiter 1). So this is a
+sampling effect, not run-to-run flakiness, and not the boss-placement fix either.
+
+### The characterisation, and it holds
+
+Raw kill counts confound with how long a profile survives, so normalise by turns:
+
+| profile | kills | turns | kills per 1000 turns | median floor | win rate |
+|---|---|---|---|---|---|
+| emergent | 35.3 | 4566 | **7.73** | 21.0 | 29.2% |
+| exploiter | 18.6 | 5128 | 3.63 | 24.0 | 22.9% |
+| seeker | 11.6 | 5237 | 2.22 | 25.5 | 16.7% |
+| artisan | 13.1 | 7036 | 1.86 | 20.0 | 18.8% |
+| cartographer | 5.9 | 3430 | 1.72 | 12.0 | 22.9% |
+| whisper | 6.6 | 6891 | **0.96** | 26.0 | 50.0% |
+
+emergent kills at **eight times** whisper's rate. That is not a survival artifact, and it is
+far too large to be sampling noise, though it cannot carry an interval because the eval
+recorded only means. (Fixed going forward: the dump now carries per-run rows.)
+
+So the berserker and the diplomat are real, and they were never authored. They fall out of
+scoring weights. Two corrections to the earlier reading, both from the 8-seed arms:
+
+- **"emergent dies shallow" is false.** Median floor 21 and the second-best win rate. It is
+  violent and it is effective.
+- **"whisper ends at nearly full health" is false.** 96.9 average HP at 8 seeds, 52.0 at 48.
+- **whisper is not the least violent.** cartographer is, marginally, at 1.72 per 1000 turns.
+
+The sharpest character is one nobody named: **seeker reaches a median floor of 25.5, deeper
+than every profile except whisper, and wins least of all at 16.7%.** It arrives and it cannot
+finish.
+
+### Route concentration is back
+
+Across all 77 wins: **standing 38 (49%)**, boss_killed 18 (23%), commune 16 (21%), truths 5
+(6%). The earlier pass drove the top route down to 45% of wins at 48 runs; at 288 it is 49%
+and `standing` is the clear monoculture. `truths` at 6% is close to vestigial.
+
+Per profile, the routes each one actually uses:
+
+| profile | routes |
+|---|---|
+| artisan | standing 7, commune 2 |
+| cartographer | standing 5, boss_killed 3, commune 2, truths 1 |
+| emergent | commune 5, standing 5, boss_killed 3, truths 1 |
+| exploiter | boss_killed 5, standing 5, commune 1 |
+| seeker | standing 4, commune 2, boss_killed 2 |
+| whisper | standing 12, boss_killed 5, commune 4, truths 3 |
+
+Every profile still wins at least two ways and three win all four, so nothing is unreachable.
+But **artisan wins only two ways**, and exploiter is the only profile that does not lead with
+`standing`.
+
+### What this does not say
+
+It does not say the world got harder when the bake was fixed. That comparison is now
+untestable at the precision that matters: the old 22/48 was an 8-seed measurement, and the
+table above shows 8-seed measurements move by up to three wins. Re-running the old world at
+48 seeds would settle it and has not been done.
+
+It also does not license a retune. 26.7% is a measurement, not a target, and deciding what to
+do about it is a separate piece of work from finding out.
+
+## Correcting the record: what the band is, and what it was ever measured at
+
+The 288-run figure invites an obvious response, which is to tune the game back up until the
+number returns to 40-60. Before doing that, two facts about the record above.
+
+### The band is not justified anywhere
+
+It appears in no spec. `guidance/AGENT_SPEC.md` says nothing about a target win rate; neither
+does any other file in `guidance/`. Grep the repository and every occurrence is in this
+document. Its first appearance is line 830, "just under the 40-60% band the balance pass
+targeted", which cites the band as an existing standard while being the place it enters. From
+there it is treated as given for the next 1,800 lines.
+
+So nobody wrote down what an agent win rate is **for**. That matters more than whether 26.7%
+is inside it: a target with no stated purpose cannot tell you which way to move a constant, or
+whether to move one at all.
+
+### And it was never reliably hit
+
+Every claim of being inside the band was measured below the resolution the claim needed:
+
+| claim | line | measured at |
+|---|---|---|
+| "3 of 6, 50%, the middle of the target band" | 903 | **two runs per agent** |
+| "aggregate 46%, inside the band for the first time" | 1006 | 8 seeds |
+| "23 of 48, 47.9%, inside the band" | 1114 | 8 seeds |
+| "21 of 48, 43.75%, still inside the band" | 1315 | 8 seeds |
+| "24 of 48, 50.0%, the centre of the target band" | 1460 | 8 seeds |
+| "27 of 48, 56.25%, inside the band" | 1716 | 8 seeds |
+| "45.8%, the lower half of the band" | 2189 | 8 seeds |
+
+The table at line 2706 shows 8-seed arms moving by up to three wins per profile when the same
+code, same world and same seeds are widened to 48, and the aggregate moving 45.8% to 26.7%
+purely by sampling more. **26.7% is therefore not a regression from 46%. It is the first
+aggregate this project has measured at a sample size that can support the sentence.** The
+earlier numbers are not wrong so much as unresolved: they never distinguished the arms they
+were used to distinguish.
+
+### The five constants set that way
+
+Each of these was chosen by comparing arms that differed by one to four wins at 8 seeds, which
+is inside the noise now measured. None of them is known to be wrong. What is now known is that
+the evidence offered for each could not have separated it from its neighbours:
+
+| constant | value | set in | swept at | what the sweep could actually resolve |
+|---|---|---|---|---|
+| `EGRESS_STANDING` | 7 | `0df8c3f` R5, raised 3 to 7 later | 8 seeds | nothing at this margin |
+| `EGRESS_TRUTHS_TENTHS` | 4 | `f0122b0` | 8 seeds | nothing at this margin |
+| `DESCEND_MEND_DIV` | 4 | `622770b` | 8 seeds, one arm at 2 runs per agent | nothing at this margin |
+| `BOSS_COMMUNE_TRUTHS` | 2 | `1c2006e` | 8 seeds, and the value came from a test file | nothing at this margin |
+| `COMMUNE_PULL_BASE` | 12 | `0d5e744` | 8 seeds | nothing at this margin |
+
+The point of writing this down is not to relitigate five decisions. It is that a sixth decision
+made the same way would compound the problem rather than fix it, so the next constant this
+project moves has to be moved on a sample that can decide.
+
+## The first sweep run at a size that could decide: EGRESS_STANDING
+
+Four arms, 144 runs each (24 seeds per profile, all six profiles), 576 runs total. Each arm
+from a clean `~/.vaultcrawl` at `PYTHONHASHSEED=0`, sequential, never concurrent with the test
+suite. The decision rule was fixed before the first arm ran: **adopt a value other than 7 only
+if its interval does not overlap the interval for gate 7.**
+
+| gate | wins | rate | 95% interval | died | stalled |
+|---|---|---|---|---|---|
+| 7 (current) | 34/144 | 23.6% | [17.4, 31.2] | 82 | 28 |
+| 6 | 34/144 | 23.6% | [17.4, 31.2] | 82 | 28 |
+| 5 | 38/144 | 26.4% | [19.9, 34.1] | 81 | 25 |
+| 3 | 42/144 | 29.2% | [22.4, 37.1] | 82 | 20 |
+
+**Every arm overlaps every other. Nothing is adopted. `EGRESS_STANDING` stays at 7.**
+
+Gate 3 was measured but was never adoptable: `FRIEND_STANDING` is 4, and an escape gate that
+asks for less than the standing at which a house merely stops fighting you is the inversion
+`tests/test_pressure.py` already guards. It is in the table to show the shape of the curve.
+
+Two things the sweep establishes beyond the rule.
+
+**Gate 7 at 144 runs reproduces the 288-run baseline.** 23.6% [17.4, 31.2] against 26.7%
+[22.0, 32.1]. The instrument agrees with itself at two sample sizes, which is the first time
+that has been checked.
+
+**The constant's total authority is bounded, and the bound is below the band.** Deaths are 82,
+82, 81, 82 across the four arms: the gate cannot touch them, because a run that dies on floor
+14 does not reach the last stair. Only the stall column moves, at about two wins per point of
+gate. At gate 7 there are 28 stalls, so even deleting the gate outright and letting every
+stalled run walk out gives at most 62/144 = **43.1%, [35.2, 51.3]**, the bottom edge of the
+band, bought by making escape free again. That is exactly what `0df8c3f` R5 introduced the
+constant to stop. **The gate is not the lever, and no setting of it reaches the band.**
+
+### The stall standings predicted the sweep before it ran
+
+The per-run egress capture landed the arm before, so arm 1 could be asked which standing each
+stalled run actually held: 0 (x8), 1 (x3), 2 (x4), 3 (x8), 4 (x1), 5 (x3), and never 6. Counting
+the stalls a lower gate would have released gave a prediction for each remaining arm:
+
+| gate | predicted | actual |
+|---|---|---|
+| 6 | 34 | 34 |
+| 5 | 37 | 38 |
+| 3 | 46 | 42 |
+
+Exact at one point of gate, within a win at two, and four wins optimistic at four. The
+over-prediction is informative rather than a failure: a lower gate does not merely re-score the
+ending, it opens the stair earlier and the run diverges from there, so 8 of the 12 counted
+stalls converted and the rest went on to fail some other way. Route counts confirm the
+mechanism, `standing` wins rising 15 to 26 while the other three routes fall by 3 between them.
+
+The practical consequence: **a threshold change can now be priced from a single existing
+evaluation, and only the promising ones need an arm.** Gate 6 cost an hour to confirm a
+prediction of "no change" that the capture had already made for free.
+
+### Where the losses actually are
+
+- **All 28 stalls are at floor 26.** A stall is exactly what it was assumed to be: arrived at
+  the bottom, could not open the stair.
+- **69 of 82 deaths happen at standing 0.** For the majority of losing runs the standing
+  economy is not merely priced wrong, it is never entered at all.
+- Deaths are 74% of losses at every gate. Nothing in this sweep addressed them.
+
+So the honest reading is that the question stopped being a tuning question. The remaining move
+is the one in the plan's step 4: write down in `guidance/AGENT_SPEC.md` what an agent win rate
+is **for**, and judge 26.7% against that rather than against a band nobody justified.
+
+**Done, in `guidance/AGENT_SPEC.md` §What the win rate is for.** The answer is that the rate
+carries no target: the agents are an instrument for showing the systems are reachable and the
+decisions are real, not a difficulty proxy for a person, and they do not even run the same level
+generator the default interactive mode uses. Health is seven structural conditions checkable
+from one `eval_stats.json`. All seven currently hold; the closest to its limit is route
+concentration at 44% of wins against a ceiling of 60%, or 49% on the 288-run batch. The
+aggregate is reported with an interval and compared against the
+history in this document, with degeneracy below 10% or above 80% the only absolute call. Every
+in-band claim above stays exactly as written: it is the record of what was believed, not a
+standard anyone should now measure against.
+
+## What kills a run: attrition, with a healing sigil in hand it cannot see
+
+The escape-gate sweep left deaths as 74% of losses and untouched by any threshold. This is the
+first measurement that asked what they are. 288 runs on the corrected telemetry (see below),
+clean `~/.vaultcrawl`, `PYTHONHASHSEED=0`.
+
+**76 of 288, 26.4%, [21.6, 31.8]**, against the 77 of 288, 26.7%, [22.0, 32.1] baseline. One
+win apart, so the telemetry work moved nothing, which is what a telemetry change should do.
+157 died, 55 stalled.
+
+### It is attrition, not burst
+
+The obvious hypothesis from the old numbers was a burst: `hurt_share` said agents spent 2 to 17%
+of turns below half health, so it looked like they were healthy and then suddenly dead. **Wrong.**
+
+| reading | value |
+|---|---|
+| worst single-turn HP fall on a dying run | median **17%** of max, worst 44% |
+| dying runs that ever took a hit of 50% or more | **0 of 157** |
+| HP twelve decisions before the end | median **21%**, above 75% in only 7 of 157 |
+| dying runs never below 25% HP before the end | **0 of 157** |
+| share of a dying run spent below 25% HP | median 1.3%, which at 5,000 turns is about 65 turns |
+
+Every run that dies is worn down, sits in the critical band for dozens of turns, and dies there.
+`hurt_share` looked reassuring only because it averages over runs of five to ten thousand turns,
+so hundreds of desperate turns disappear into thousands of healthy ones. The old number was not
+wrong, it was the wrong denominator.
+
+### And the heal never fires
+
+With panic recorded and the label list untruncated, every survival branch is readable for the
+first time. Shares of all decisions, 288 runs:
+
+| profile | forced | panic_flee | panic_descend | panic_phase | recall | sigil_escape | flee | shield |
+|---|---|---|---|---|---|---|---|---|
+| artisan | 1.5% | 1.43% | 0.02% | 0.01% | **0.00%** | **0.00%** | 0.28% | 0.26% |
+| cartographer | 13.7% | 9.63% | 4.06% | 0.01% | **0.00%** | **0.00%** | 0.40% | 0.28% |
+| emergent | 2.1% | 2.08% | 0.05% | 0.00% | **0.00%** | **0.00%** | 0.16% | 0.37% |
+| exploiter | 1.1% | 1.06% | 0.03% | 0.00% | **0.00%** | **0.00%** | 0.07% | 0.33% |
+| seeker | 2.2% | 2.11% | 0.04% | 0.03% | **0.00%** | **0.00%** | 0.11% | 0.25% |
+| whisper | 3.3% | 1.42% | 1.92% | 0.00% | **0.00%** | **0.00%** | 0.42% | 0.17% |
+
+**`recall` and `sigil_escape` are zero for all six profiles across 288 runs**, and `panic_phase`
+is within rounding of zero. Three survival branches that never once fired.
+
+### The cause, and it is a bug rather than a balance number
+
+**First hypothesis, and it was wrong.** `can_heal_meaningfully` gates the HEAL branch and reads
+per-part HP, and `tests/known_failures.txt` says the body-part layer is broken, so the gate
+looked dead. Sampled on real runs it is alive: True on 48 of 48 low-HP turns of a dying artisan
+and 913 of 927 for a cartographer. The parts do take damage. (A hand-set `player.hp` leaves the
+parts full, which is what made the gate look stuck; that was an artifact of the probe.)
+
+The actual cause is one line up. The HEAL branch matches its sigil by exact string:
+
+```python
+if sig.get("ability") == "Recall" or sig.get("base") == "Recall":
+```
+
+A quality-graded sigil has `ability = "Legendary Recall"` and **`base = ""`**. Sampled over one
+artisan run of 10,485 turns:
+
+| what the agent held | turns | matches `== "Recall"` |
+|---|---|---|
+| `Legendary Recall` | 2,746 | no |
+| `Uncommon Recall` | 1,084 | no |
+| `Epic Phase` | 579 | no |
+| `Epic Recall` | 52 | no |
+| `Recall` | 65 | yes |
+
+**The agent carried a Recall sigil on about 3,900 turns and could see it on 65.** It is holding
+the heal and cannot read the label. The same exact-match appears at five sites in `agent.py`:
+HEAL (`:245`), PANIC's Phase escape (`:252`), FORGE's "what do I already have" set (`:384`,
+which is why an agent keeps forging a Recall it already owns), `sigil_escape` (`:547`) and
+deploy (`:615`).
+
+That is the whole diagnosis, and it fits the loss profile exactly: runs ground down over dozens
+of turns in the critical band, holding an unreadable heal, falling through to `panic_flee` and
+running for the stairs instead.
+
+### Not fixed here, deliberately
+
+This tranche pre-registered that no game behaviour changes in it, because a fix folded into a
+diagnosis is a fix nobody measured. The next tranche is the fix and its measurement: match the
+base ability inside a graded name at all five sites, then 288 runs against the 26.4% recorded
+above. The expected direction is up, and it should be checked rather than assumed, since a heal
+that fires also changes what the agent spends its turns doing.
+
+### Health checklist, recomputed on the corrected telemetry
+
+| condition | limit | current |
+|---|---|---|
+| every profile can win | above 0 for all six | 6 of 6 |
+| every route is used | all 4 present | 4 of 4 |
+| no route dominates | at most 60% | 50% (`standing` 38 of 76) |
+| no verb is broken | empty | empty |
+| decisions are contested | at most 0.05 | 0.000 |
+| the decision space is used | at least 20 | 25.1 to 30.4 |
+| profiles actually differ | every pair above 0.10 | **0.151 to 0.506** |
+
+`policy_divergence` rose from 0.123-0.439 because it is now computed from whole policies rather
+than each profile's top 8 labels. All seven conditions hold. Route concentration at 50% is the
+closest to its limit, as it was before.
+
+## The graded-name fix: correct, real, and it did not restore the heal
+
+288 runs after the fix, same protocol. **The pre-registered mechanism check failed, so this is
+reported as a failure before anything else.**
+
+| | before | after |
+|---|---|---|
+| wins | 76/288, 26.4% [21.6, 31.8] | **63/288, 21.9% [17.5, 27.0]** |
+| deaths | 157 | 184 |
+| stalls | 55 | 41 |
+| median death floor | 12 | 10 |
+| `recall` share | 0.00% | **0.00 to 0.02%** |
+| `sigil_escape` share | 0.00% | **0.00%** |
+
+The intervals overlap, so the aggregate drop is not significant on its own. But five of six
+profiles fell, and there is a mechanism, which is worth more than the interval.
+
+### Why the heal still starves
+
+The string match was real and is fixed. It was not the reason `recall` never fires. Counting the
+three HEAL conditions separately over whole runs:
+
+| | artisan | cartographer | seeker |
+|---|---|---|---|
+| turns | 6,984 | 1,202 | 6,203 |
+| **holding no sigil at all** | **6,690 (96%)** | **684 (57%)** | **5,776 (93%)** |
+| holding a Recall | 245 | 54 | 353 |
+| below 60% HP with a Recall and a wound | 0 | 3 | 87 |
+
+**The slots are empty almost all the time.** On the one profile that did get 87 chances, it took
+the heal about once. So there are two faults behind the 0.00%, and the string match was only the
+first.
+
+### The second fault, which the fix exposed
+
+`deploy` and `recover` both score on the **`explore`** profile key (`agent.py:635`, `:641`), a
+key belonging to a different activity entirely, worth 15 to cartographer and 8 to seeker. HEAL
+scores on `recall`, worth 3 to 6, with urgency `(100 - hp) // 4`. At 50% HP that is 12 against a
+deploy candidate at 18 to 31. **Deploy outbids the heal, and deploying a Recall takes it out of
+the slots**, after which the heal cannot fire at all.
+
+Before the fix this was invisible because deploy was gated on the same broken string match, so
+the branch was unreachable for graded sigils. Unblocking it did exactly what the label shares
+show:
+
+| label | artisan | cartographer | emergent | exploiter | seeker | whisper |
+|---|---|---|---|---|---|---|
+| deploy | 0.47 to **1.78** | 0.54 to **3.55** | 0.08 to **1.09** | 0.32 to **1.10** | 0.41 to **1.55** | 0.54 to **1.60** |
+| recover | 3.26 to **7.31** | 0.77 to **5.01** | 0.27 to **2.63** | 0.85 to **3.30** | 3.55 to **6.40** | 1.17 to **3.71** |
+
+Deploy triples to sevenfold, recover follows it, and average sigils forged falls on every profile
+(whisper 3.25 to 1.62). The agent now spends its turns putting sigils on the floor and picking
+them up again, and is unarmed in between.
+
+**Correction to the previous entry.** "It is holding the heal and cannot read the label" was true
+of the string match and wrong as a complete account: the agent usually holds nothing at all. The
+label-blindness was real and worth fixing on its own terms, but it was not the cause of the
+0.00%.
+
+### Kept, and what comes next
+
+The fix stays. Deploy was producing nameless entities with no effect, the Recall beacon tick
+raised `AttributeError` the first time it ever reached execution, and the locus handed out
+duplicates of what you already carried. Those are defects whatever the win rate does, and this
+tranche pre-registered adoption on that basis.
+
+The named next lever is **the deploy and recover scoring**, which is a mis-keyed candidate rather
+than a balance number: an action that removes your survival tool should not be scored on the
+weight for exploring, and should not outbid using it. That is one tranche, and it should be
+measured against the 63 of 288 recorded here.
+
+One small gain to record: `diplomacy` appeared as a **fifth win route** (whisper, seed 46), the
+final warden laying down its arms at parley. Route concentration also fell, top route 50% to 44%.
+
+### Health checklist
+
+All seven still hold: 6 of 6 profiles win, all routes used, top route 44%, no broken verbs,
+`uncontested_share` 0.000, `labels_used` 23.0 to 29.9, `policy_divergence` 0.114 to 0.562. The
+divergence floor is now close to its 0.10 limit and is worth watching.

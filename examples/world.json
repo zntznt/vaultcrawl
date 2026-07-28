@@ -2,7 +2,7 @@
   "version": "0.1.0",
   "seed": "ccee0b8af9afe4f7",
   "generatedFrom": {
-    "vaultPath": "/Users/zntznt/Repositories/vaultcrawl/sample_vault",
+    "vaultPath": "sample_vault",
     "noteCount": 10,
     "linkCount": 19,
     "communityCount": 2,
@@ -58,7 +58,7 @@
         ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.0,
+        "activity": 0.222,
         "tags": [
           "habit",
           "philosophy"
@@ -79,7 +79,7 @@
         ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.053,
+        "activity": 0.333,
         "tags": [
           "architecture",
           "gamedev",
@@ -114,7 +114,7 @@
         ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.198,
+        "activity": 0.556,
         "tags": [
           "philosophy",
           "writing"
@@ -136,7 +136,7 @@
         ],
         "bridge": false,
         "role": "leaf",
-        "activity": 0.368,
+        "activity": 0.889,
         "tags": [
           "mortality",
           "philosophy"
@@ -156,7 +156,7 @@
         ],
         "bridge": false,
         "role": "cluster",
-        "activity": 0.534,
+        "activity": 1.0,
         "tags": [
           "gamedev",
           "project"
@@ -178,7 +178,7 @@
         ],
         "bridge": true,
         "role": "bridge",
-        "activity": 0.643,
+        "activity": 0.667,
         "tags": [
           "gamedev",
           "project"
@@ -201,7 +201,7 @@
         ],
         "bridge": false,
         "role": "hub",
-        "activity": 0.86,
+        "activity": 0.444,
         "tags": [
           "lang",
           "project"
@@ -224,7 +224,7 @@
         ],
         "bridge": true,
         "role": "bridge",
-        "activity": 0.938,
+        "activity": 0.778,
         "tags": [
           "pkm",
           "system"
@@ -245,7 +245,7 @@
         ],
         "bridge": false,
         "role": "cluster",
-        "activity": 1.0,
+        "activity": 0.0,
         "tags": [
           "mind",
           "philosophy"
@@ -335,7 +335,7 @@
         "system",
         "writing"
       ],
-      "activity": 0.501,
+      "activity": 0.489,
       "name": "The Patient Meridian",
       "flavor": "Grown from your note 'Stoicism'. Damp clings to every surface here."
     },
@@ -355,7 +355,7 @@
         "lang",
         "project"
       ],
-      "activity": 0.523,
+      "activity": 0.611,
       "name": "The Fevered Engine-Yard",
       "flavor": "Grown from your note 'Roguelike Project'. Old ink clings to every surface here."
     }
@@ -373,23 +373,23 @@
     },
     {
       "id": "enemy_1",
-      "archetype": "chorus",
+      "archetype": "myriad",
       "tier": 4,
       "damageType": "frost",
       "regionId": "region_0",
       "sourceNoteId": "journaling",
-      "name": "the Chorus of 'Journaling'",
-      "flavor": "A chorus that drifted out of 'Journaling', dealing frost to the unwary."
+      "name": "the Myriad of 'Journaling'",
+      "flavor": "A myriad that drifted out of 'Journaling', dealing frost to the unwary."
     },
     {
       "id": "enemy_2",
-      "archetype": "scribe",
+      "archetype": "gloom",
       "tier": 2,
       "damageType": "arc",
       "regionId": "region_0",
       "sourceNoteId": "memento mori",
-      "name": "the Scribe of 'Memento Mori'",
-      "flavor": "A scribe that drifted out of 'Memento Mori', dealing arc to the unwary."
+      "name": "the Gloom of 'Memento Mori'",
+      "flavor": "A gloom that drifted out of 'Memento Mori', dealing arc to the unwary."
     },
     {
       "id": "enemy_3",
@@ -423,13 +423,13 @@
     },
     {
       "id": "enemy_6",
-      "archetype": "seraph",
+      "archetype": "warden",
       "tier": 5,
       "damageType": "decay",
       "regionId": "region_1",
       "sourceNoteId": "rust",
-      "name": "the Seraph of 'Rust'",
-      "flavor": "A seraph that drifted out of 'Rust', dealing decay to the unwary."
+      "name": "the Warden of 'Rust'",
+      "flavor": "A warden that drifted out of 'Rust', dealing decay to the unwary."
     }
   ],
   "bosses": [

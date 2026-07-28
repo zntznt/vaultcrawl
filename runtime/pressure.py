@@ -31,6 +31,12 @@ from dataclasses import dataclass, field
 CONTESTED_MARGIN = 1.0
 # Below this fraction of max HP the agent counts as under pressure.
 HURT_PCT = 50
+# Below this, the panic branch in UniversalBrain.decide is live for every profile (its own
+# cutoff is 25 for fighters and 35 for the rest), so the agent is one bad turn from dead.
+CRITICAL_PCT = 25
+# How much of the HP trace to keep per run. Twelve decisions is enough to tell a burst from
+# an attrition, and short enough that 288 rows stay readable.
+HP_TAIL = 12
 # A verb has to be tried this often before "never worked" is a claim rather than noise.
 MIN_ATTEMPTS_TO_JUDGE = 20
 
@@ -93,6 +99,8 @@ class DecisionLog:
     turns_hurt: int = 0
     min_hp_pct: int = 100
     candidate_counts: list[int] = field(default_factory=list)
+    forced: int = 0
+    turns_critical: int = 0
 
     def observe(self, game, brain) -> None:
         """Read the decision the brain just made. Safe on brains that do not expose one."""
@@ -101,13 +109,20 @@ class DecisionLog:
         if cands and choice is not None and choice < len(cands):
             label = cands[choice][0]
             self.labels[label] = self.labels.get(label, 0) + 1
-            self.candidate_counts.append(len(cands))
-            if len(cands) > 1:
-                self.margins.append(float(cands[0][1] - cands[1][1]))
-                self.runner_ups[cands[1][0]] = self.runner_ups.get(cands[1][0], 0) + 1
+            if getattr(brain, "_last_forced", False):
+                # A hard override: the brain returned before scoring anything. It counts as a
+                # decision, because it is one, but not as a contest. Recording it as a
+                # one-candidate turn would inflate `uncontested_share`, which is supposed to
+                # mean "the cascade offered nothing to weigh", not "the cascade was skipped".
+                self.forced += 1
             else:
-                # Nothing to weigh against: an uncontested turn.
-                self.margins.append(float("inf"))
+                self.candidate_counts.append(len(cands))
+                if len(cands) > 1:
+                    self.margins.append(float(cands[0][1] - cands[1][1]))
+                    self.runner_ups[cands[1][0]] = self.runner_ups.get(cands[1][0], 0) + 1
+                else:
+                    # Nothing to weigh against: an uncontested turn.
+                    self.margins.append(float("inf"))
 
         player = getattr(game, "player", None)
         if player is not None:
@@ -117,6 +132,8 @@ class DecisionLog:
             self.min_hp_pct = min(self.min_hp_pct, pct)
             if pct < HURT_PCT:
                 self.turns_hurt += 1
+            if pct < CRITICAL_PCT:
+                self.turns_critical += 1
 
     def summary(self) -> dict:
         n = sum(self.labels.values())
@@ -141,6 +158,16 @@ class DecisionLog:
                               if self.candidate_counts else 0.0,
             "min_hp_pct": self.min_hp_pct,
             "hurt_share": self.turns_hurt / turns,
+            "critical_share": self.turns_critical / turns,
+            # Turns the cascade never ran on, as a share of all decisions.
+            "forced_share": (self.forced / n) if n else 0.0,
+            # How a run ended, in HP. 74% of losses are deaths and nothing recorded whether
+            # they were ground down or hit once from full, which are different problems with
+            # different levers. `hp_tail` is the last few decisions; `max_drop_pct` is the
+            # worst single-turn fall anywhere in the run.
+            "hp_tail": self.hp_pcts[-HP_TAIL:],
+            "max_drop_pct": max((a - b for a, b in zip(self.hp_pcts, self.hp_pcts[1:])),
+                                default=0),
         }
 
 

@@ -153,9 +153,15 @@ class WeatherSystem(System):
             crafts = getattr(p, "_crafts", {})
             if crafts.get("hazard_walk"):
                 return
+            before = p.hp
             p.hp = max(1, p.hp - 1)
-            if self._turn % (_CADENCE * 5) == 0:
-                game.log("The acrid haze burns your lungs (-1 HP).", ambient=True)
+            # Say it every time it happens, and NOT as ambient. This damaged the player
+            # every third turn and mentioned it every fifteenth, so five HP went missing
+            # per line; and `ambient=True` is what tells a travel glide not to stop, so a
+            # player could be chipped toward death mid-glide and never be halted. Damage
+            # is not atmosphere.
+            if p.hp < before:
+                game.log("The acrid haze burns your lungs (-1 HP).")
         elif self.weather == "cold snap" and hasattr(p, "speed"):
             p.speed = 0.8
         elif self.weather == "ember drift" and p.defense >= 0:

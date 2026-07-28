@@ -351,9 +351,18 @@ def section_determinism(fails):
     for label, path, mode in cases:
         upa = evolve_upheaval(V1, V2) if mode == "u" else None
         upb = evolve_upheaval(V1, V2) if mode == "u" else None
+        # Build each game immediately before playing it, never both up front. Per-run
+        # module state (skills, proficiency, the chronicle) is cleared by Game.__init__,
+        # because a Game is a run; constructing both first meant one reset, then two runs,
+        # so the second inherited the first one's skill tiers.
+        #
+        # This section passed before that reset existed, but for the wrong reason: nothing
+        # cleared skills at all, so by the time it ran, foraging had saturated during the
+        # earlier sections and both runs were equally skilled. A comparison of two runs
+        # that are both pinned at the ceiling cannot see a divergence below it.
         g1 = full_game(path, upheaval=upa)
-        g2 = full_game(path, upheaval=upb)
         t1, c1 = auto_play(g1, FLOORS)
+        g2 = full_game(path, upheaval=upb)
         t2, c2 = auto_play(g2, FLOORS)
         if t1 == t2 and c1 == c2:
             results.append((label, f"identical transcripts ({len(t1)} frames, cleared {c1})", True))

@@ -141,7 +141,10 @@ def _weights(node: dict) -> dict:
     keeps a floor weight so any place can surprise you."""
     role = node.get("role", "cluster")
     degree = node.get("degree", 0)
-    activity = node.get("activity", 0.5)     # 0=old .. 1=fresh (mtime-derived)
+    activity = node.get("activity", 0.5)     # 0=old .. 1=fresh. Stable per note, not
+    # mtime-derived: see vaultcrawl/mapping.py activity_map(). This function reads role,
+    # degree AND activity off a region ANCHOR note, which is always its most central one,
+    # so activity must not be another name for centrality or every region weights alike.
     bridge = node.get("bridge", False)
     w = {k: 1.0 for k in KINDS}              # everything is possible
     w["wilds"] = 3.0                         # ...but plain wilds is the common ground

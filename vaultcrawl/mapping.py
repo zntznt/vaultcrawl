@@ -146,6 +146,76 @@ def _pick(seq, *parts):
     return seq[_shash(*parts) % len(seq)]
 
 
+def vault_uses_mtime(vault) -> bool:
+    """Did the caller ask for edit-recency activity? Absent means no, which is portable."""
+    return bool(getattr(vault, "use_mtime_activity", False))
+
+
+def activity_map(notes, seed: str = "", use_mtime: bool = False) -> dict:
+    """note id -> activity in 0..1, where 1 reads as "newest, still being tended".
+
+    This used to be `(mtime - lo) / (hi - lo)`, computed twice in this file from file
+    modification times, and it was the only wall-clock input to the whole bake. Two
+    problems, one fatal:
+
+    **It was not portable.** `git clone` rewrites every mtime to checkout time, and the
+    spread that survives is filesystem write ORDER, measured here at 5.3 milliseconds
+    across the sample vault. Min-max then amplifies those milliseconds to the full 0..1
+    range, so the numbers look plausibly graded while encoding nothing but the order git
+    happened to write the files in. A fresh clone therefore baked a different world than
+    the author's: different creature archetypes, which carry different family actions,
+    glyphs and sense profiles. `activity` is not flavour, whatever `CLAUDE.md` said: six
+    mechanical consumers in the runtime read it back out of the manifest, including the
+    enemy count per floor, the parley goal, and whether a room gets a cache. (On the sample
+    vault the count happens not to move, because `round(activity * 2)` lands on the same
+    integer either way; on another vault it would.)
+
+    **Min-max is the wrong estimator anyway.** Even on a vault whose mtimes are real and
+    meaningful, touching one note rescales every other note's activity. Rank is scale-free
+    and moves only locally, so it is used for both sources below.
+
+    The default source is a stable per-note hash, and the reason is worth writing down
+    because the obvious alternative is wrong.
+
+    The tempting replacement is graph position: call the central core "old" and the leaves
+    "the frontier", which is the story `ARCHITECTURE_SPEC.md` tells about growth rings. It
+    was tried and it collapses the world. `runtime/arch/areakinds.py` weights an area's
+    kind from a region's ANCHOR note, which is by definition its most central one, and it
+    reads role, degree AND activity. Rank activity by centrality and every anchor lands in
+    the "old and quiet" band together, so every region gets the same necropolis bonus and
+    the wild loses most of its variety. Measured: block-glyph kinds in the sample world
+    dropped from four to two. Centrality is already a signal here; activity has to be a
+    different one.
+
+    What the mtime version actually supplied was a spread across notes that was
+    UNCORRELATED with graph position, since editing a note today says nothing about how
+    many things link to it. A hash of the note id reproduces exactly that character and is
+    the same on every machine. It does give up the ability to say "this note is fresh",
+    which is real, and which is what the opt-in below is for.
+
+    `use_mtime=True` restores edit recency for someone baking their own live vault, who
+    can see their own mtimes. It is opt-in because the world it produces is not portable.
+    """
+    ids = sorted(notes)
+    n = len(ids)
+    if n == 0:
+        return {}
+    if n == 1:
+        return {ids[0]: 0.0}
+
+    if use_mtime:
+        # oldest first, so the freshest note ends at 1.0. Ties break on id, never on
+        # dict order, so two notes written in the same clock tick still rank stably.
+        order = sorted(ids, key=lambda nid: (notes[nid].mtime, nid))
+    else:
+        # Ranked on a hash rather than used directly, so the values stay spread evenly
+        # across 0..1 however few notes there are. Salted with the vault seed so two
+        # different vaults that happen to share a note name do not share its activity.
+        order = sorted(ids, key=lambda nid: (_shash("activity", seed, nid), nid))
+
+    return {nid: round(i / (n - 1), 3) for i, nid in enumerate(order)}
+
+
 def _tier_of(value: float, pr_sorted: list) -> int:
     if not pr_sorted:
         return 1
@@ -194,9 +264,7 @@ def build_graph_block(vault: Vault, an: Analysis) -> dict:
         for t in ts:
             nbrs[s].add(t)
             nbrs[t].add(s)
-    mtimes = [nt.mtime for nt in vault.notes.values()] or [0.0]
-    lo, hi = min(mtimes), max(mtimes)
-    span = (hi - lo) or 1.0
+    activity = activity_map(vault.notes, vault.seed, use_mtime=vault_uses_mtime(vault))
     hub_threshold = an.pr_sorted[int(len(an.pr_sorted) * 0.8)] if an.pr_sorted else 1.0
     nodes = {}
     for nid, note in vault.notes.items():
@@ -209,7 +277,7 @@ def build_graph_block(vault: Vault, an: Analysis) -> dict:
             "members": an.members.get(nid, []),                       # semilattice membership
             "bridge": nid in an.bridges,
             "role": _node_role(nid, an, hub_threshold),
-            "activity": round((note.mtime - lo) / span, 3),
+            "activity": activity.get(nid, 0.0),
             "tags": note.tags[:8],
             "neighbors": sorted(nbrs[nid]),
         }
@@ -242,11 +310,8 @@ def build_blueprint(vault: Vault, an: Analysis) -> dict:
     else:
         depth_map = {nid: 1 for nid in notes}
 
-    # --- mtime -> activity 0..1 ---
-    mtimes = [nt.mtime for nt in notes.values()] or [0.0]
-    lo, hi = min(mtimes), max(mtimes)
-    span = (hi - lo) or 1.0
-    activity = {nid: (notes[nid].mtime - lo) / span for nid in notes}
+    # --- activity 0..1, from a stable per-note hash by default. See activity_map(). ---
+    activity = activity_map(notes, seed, use_mtime=vault_uses_mtime(vault))
 
     hub_threshold = an.pr_sorted[int(len(an.pr_sorted) * 0.8)] if an.pr_sorted else 1.0
     regions, enemies, bosses, items, secrets, quests = [], [], [], [], [], []

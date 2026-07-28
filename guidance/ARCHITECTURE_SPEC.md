@@ -53,7 +53,7 @@ tags, neighbors`. The spec adds the metrics in **bold** (new work in `analyze.py
 | adjacency | `neighbors` (link graph) | which centers want to be near / connected |
 | **interlock** | **edge weight = co-link / shared-tag count**, NEW | how deeply two centers should interpenetrate |
 | friction | weak / cross-community / rival edges | boundaries, seams, the void between |
-| age | `activity` (mtime, normalized) | growth rings, gradients (old core → new frontier) |
+| age | `activity` (stable per-note rank; mtime only with `--mtime-activity`) | growth rings, gradients |
 | inner scale | headings + length | levels of scale *within* a center |
 | outlier-ness | low degree / orphan | discoveries, hung off an inflection point |
 | tag field | `tags` | echoes, gradients, the emergent "style" vocabulary |

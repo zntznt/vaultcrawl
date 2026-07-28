@@ -84,8 +84,70 @@ def auto_play(game: Game, floors: int, max_turns: int = 500):
     return transcript, cleared
 
 
-KEYS_HELP = ("move:hjkl+yubn  o:explore g:travel  >enter <climb .wait  x:examine t:speak e:effect m:log  "
-              "z:toss c:cast f:forge b:breakdown  d:shield p:shove a:act  i:inspect Q:quests C:companions V:overworld  q:quit")
+# The one place the key set is written down. Before this table there were two: a
+# hand-maintained help string and the 200-line elif chain in run(), and they had drifted
+# apart in nine places. Four keys were advertised and dead, one crashed the process, and
+# five that worked went unmentioned. Nothing tested the chain, so nothing said so.
+#
+# Everything that shows the player a key reads this, and tests/test_keys.py parses the
+# chain out of this file and asserts the two agree in both directions. Add a branch
+# without adding a row and the suite fails; add a row without a branch and it fails too.
+#
+# (keys, label, what it does, shown in the status line)
+KEY_TABLE = (
+    (("?",),      "help",       "This screen",                                    True),
+    (("o",),      "explore",    "Autoexplore one step toward the nearest unseen tile", True),
+    (("g",),      "travel",     "Glide one way until something worth stopping for", True),
+    ((">",),      "descend",    "Take the stair down, when you are on one",       True),
+    (("<",),      "climb",      "Take the stair up",                              True),
+    ((".", "5"),  "wait",       "Let a turn pass, and mend a little",              True),
+    (("x",),      "examine",    "Read what lies around you",                      True),
+    (("i",),      "inspect",    "Study the creature beside you",                  True),
+    (("t",),      "speak",      "Talk to what is next to you, or to the place itself", True),
+    (("e",),      "effect",     "Wear one of the effects you carry",              True),
+    (("z",),      "toss",       "Throw matter in a direction",                    True),
+    (("c",),      "cast",       "Fire a slotted sigil or a body action",          True),
+    (("f",),      "forge",      "Make a sigil from matter",                       True),
+    (("B",),      "breakdown",  "Break a slotted sigil back down into matter",    True),
+    (("w",),      "craft",      "Make a consumable from a recipe you know",       True),
+    (("s",),      "set down",   "Deploy a slotted sigil onto the ground",         True),
+    (("r",),      "recover",    "Take back a sigil you set down",                 True),
+    (("d",),      "shield",     "Brace, and take less from the next blow",        True),
+    (("p",),      "shove",      "Push what is beside you, into whatever is behind it", True),
+    (("a",),      "act",        "Use what is underfoot, or entrust yourself to a Keeper", True),
+    (("m", "P"),  "log",        "Scroll back through what has happened",          True),
+    (("M",),      "combat log", "The same, filtered to blows",                    False),
+    (("Q",),      "quests",     "What you have been charged with",                True),
+    (("C",),      "companions", "Who walks with you",                             True),
+    (("D",),      "discoveries","What this run has turned up",                    False),
+    (("G",),      "grave",      "Read the marker you are standing on",            False),
+    (("V",),      "overworld",  "Look out over the land, from a high place",      True),
+    (("q",),      "quit",       "Leave the run",                                  True),
+    (("`",),      "debug",      "Debug menu, with --debug only",                  False),
+)
+
+# Movement is not in the table because it is not in the chain: `if k in moves` is tested
+# before the first elif, straight off _DIRKEYS. test_keys.py asserts no table key collides
+# with it, which is the check that catches a breakdown bound to b.
+MOVE_HELP = "move:hjkl+yubn+arrows"
+
+
+def _keys_help(debug: bool = False) -> str:
+    """The dim one-line key hint, derived rather than maintained."""
+    parts = [MOVE_HELP] + [f"{e[0][0]}:{e[1]}" for e in KEY_TABLE if e[3]]
+    if debug:
+        parts.insert(1, "`:debug")
+    return "  ".join(parts)
+
+
+def _help_lines() -> list:
+    """The full key list behind `?`, every row including the unshown ones."""
+    width = max(len(" ".join(e[0])) for e in KEY_TABLE)
+    out = [f"{MOVE_HELP.split(':')[1]:<{width}}  move, and bump to attack or swap places", ""]
+    out += [f"{' '.join(e[0]):<{width}}  {e[2]}" for e in KEY_TABLE]
+    return out
+
+
 ABILITIES = ["Recall", "Phase", "Rally", "Ward", "Echo"]
 
 
@@ -137,6 +199,13 @@ def interactive(game: Game) -> int:
         M, C, W = curses.COLOR_MAGENTA, curses.COLOR_CYAN, curses.COLOR_WHITE
         BOLD, DIM = curses.A_BOLD, curses.A_DIM
         palette.update({
+            # Quality grades 1..4, for creatures QualitySystem has graded. These live in
+            # the palette because the color names above are locals of THIS function: draw()
+            # is a sibling, not an inner scope, so its `[(G, BOLD), ...]` resolved G as a
+            # module global, found nothing, and raised NameError on the first frame that
+            # held a graded creature. With the real stack that is frame one.
+            "grade1": P(G, BOLD), "grade2": P(B, BOLD),
+            "grade3": P(M, BOLD), "grade4": P(Y, BOLD),
             "@": P(W, BOLD),
             # figure-ground: WALLS are the figure (solid white), floor recedes (dim),
             # roads are a quiet unified low value — not the brightest thing on screen
@@ -244,9 +313,9 @@ def interactive(game: Game) -> int:
                 wx, wy = ox + x, oy + y
                 actor = actors_at.get((wx, wy))
                 if actor is not None and getattr(actor, "quality", 0) > 0:
-                    tier = actor.quality
-                    qcol = [(G, BOLD), (B, BOLD), (M, BOLD), (Y, BOLD)][min(tier - 1, 3)]
-                    a = curses.color_pair(qcol[0] + 1) | qcol[1]
+                    # falls back to the glyph's own attribute when colors are off, which
+                    # is also what happens when has_colors() is False and palette is empty
+                    a = palette.get("grade%d" % min(actor.quality, 4), a)
                 # THE PLACE HAS A COLOR: all of a region's ground — block terrain AND
                 # bare floor AND grain — wears its palette-lean, so a whole place reads
                 # in one hue and crossing a border visibly changes the world's color.
@@ -392,7 +461,7 @@ def interactive(game: Game) -> int:
         if prompt:
             put(my + MSG_LINES, 0, prompt[:cols - 1], palette.get("*", curses.A_BOLD))
         else:
-            keys = (("`:debug  " if getattr(game, "debug", False) else "") + KEYS_HELP)
+            keys = _keys_help(getattr(game, "debug", False))
             put(my + MSG_LINES, 0, keys[:cols - 1], curses.A_DIM)
         scr.refresh()
 
@@ -484,6 +553,29 @@ def interactive(game: Game) -> int:
         k = popup(scr, title, lines, footer="[1-%d, other cancels]" % len(options))
         i = (k - ord("1")) if ord("1") <= k <= ord("9") else -1
         return i if 0 <= i < len(options) else None
+
+    def paged_menu(scr, title, options, lead=None, per=8):
+        """menu() for a list longer than nine.
+
+        Both pickers in this file read a single keystroke in 1..9, so anything with more
+        than nine choices silently cannot reach the tail of its own list. There are 25
+        consumable recipes. Rather than teach popup() a second key language, which would
+        collide with its scroll keys, page the list: `per` entries and a page turn.
+        Returns an index into the full list, or None.
+        """
+        off = 0
+        while True:
+            page = list(options[off:off + per])
+            more = off + per < len(options)
+            if more:
+                page.append(f"... more ({off + per + 1}-{len(options)} of {len(options)})")
+            i = menu(scr, title, page, lead=lead)
+            if i is None:
+                return None
+            if more and i == len(page) - 1:
+                off += per
+                continue
+            return off + i
 
     def negotiate_window(scr, foe):
         """A running conversation modal — the creature's lines and your moves
@@ -740,6 +832,8 @@ def interactive(game: Game) -> int:
             return
         game.try_move(*step)
         draw(scr)
+
+    def travel(scr):
         """Glide in a chosen direction until something worth stopping for. Turns one
         intention into real traversal across the wilderness; any key aborts. Stops on:
         a wall/edge, a new place entered, a region crossed, a discovery in reach, or a
@@ -1001,6 +1095,8 @@ def interactive(game: Game) -> int:
                 return
             if k in moves:
                 game.try_move(*moves[k])
+            elif k == ord("?"):
+                popup(scr, "Keys", _help_lines())
             elif k == ord("g"):
                 travel(scr)   # TRAVEL: pick a direction, glide until something happens
             elif k == ord("o"):
@@ -1063,8 +1159,12 @@ def interactive(game: Game) -> int:
                 tools = ["reveal all", "warp: heart", "warp: next place",
                          f"god mode {'OFF' if god[0] else 'ON'}", "warp: next gate",
                          "grant matter", "grant sigils", "smite (r8)", "inspect"]
-                menu = " ".join(f"{n + 1}:{t}" for n, t in enumerate(tools))
-                i = pick(scr, f"DEBUG {menu}", len(tools))
+                # NOT `menu`: assigning that name anywhere in run() makes it local to the
+                # whole function, so the menu() defined in interactive() becomes unbound
+                # and every other caller of it in this loop raises UnboundLocalError. That
+                # silently broke `e`, and would have broken the shrine and craft below.
+                bar = " ".join(f"{n + 1}:{t}" for n, t in enumerate(tools))
+                i = pick(scr, f"DEBUG {bar}", len(tools))
                 if i == 0:
                     game.log(dbg.reveal_all(game))
                 elif i == 1:
@@ -1135,37 +1235,83 @@ def interactive(game: Game) -> int:
                         game.wait()
                     else:
                         game.log("The forge does not answer (need a free slot and matter).")
-                elif k == ord("b"):
-                    sigs, salv = game.system("sigils"), game.system("salvage")
-                    if not (sigs and salv and sigs.slots):
-                        game.log("Nothing slotted to break down.")
-                        continue
-                    names = ", ".join(f"{n + 1}:{s['ability']}" for n, s in enumerate(sigs.slots))
-                    i = pick(scr, f"break down which? {names}", len(sigs.slots))
-                    if i is not None:
-                        salv.breakdown_sigil(game, sigs.slots[i]["ability"])
-                        game.wait()
-                elif k == ord("a"):
-                    game.interact()
-                    # sacrifice shrine popup
-                    pending = getattr(game, "_pending_sacrifice", None)
-                    if pending:
-                        opts = [f"{o[0]}: {o[2]}" for o in pending] + ["Reject all — the shrine crumbles"]
-                        i = menu(scr, "Renunciation Shrine", opts,
-                                 lead=["Choose a sacrifice, or reject all."])
-                        if i is not None and i < len(pending):
-                            sac = game.system("sacrifice")
-                            if sac:
-                                sac.apply(game, pending[i][1])
-                        else:
-                            game._pending_sacrifice = None
-                            game.log("You turn away. The shrine crumbles to dust.")
-                elif k == ord("d"):
-                    game.shield()
-                elif k == ord("p"):
-                    d = pick_dir(scr, "shove which way?")
-                    if d is not None:
-                        game.shove(*d)
+            # These four were `elif`s of `if i is not None` above, one level in, so they
+            # were only ever tested when k was already ord("f") and could not be anything
+            # else. Dead since the commit that wrote them, while KEYS_HELP advertised all
+            # four. Breakdown moved from b to B in the same change: b is the yubn
+            # down-left diagonal and `if k in moves` wins before this chain is reached,
+            # so a dedent alone would have left it broken and looking fixed.
+            elif k == ord("B"):
+                sigs, salv = game.system("sigils"), game.system("salvage")
+                if not (sigs and salv and sigs.slots):
+                    game.log("Nothing slotted to break down.")
+                    continue
+                names = ", ".join(f"{n + 1}:{s['ability']}" for n, s in enumerate(sigs.slots))
+                i = pick(scr, f"break down which? {names}", len(sigs.slots))
+                if i is not None:
+                    salv.breakdown_sigil(game, sigs.slots[i]["ability"])
+                    game.wait()
+            elif k == ord("a"):
+                game.interact()
+                # sacrifice shrine popup
+                pending = getattr(game, "_pending_sacrifice", None)
+                if pending:
+                    opts = [f"{o[0]}: {o[2]}" for o in pending] + ["Reject all, and the shrine crumbles"]
+                    i = menu(scr, "Renunciation Shrine", opts,
+                             lead=["Choose a sacrifice, or reject all."])
+                    if i is not None and i < len(pending):
+                        sac = game.system("sacrifice")
+                        if sac:
+                            sac.apply(game, pending[i][1])
+                    else:
+                        game._pending_sacrifice = None
+                        game.log("You turn away. The shrine crumbles to dust.")
+            elif k == ord("d"):
+                game.shield()
+            elif k == ord("p"):
+                d = pick_dir(scr, "shove which way?")
+                if d is not None:
+                    game.shove(*d)
+            # deploy, recover and craft had no key at all: three verbs the auto agent
+            # dispatched every run that a human could not reach. Nothing about them needs
+            # machine perception, they were simply never bound. Turn accounting differs
+            # per verb and is read off the method, not assumed: deploy runs the turn tail
+            # itself, recover and craft_consumable only log, so those two pay via wait().
+            elif k == ord("s"):
+                sigs = game.system("sigils")
+                if not (sigs and sigs.slots):
+                    game.log("Nothing slotted to set down.")
+                    continue
+                names = ", ".join(f"{n + 1}:{s['ability']}" for n, s in enumerate(sigs.slots))
+                i = pick(scr, f"set down which? {names}", len(sigs.slots))
+                if i is not None:
+                    game.deploy(i)
+            elif k == ord("r"):
+                if game.recover():
+                    game.wait()
+            elif k == ord("w"):
+                from .wear import craft_consumable
+                known = sorted(getattr(game.player, "_known_recipes", set()) or ())
+                if not known:
+                    game.log("You know no recipes yet.")
+                    continue
+                # paged_menu, not menu: 25 recipes, and every other picker here reads one
+                # keystroke in 1..9, which would put the tail of the list out of reach.
+                from .wear import RECIPE_COSTS
+                have = 0
+                salv = game.system("salvage")
+                if salv is not None:
+                    have = salv.inventory(game).total()
+                rows = [f"{r.replace('_', ' ')}  ({RECIPE_COSTS.get(r, 99)} matter"
+                        f"{'' if RECIPE_COSTS.get(r, 99) <= have else ', short'})"
+                        for r in known]
+                i = paged_menu(scr, "Craft", rows, lead=[f"What will you make? ({have} matter)"])
+                if i is None:
+                    continue
+                if craft_consumable(game, known[i]):
+                    game.wait()
+                else:
+                    game.log("You lack the matter for that.")
             elif k == ord("V"):
                 if not game._on_surface():
                     game.log("There is no overlooking the depths from below.")

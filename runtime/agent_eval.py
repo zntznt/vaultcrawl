@@ -54,6 +54,17 @@ class RunResult:
     caches_opened: int
     turns_survived: int
     hp_ended: int
+    # `seed` above is the WORLD seed and is the same for every run of a batch, so it
+    # cannot identify a run. This is the per-run varier that `evaluate_agents` passes as
+    # `run_seed`, and it is what makes a row in the dump reproducible: re-running
+    # `run_agent(world, agent, floors, run_seed=<this>)` replays that exact game.
+    run_seed: object = None
+    # State of the last stair at the moment the run ended. `egress_why` enumerates all four
+    # routes with the counts the player actually had, so a run that reached the bottom and
+    # stalled records what it was short of rather than only that it lost.
+    egress_open: bool = False
+    egress_route: str = ""
+    egress_why: str = ""
     cause_of_death: str = ""
     floors_cleared: int = 0
     average_hp: float = 0.0
@@ -217,9 +228,26 @@ def run_agent(world_json: str, agent_name: str,
     # matter collected and forged are now recorded where they actually happen, in
     # Inventory.add and ForgeSystem, so nothing is guessed or re-read here.
 
+    # Why the run did not end in a win. Measured on 288 runs: 55 of 211 losses reached the
+    # bottom alive and simply never opened the last stair, and nothing recorded what they
+    # were short of. `egress_ready` already computes exactly that and enumerates all four
+    # routes with the player's current counts, so a stall can say which gate it failed and
+    # by how much instead of being an anonymous tick in a loss column.
+    #
+    # A run that ended badly enough to leave the game half-built can make this raise, and a
+    # batch of 144 must not die for a diagnostic. But swallowing the error would make a
+    # broken capture look exactly like a run with nothing to report, so the failure is
+    # written into the row instead of dropped.
+    egress_open, egress_why, egress_route = False, "", ""
+    try:
+        egress_open, egress_why, egress_route = game.egress_ready()
+    except Exception as exc:
+        egress_why = f"egress_ready raised: {type(exc).__name__}: {exc}"
+
     return RunResult(
         agent=agent_name,
         seed=manifest["seed"],
+        run_seed=run_seed,
         floor_reached=game.floor,
         max_floor=max_floor,
         won=game.won,
@@ -236,6 +264,9 @@ def run_agent(world_json: str, agent_name: str,
         narrative=tracker.narrative(),
         metrics=_get_metrics(),
         win_path=getattr(game, "win_path", ""),
+        egress_open=egress_open,
+        egress_route=egress_route,
+        egress_why=egress_why,
         pressure=decisions.summary(),
         emergence=emergence.summary(),
     )
@@ -378,8 +409,13 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
             for p in press:
                 for lbl, share in p.get("label_share", {}).items():
                     label_share[lbl] = label_share.get(lbl, 0.0) + share / len(press)
+            # The whole distribution, not the top 8 of about 30. Every survival label sits
+            # below that cut for every profile, so the truncation hid `fight`, `flee`,
+            # `recall` and `shield` from every report this project has produced, and the
+            # divergence matrix below was comparing policies by an arbitrary slice of each.
             stats[name]["pressure"] = {
-                "label_share": dict(sorted(label_share.items(), key=lambda kv: -kv[1])[:8]),
+                "label_share": {k: round(v, 4) for k, v in
+                                sorted(label_share.items(), key=lambda kv: -kv[1])},
                 "top_label_share": round(max(label_share.values()), 3) if label_share else 0.0,
                 "contested_share": round(_mean(p["contested_share"] for p in press), 3),
                 "uncontested_share": round(_mean(p["uncontested_share"] for p in press), 3),
@@ -387,6 +423,9 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
                 "avg_candidates": round(_mean(p["avg_candidates"] for p in press), 1),
                 "min_hp_pct": min(p["min_hp_pct"] for p in press),
                 "hurt_share": round(_mean(p["hurt_share"] for p in press), 3),
+                "critical_share": round(_mean(p.get("critical_share", 0.0) for p in press), 3),
+                "forced_share": round(_mean(p.get("forced_share", 0.0) for p in press), 3),
+                "max_drop_pct": max((p.get("max_drop_pct", 0) for p in press), default=0),
                 "top3_label_share": round(_mean(p["top3_label_share"] for p in press), 3),
                 "labels_used": round(_mean(p["labels_used"] for p in press), 1),
             }
@@ -425,11 +464,47 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
     shares = {name: s.get("pressure", {}).get("label_share", {})
               for name, s in stats.items() if s.get("pressure")}
 
+    # Every field above this line is an average. A mean carries no interval, so every
+    # balance claim this project has made from `avg_kills` or `avg_hp_ended` has been a
+    # point estimate quoted as though it were a measurement. The rows below are what make
+    # a confidence interval, a median, or a two-sample test possible at all.
+    #
+    # It matters more than it looks. Extending three profiles from 8 seeds to 48 moved
+    # artisan 37.5% -> 18.8%, cartographer 50% -> 22.9% and emergent 12.5% -> 29.2%, which
+    # is up to three wins' worth against a documented noise budget of one. Without spread
+    # there was no way to see that coming.
+    #
+    # Cost is small and bounded: one flat row per run, so `--runs 48` writes 288 rows.
+    per_run = [
+        {
+            "agent": r.agent, "world_seed": r.seed, "run_seed": r.run_seed,
+            "floor_reached": r.floor_reached, "floors_cleared": r.floors_cleared,
+            "won": r.won, "win_path": r.win_path,
+            "kills": r.kills, "items_collected": r.items_collected,
+            "sigils_forged": r.sigils_forged, "caches_opened": r.caches_opened,
+            "turns_survived": r.turns_survived,
+            "hp_ended": r.hp_ended, "average_hp": round(r.average_hp, 2),
+            "cause_of_death": r.cause_of_death,
+            "egress_open": r.egress_open, "egress_route": r.egress_route,
+            "egress_why": r.egress_why,
+            # How the run ended, in HP. A death that fell from full health in one turn and a
+            # death that was ground down over thirty are different problems, and the loss
+            # column could not tell them apart.
+            "hp_tail": (r.pressure or {}).get("hp_tail", []),
+            "max_drop_pct": (r.pressure or {}).get("max_drop_pct", 0),
+            "critical_share": round((r.pressure or {}).get("critical_share", 0.0), 4),
+            "forced_share": round((r.pressure or {}).get("forced_share", 0.0), 4),
+            "labels": (r.pressure or {}).get("label_share", {}),
+        }
+        for name in agent_names for r in results[name]
+    ]
+
     output = {
         "world": world_json,
         "n_runs": n_runs,
         "max_floor": max_floor,
         "agent_stats": stats,
+        "per_run": per_run,
         "per_floor_survival": survival,
         # Without this, no win rate here is comparable to any other: a clean state and a
         # warm one are different experiments run by the same command.

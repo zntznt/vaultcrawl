@@ -38,6 +38,33 @@ _PROP_NAMES = ("durability", "magnitude", "reach", "decoy", "cleanse",
 _PROP_IDX = {n: i for i, n in enumerate(_PROP_NAMES)}
 
 
+def strip_grade(name: str) -> str:
+    """A sigil's verb, with any quality prefix removed. 'Legendary Recall' -> 'Recall'.
+
+    `quality.qualify_sigil` rewrites `ability` in place as "<grade> <verb>" and does not fill
+    in `base`, so anything matching an ability by equality against the bare verb stops seeing
+    the sigil the moment it is graded.
+    """
+    head, _, tail = str(name or "").partition(" ")
+    return tail if (tail and head in quality.NAMES) else str(name or "")
+
+
+def base_ability(sigil) -> str:
+    """The verb of a sigil dict, whatever its grade.
+
+    This was `SigilSystem._ab`, a private method that the sigil system used everywhere and
+    nothing outside it knew about. The brain, `Game.deploy_sigil` and the locus forge each
+    kept their own version, written as `== "Recall"`, and were therefore blind to every
+    graded sigil the player carried. Measured on one 10,485-turn run: an agent holding a
+    Recall sigil on about 3,900 turns could see it on 65. One definition, in one place.
+    """
+    if isinstance(sigil, str):
+        return strip_grade(sigil)
+    if not isinstance(sigil, dict):
+        return ""
+    return sigil.get("base") or strip_grade(sigil.get("ability", ""))
+
+
 def _props(sigil: dict) -> list[int]:
     """Return the property vector for a sigil (creates if absent).
     Backward-compatible: converts old 'perks' list on first access."""
@@ -269,15 +296,13 @@ class SigilSystem(System):
                       pos=(game.player.x, game.player.y))   # shards are salvageable
 
     def _ab(self, sigil) -> str:
-        """The dispatch verb for a sigil, immune to a quality name-prefix. qualify_sigil
-        prefixes the *display* name (e.g. 'Epic Ward'); abilities still match the bare
-        verb (via stored `base`, else by stripping a leading tier word)."""
-        base = sigil.get("base")
-        if base:
-            return base
-        ability = sigil.get("ability", "")
-        head, _, tail = ability.partition(" ")
-        return tail if (tail and head in quality.NAMES) else ability
+        """The dispatch verb for a sigil, immune to a quality name-prefix.
+
+        Kept as a method because the system calls it in a dozen places; the rule itself now
+        lives in `base_ability` so the brain and the game read a sigil the same way this
+        does.
+        """
+        return base_ability(sigil)
 
     def _first(self, ability):
         return next((s for s in self.slots if self._ab(s) == ability), None)

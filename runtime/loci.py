@@ -165,7 +165,10 @@ class LocusSystem(System):
         sigs = game.system("sigils")
         salv = game.system("salvage")
         if sigs and len(sigs.slots) < sigs.max_slots(game):
-            slotted = {s.get("ability") for s in sigs.slots}
+            # By verb, not display name: a graded "Legendary Recall" is not the string
+            # "Recall", so the locus used to hand you a second one of what you already had.
+            from runtime.sigils import base_ability
+            slotted = {base_ability(s) for s in sigs.slots}
             for ability in ("Recall", "Ward", "Phase", "Echo", "Rally"):
                 if ability not in slotted:
                     sigs.slots.append({"ability": ability, "base": ability,

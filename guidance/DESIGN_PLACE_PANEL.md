@@ -48,9 +48,49 @@ location.
   dim-blue; middot dither and heart-glow removed.
 - **DONE — Step 6a** (cut the manual): arrival is name + one woven voice line; room entry is
   one quiet line folding the truest motif.
-- **TODO — Step 5** (ambient narrator from real reachable state) & **Step 6b** (wait-to-
-  listen). Acceptance test: every ambient line must point at a reachable thing or it's a
-  lying screen.
+- **DONE (2026-07-27). Step 5** (ambient narrator from real reachable state) and **Step 6b**
+  (wait-to-listen). Acceptance test: every ambient line must point at a reachable thing or
+  it's a lying screen. `runtime/narrator.py`, `tests/test_narrator.py`.
+
+### What step 5 and 6b turned out to be
+
+The panel is closed. Notes for whoever reads this next, including the two places the plan
+had to be read against the world rather than followed literally:
+
+- **The narrator reports deltas, never state.** Measured first: within the player's own
+  sense ranges there are about 24 elemental props within earshot and 16 within sight at any
+  moment, so a narrator that described what *is* there would talk every turn forever. It
+  diffs corpses and elemental tiles between turns and speaks only about what changed, which
+  is what "fired only when a perceivable EVENT happens" has to mean in practice.
+- **The cardinal rule is structural, not a review item.** A percept carries a predicate over
+  live game state, and that predicate is re-asked at the moment of speaking. It is not
+  possible for a line to name a thing that has gone, because the sentence is not built until
+  the world has been asked again.
+- **The senses profile IS the falloff.** No new distance model: the registered `player`
+  profile is SIGHT 9, SOUND 14, SMELL 6, and identification needs line of sight per
+  `SENSES_SPEC.md`. So sight names the thing, and sound and smell give a bearing and stay
+  ignorant. "A wet struggle to the north" is a sound-band line, and it never says what did
+  the killing.
+- **The one-line-per-turn cap had to be global**, in `Game.log`, not inside the narrator.
+  Several unrelated producers write to this channel and none can see the others. It sits
+  below the duplicate collapse, so four lightning strikes still read as one "(x4)" line: a
+  rule about how many lines there may be should not suppress a counter on a line that is
+  already there.
+- **Rank, which the panel did not anticipate.** The place-voice murmur fires from inside
+  `try_move`, before the narrator has looked at the turn, so without a tie-break it took
+  every contested turn by going first. A line you can walk to now outranks one you cannot.
+- **Phrasing needed variants.** One region's element dominates a whole floor. Read by eye
+  over three seeds, the first draft said "Something hisses" in eighteen of twenty-four
+  distinct lines. Choosing among several phrasings, keyed deterministically on the tile,
+  took the same 83 lines from 36 distinct to 57.
+
+Two things the panel asked for that were done differently, on purpose:
+
+- **Flora is not a percept.** It spreads one to three plants every turn, so reporting it is
+  reporting inventory. It reaches the log through fire instead.
+- **Step 6b's "in wait()"** is implemented as "the player did not move", which also covers
+  shielding and casting in place. That is closer to the panel's own stated intent, "the world
+  acting near you while you stand still", than keying on one verb.
 
 ## Build plan
 

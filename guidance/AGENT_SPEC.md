@@ -39,6 +39,95 @@ hardcoded differences between agents. The contract is:
 six separate agent files (personality-gated) into one universal tree explicitly to
 satisfy Berlin. Do not reintroduce the split.
 
+## What the win rate is for
+
+**There is no target win rate. Do not tune toward one.** This section exists because a 40-60%
+band was treated as a standard for most of this project's life while appearing in no spec, and
+five constants were moved to chase it on samples that could not tell their arms apart. See
+`guidance/PROJECT_ASSESSMENT.md`, "Correcting the record".
+
+The agents are an instrument for showing that the systems are reachable and the decisions are
+real. They are **not** a difficulty proxy for a human player, and three facts make that concrete
+rather than rhetorical:
+
+- **They do not play the same game.** `Game(sandbox=True)` and the pattern compiler in
+  `runtime/arch/` are the default interactive mode. `agent_eval` builds `sandbox=False`
+  (`agent_eval.py:100`) and runs classic descent, so the win rate is measured on a level
+  generator the default human session never sees.
+- **They have no memory across runs.** `decide()` is a per-turn scoring pass over
+  `agent_state()`, and `Game.__init__` calls `reset_run_state()`. A person accumulates knowledge
+  of a world across deaths; the agent is denied that by construction.
+- **They are harness-shaped.** The 500-turn floor abandonment and the anti-stall BFS in
+  `run_agent` (`agent_eval.py:126`, `:201`) are properties of the evaluation, not of the game.
+
+So 50% would not mean the game is fairly tuned for a person, and the low twenties does not mean
+it is punishing. The number means something in two ways only: compared against its own recorded
+history, and read through the conditions below.
+
+### The health checklist
+
+This is the actual contract. Every line is checkable from one `eval_stats.json` at 144 runs or
+more. Current readings are the 288-run pass after the graded-name fix, six profiles, on the
+corrected telemetry: before it, panic turns were recorded as repeats of the previous decision and
+`label_share` was truncated to the top 8 of about 30 before `policy_divergence` was computed
+from it, so every figure in this table older than that was drawn from a contaminated
+distribution.
+
+| condition | field | limit | current |
+|---|---|---|---|
+| every profile can win | `agent_stats[a].win_rate` | above 0 for all six | 6 of 6 |
+| every route is used | pooled `agent_stats[a].win_paths` | all present | 5 of 5 |
+| no route dominates | pooled `win_paths` | top route at most 60% | 44% |
+| no verb is broken | `agent_stats[a].emergence.broken_verbs` | empty | empty |
+| decisions are contested | `pressure.uncontested_share` | at most 0.05 | 0.000 |
+| the decision space is used | `pressure.labels_used` | at least 20 | 23.0 to 29.9 |
+| profiles actually differ | `policy_divergence` | every pair above 0.10 | 0.114 to 0.562 |
+
+`diplomacy`, the final warden laying down its arms at parley, fired for the first time in the
+run recorded here, which is why the route count is five rather than four.
+
+The first three and the last are Berlin conditions wearing measurement clothes. A profile that
+cannot win is class-locked in effect whatever the code says; a route nobody takes is a system
+that exists only in the source; six profiles that produce one policy are decorative. The
+`policy_divergence` block is already computed and already in the dump.
+
+**A change that breaks one of these is a regression regardless of what it does to the win rate.
+A change that moves the win rate while all seven hold is not, by itself, a problem.**
+
+### The aggregate
+
+Report it as wins over runs with a Wilson interval, at 288 runs or more, never as a bare
+percentage. Compare it against the history recorded in `PROJECT_ASSESSMENT.md`, not against a
+band. The only absolute call is degeneracy: sustained below 10% or above 80% means something is
+broken rather than mistuned, because at those extremes the runs stop discriminating between
+designs at all.
+
+Current: **63 of 288, 21.9%, [17.5, 27.0]**, against 76 of 288, 26.4% before the graded-name
+fix, 77 of 288, 26.7% before the telemetry corrections, and 34 of 144, 23.6% [17.4, 31.2] as an
+independent reproduction. The last of those steps is a measured cost of unblocking a mis-scored
+branch, not noise being chased; see `PROJECT_ASSESSMENT.md`.
+
+### When it moves, diagnose before you tune
+
+The order that worked, on the sweep and the death measurement that produced the numbers above:
+
+1. **Split the losses.** In `per_run`, a truthy `cause_of_death` means the run died; everything
+   else that did not win stalled. Deaths and stalls answer to completely different levers, and
+   at present deaths are about 74% of losses and no threshold touches them.
+2. **Read what the stalls were short of.** `egress_why` enumerates all four routes with the
+   counts that run actually held.
+3. **Read the shape of the deaths.** `max_drop_pct` and `hp_tail` separate a burst from an
+   attrition, and they are not the same problem. Measured: median worst single-turn fall is 17%
+   of max HP, no run in 288 ever took a 50% hit, and every dying run spent dozens of turns below
+   25% HP. Beware `hurt_share` on its own: it divides by runs of five to ten thousand turns, so
+   hundreds of desperate turns vanish into thousands of healthy ones.
+4. **Price the candidate before running an arm.** Count the runs a new threshold would have
+   released. Measured against a 576-run sweep, that prediction was exact at one point of gate,
+   within a win at two, and four wins optimistic at four, since a larger change opens the stair
+   earlier and the run diverges rather than merely being re-scored.
+
+An arm is 144 runs and about an hour. Most candidates can be rejected for free.
+
 ## UniversalBrain & profiles (`runtime/agent.py`)
 
 `class UniversalBrain(Brain)` — single class; `name` property sets the active profile.
@@ -80,11 +169,16 @@ commune landmarks) → WORKSPACES (fabricator/terminal/depleted/camp within 6, s
 REST (safe, hp<70%) → WEATHER CLEAR → FIGHT (adjacent hostiles, weighted by hp/defense)
 → DE-ESCALATION (kills≥4: descend or move to stairs) → STAIRS (on or toward).
 
-## AgentAction — 14-verb vocabulary (`runtime/agent_action.py`)
+## AgentAction, a 19-verb vocabulary (`runtime/agent_action.py`)
 
 `@dataclass AgentAction(kind, dx, dy, index, target, additive)` at `agent_action.py:14`.
-Kinds: **move, wait, cast, shield, shove, interact, descend, forge, rest, talk, toss,
-negotiate, breakdown, commune, becalm, craft_consumable.**
+Kinds: **move, wait, cast, shield, shove, interact, descend, ascend, forge, rest, talk,
+toss, negotiate, breakdown, becalm, craft_consumable, commune, deploy, recover.**
+
+Nineteen, counted off `dispatch()`. This heading said fourteen and then listed sixteen,
+a different sixteen from the one the dataclass comment listed. Two of the nineteen,
+`talk` and `ascend`, are dispatched but emitted by no brain. Every one of the nineteen is
+now also reachable from the keyboard; see `guidance/SYSTEMS_GAP.md`.
 
 `dispatch(game, action)` at `agent_action.py:44` routes each verb — `"forge"` →
 `forge.forge(game, ability=target)`, `"negotiate"` → `Parley(...).hear(...)`,
@@ -114,20 +208,35 @@ standing + knowledge + matter), **companions** (hp/dist/command, `companion_pena
 
 ## agent_eval.py — evaluation harness
 
-`@dataclass RunResult` at `agent_eval.py:85`: agent, seed, floor_reached, won, kills,
-items_collected, sigils_forged, caches_opened, turns_survived, hp_ended, cause_of_death,
-floors_cleared, average_hp, attractor_scores, narrative.
+`@dataclass RunResult` at `agent_eval.py:45`: agent, seed, floor_reached, max_floor, won, kills,
+items_collected, sigils_forged, caches_opened, turns_survived, hp_ended, `run_seed`,
+`egress_open`/`egress_route`/`egress_why`, cause_of_death, floors_cleared, average_hp,
+attractor_scores, narrative, metrics, `win_path`, `pressure`, `emergence`.
 
-`run_agent(world_json, agent_name, max_floor, max_turns_per_floor)` at `agent_eval.py:104`:
-builds all systems via `_build_systems()`, assigns brain via `make_brain`, loops
-`brain.decide` → `dispatch` → anti-stall BFS. Records `AttractorTracker` per floor.
+`run_seed` is the per-run varier and `seed` is the world's, so a row identifies its own game:
+`run_agent(world, agent, floors, run_seed=<row's>)` replays it. The three `egress_*` fields
+record what the last stair wanted at the moment the run ended.
 
-`evaluate_agents(world_json, n_runs, max_floor)` at `agent_eval.py:259`: runs each of 6
+`run_agent(world_json, agent_name, max_floor, max_turns_per_floor, run_seed)` at
+`agent_eval.py:79`: builds all systems via `_build_systems()`, builds `Game(..., sandbox=False)`
+so this is classic descent rather than the sandbox the interactive mode uses, assigns brain via
+`make_brain`, loops `brain.decide` → `dispatch` → anti-stall BFS. Records `AttractorTracker` per
+floor. `max_turns_per_floor` defaults to 500 and abandoning a floor at that limit is a harness
+behaviour, not a game rule.
+
+`evaluate_agents(world_json, n_runs, max_floor)` at `agent_eval.py:313`: runs each of 6
 profiles `n_runs` times, computes per-agent aggregates (win_rate, avg_floor, deepest_floor,
-avg_kills, avg_sigils_forged, avg_caches_opened, avg_turns, avg_hp_ended, deaths), builds
-**per-floor survival curves** (`surv_curve[f] = count reaching ≥f`), collects attractor
-metric averages + narrative samples. Output → `~/.vaultcrawl/eval_stats.json`.
+avg_kills, avg_sigils_forged, avg_caches_opened, avg_turns, avg_hp_ended, deaths, win_paths,
+pressure, emergence), builds **per-floor survival curves** (`surv_curve[f] = count reaching ≥f`),
+collects attractor metric averages + narrative samples, and emits `per_run` (one row per run),
+`policy_divergence` (all 15 profile pairs), `persistence` and `hash_seed`. Output →
+`~/.vaultcrawl/eval_stats.json`.
 
 `DEFAULT_RUNS = 100`, `DEFAULT_MAX_FLOOR = 99`. CLI: `python3 -m runtime.agent_eval
 world.json --runs 20 --agent whisper`. `AGENT_NAMES = ["artisan", "cartographer",
 "emergent", "exploiter", "seeker", "whisper"]`.
+
+`--runs` is **per profile**, so `--runs 48` is a 288-run evaluation. Anything quoted as a
+measurement needs at least that; 8 seeds moves by up to three wins per profile. Use `per_run`
+for spread rather than quoting a mean, run from a clean `~/.vaultcrawl` at a fixed
+`PYTHONHASHSEED`, and never alongside the test suite.

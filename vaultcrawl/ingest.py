@@ -5,7 +5,14 @@ unresolved links (to notes that don't exist) are dropped from the graph but coun
 
 The vault *seed* is a hash of note ids + bodies + resolved links only -- NOT mtimes or
 absolute paths -- so copying the vault to another machine yields the identical world.
-mtimes are used solely for the per-region `activity` signal.
+
+That last sentence was false for as long as it had been written. The seed was clean, but
+`activity` was min-max normalised from mtimes and reached the mechanical layer, so a clone
+really did bake a different world: different creature archetypes, and with them different
+family actions, glyphs and sense profiles. mtimes are now read but unused unless a caller
+opts in with `use_mtime_activity`; the default is a stable per-note hash, which reproduces
+recency actually supplied (a spread uncorrelated with graph position) without the clock.
+See mapping.activity_map().
 """
 from __future__ import annotations
 
@@ -77,6 +84,11 @@ class Vault:
     out_adj: dict        # id -> [linked ids]  (directed: source -> target)
     seed: str
     link_count: int
+    # Opt in to deriving `activity` from file modification times instead of from graph
+    # position. Off by default because mtimes do not survive a copy or a clone, so a world
+    # baked with this on is reproducible only on the machine that made it. See
+    # mapping.activity_map().
+    use_mtime_activity: bool = False
 
 
 def _iter_markdown(root: str):
