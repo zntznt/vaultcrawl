@@ -109,6 +109,49 @@ def test_a_wounded_agent_casts_its_recall_instead_of_deploying_it(game):
         "floor, which is the candidate that beat casting on every measured run")
 
 
+def _quiet(game):
+    """Strip the situational bumps: no hostiles near, no hazards underfoot."""
+    game.actors = [a for a in game.actors
+                   if a is game.player or getattr(a, "allegiance", "") == "companion"]
+    react = game.system("reactions")
+    if react is not None and hasattr(react, "props"):
+        react.props.clear()
+    s = agent_state(game, game.player)
+    assert not s.get("near_hostiles"), "the fixture still has hostiles in range"
+    assert not s.get("hazard_tiles"), "the fixture still has hazards in range"
+    return s
+
+
+def test_the_sigil_weight_decides_deploy_when_nothing_is_happening(game):
+    """The point of base 0.
+
+    `_score` returns max(weight, state). Deploy's base used to be an unconditional 8, at or
+    above every `sigil` weight, so the profile was never consulted: 418 calls, 0 binds. With
+    no hostiles and no hazards the state is 0, so two different weights must give two
+    different scores. If they do not, the weight is inert again and deploy is back to being
+    a standing offer worth 8 for nothing having happened.
+    """
+    _slot(game, "Ward")
+    _quiet(game)
+
+    seen = {}
+    for weight in (4, 7):
+        PROFILES["cartographer"]["sigil"] = weight
+        try:
+            brain = UniversalBrain("cartographer")
+            brain.decide(game, game.player)
+            seen[weight] = _scores(brain).get("deploy")
+        finally:
+            PROFILES["cartographer"]["sigil"] = 5
+
+    assert None not in seen.values(), f"no deploy candidate was produced: {seen}"
+    assert seen[4] != seen[7], (
+        f"deploy scored {seen[4]} at weight 4 and {seen[7]} at weight 7, so the profile "
+        f"weight is still being discarded by the state floor")
+    assert seen[7] - seen[4] == pytest.approx(3, abs=0.01), (
+        f"deploy should track the weight one for one when quiet, got {seen}")
+
+
 def test_deploying_recall_is_still_available_when_healing_would_not_help(game):
     """The guard is a state gate, not a ban. At full HP the beacon is a fine idea."""
     _slot(game, "Recall")

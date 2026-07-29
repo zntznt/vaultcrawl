@@ -156,6 +156,43 @@ to zero — initial push for divergence before the floor dominates.
 `decide(self, game, actor)` calls `agent_state(game, actor)` once per turn, then walks a
 **priority cascade** scoring each candidate, picking the highest.
 
+### A third of the weights never bind. Check before you tune.
+
+`max()` discards the weight whenever state urgency exceeds it. Where that happens on every
+call, the candidate scores identically for all six profiles and the weight is inert: present
+in the source, edited in balance passes, read by nobody. Measured with
+`python3 -m runtime.weight_audit examples/world.json`, which walks every `_score` call site
+during real runs and tallies which branch of the `max()` won.
+
+Measured at 6 runs, one per profile, clean state, `PYTHONHASHSEED=0`: **12 of 33 call sites
+had never once had a weight decide a score.** The inert keys at those sites were
+`breakdown`, `commune`, `flee`, `recall`, `rest`, `sigil`, `stairs`, `toss`, `ward` and
+`workspace_depleted`. A later run at the same settings gave 11 of 32 and moved `parley` onto
+the list, so treat the membership of low-call sites as noisy and the high-call findings below
+as solid. Two worth knowing:
+
+- **`recall` has never decided anything.** Healing urgency is `(100 - hp%) / 4`, which
+  exceeds the 3-to-6 weight range at any HP low enough to open the branch. Rounds of tuning
+  that key changed nothing, and the diagnosis kept coming back to scoring because the weight
+  was visible and its inertness was not.
+- **`explore` is the live lever**, binding on 79 to 85% of calls at its three main sites. It
+  is very nearly the only key through which the profiles actually differ, which is why
+  candidates that borrowed it (`deploy` and `recover`, until `efd591b`) distorted so much.
+
+This is **not** a Berlin violation: nothing is locked and every profile can still do
+everything. It is narrower and worth stating anyway, because the six profiles are meant to
+differentiate through weights, and on a third of the sites where a weight is written that
+mechanism is bypassed. The agents are more alike than the table in `PROFILES` suggests.
+
+Two consequences for practice. **Run the audit before tuning a weight**, or you may spend a
+measurement arm on a number the game does not read. And **do not "fix" this by changing
+`max()`**: the semantics are load-bearing everywhere at once, and swapping them would
+invalidate every baseline this project has. Where inertness causes a real pathology, lower
+the state constant at that one site instead. `deploy` is the worked example: an unconditional
+base of 8 sat above every `sigil` weight, so the situational bumps meant nothing and the
+candidate was a standing offer on every turn a sigil existed. Dropping the base to 0 moved
+that site from 0% binds to 36%.
+
 ## Priority cascade
 
 PANIC (hp<25%: cast Phase or descend/flee) → COMMUNE (truths≥2 or matter≥4 near boss,

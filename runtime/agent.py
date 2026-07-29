@@ -631,7 +631,15 @@ class UniversalBrain(Brain):
                 continue
             has_hostiles = bool(s.get("near_hostiles"))
             has_hazards = bool(s.get("hazard_tiles"))
-            state = 8
+            # Base 0, not 8. `_score` returns max(weight, state), so an unconditional
+            # floor of 8 sat at or above every `sigil` weight and the profile was never
+            # consulted: measured at 418 calls and 0 binds by `runtime/weight_audit.py`.
+            # Deploy was a standing offer on every turn a sigil existed, worth at least 8
+            # for nothing having happened, and it drained 532 sigils to the floor against
+            # 265 recovered. At 0 the neutral case scores the profile's own weight and the
+            # situational bumps below are what make deploying urgent. Nothing is gated:
+            # the candidate is still built for every deployable sigil, every turn.
+            state = 0
             if has_hostiles: state += 5
             if has_hazards: state += 5
             # Deploying Recall used to gain +10 here at exactly the HP where the HEAL
