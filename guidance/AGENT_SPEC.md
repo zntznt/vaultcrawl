@@ -190,25 +190,45 @@ measurement arm on a number the game does not read. And **do not "fix" this by c
 invalidate every baseline this project has. Where inertness causes a real pathology, lower
 the state constant at that one site instead.
 
-`deploy` is the worked example, and it is a cautionary one. Its unconditional base of 8 sat
-above every `sigil` weight, so the situational bumps meant nothing and the candidate was a
-standing offer on every turn a sigil existed. Dropping the base to 0 did exactly what it was
-supposed to: binds went 0% to 36%, sigil occupancy 3.1% to 28.7%, deploys halved, shatters up
-eight-fold. It was still **reverted** (`b71e49e`), because it put artisan into a hard stall:
-11.38 `decide()` calls per game turn against 1.01 on the same seed, with **91% of decisions
-choosing `commune`**.
+`deploy` is the worked example, and the way it went wrong is the more useful half. Its
+unconditional base of 8 sat above every `sigil` weight, so the situational bumps meant nothing
+and the candidate was a standing offer on every turn a sigil existed. Dropping the base to 0
+did what it was supposed to: binds 0% to 36%, sigil occupancy 3.1% to 28.7%, deploys halved,
+shatters up eight-fold.
 
-That loop is not deploy's fault and lowering the base did not create it. `COMMUNE` scores
-`25 + late_bonus + boss_bonus`, so it outranks everything whenever it is reachable, and the
-action it picks does not always advance the turn. Deploy at 8 never competed with 25. What
-base 8 was doing was keeping runs out of the resource states where commune becomes reachable
-at all, so the loop stayed hidden. **The commune loop is the blocker.** Fix it, then lower
-deploy's base, and expect the whole sigil economy to move when you do.
+It also put artisan into a hard stall: 11.38 `decide()` calls per game turn against 1.01 on
+the same seed, with **91% of decisions choosing `commune`**. It was reverted (`b71e49e`), then
+restored once the stall was diagnosed, because the stall was never deploy's.
 
-The general lesson is worth more than the specific one: a state constant can be load-bearing
-for reasons that have nothing to do with the candidate it belongs to. Measure decisions per
-game turn (a ratio above about 1.05 is a stall) on any change that lets a previously
-dominated candidate start winning.
+### The commune livelock, and why it hid for so long
+
+`Game.commune()` requires an elite at Chebyshev distance <= 1, returns `None` when there is
+none, and spends no turn on that path. The brain scored the verb off `near_hostiles`, which is
+everything within **3**. On any turn with an elite at distance 2 or 3 the agent chose an action
+that could not fire, the state did not change, and it chose the same action again.
+
+The fatigue backstop could not break it. Fatigue caps at `FATIGUE_MAX` 60; commune scores
+`25 + late_bonus` with `late_bonus = (floor - 19) * 8`, which is 65 on floor 24 and 73 on floor
+26. **Above the cap the candidate cannot be dislodged at all**, so on deep floors the loop is
+permanent rather than merely wasteful. That is why it showed up in artisan first: artisan gets
+deep. It is also why deploy's base of 8 mattered. It was keeping runs out of the resource
+states where commune became reachable, and lowering it only stopped hiding the loop.
+
+The fix narrows the verb to adjacency and adds `commune_approach`, a travel candidate at the
+same urgency. Both halves are required: narrowing alone would have deleted the commune win
+path, because nothing else in the cascade moves the agent toward an elite on purpose. Pinned
+by `tests/test_commune_reach.py`.
+
+Three rules fall out of this, and they are the transferable part:
+
+1. **A candidate's reachability test must match its verb's precondition.** A verb that can
+   fail without spending a turn plus a candidate that outscores everything is a livelock, not
+   a wasted turn.
+2. **Check any urgency that can exceed `FATIGUE_MAX`.** Fatigue is the only backstop against a
+   non-resolving candidate, and it silently stops working above 60.
+3. **Measure decisions per game turn on any change that lets a previously dominated candidate
+   start winning.** A ratio above about 1.05 is a stall. Win rate will not tell you: the stalled
+   configuration still won runs, it just spent eleven decisions buying each turn.
 
 ## Priority cascade
 

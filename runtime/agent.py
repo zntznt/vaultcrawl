@@ -267,13 +267,23 @@ class UniversalBrain(Brain):
         needed = max(0, 2 - discount)
         can_commune = truths >= needed or s["matter"]["total"] >= 4
         elites = [h for h in s.get("near_hostiles", []) if h.get("tier", 1) >= 3 or h.get("is_boss")]
+        # `Game.commune()` needs an ADJACENT elite (Chebyshev <= 1). With none it returns
+        # None and spends no turn. `near_hostiles` is everything within 3, so scoring the
+        # verb off that offered it on turns where it could not possibly fire, and the
+        # decision loop that followed was unbreakable rather than merely wasteful: the
+        # fatigue backstop caps at FATIGUE_MAX 60, while commune scores 25 + late_bonus,
+        # which passes 60 from floor 24 and reaches 73 on floor 26. Above the cap nothing
+        # can dislodge it. Measured on artisan, which gets deep: 11.38 decide() calls per
+        # game turn, 91% of them commune. Every other profile sat at 1.01 to 1.03.
+        elites_adjacent = [h for h in elites if h.get("dist", 99) <= 1]
         elite_near = bool(elites)
+        elite_adjacent = bool(elites_adjacent)
         floor = s["position"]["floor"]
         boss_near = any(h.get("is_boss") for h in elites)
         # Boss floor: always try commune even if resources are low
         if boss_near and floor >= 26:
             can_commune = True
-        reachable = can_commune and elite_near
+        reachable = can_commune and elite_adjacent
         # Late-game surge: floors 20+ raise commune priority for healing sustain
         late_bonus = max(0, floor - 19) * 8  # +0 at 19, +8 at 20, +48 at 26
         # The last stair opens on any of four routes (Game.egress_ready). If it is shut,
@@ -284,9 +294,22 @@ class UniversalBrain(Brain):
             late_bonus += 20
         # Boss proximity: if any nearby elite is the final boss, override priority
         boss_bonus = 100 if boss_near and floor >= 26 else 0
-        score = _score(self.profile, "commune", 25 + late_bonus + boss_bonus, bonus, reachable)
+        commune_urgency = 25 + late_bonus + boss_bonus
+        score = _score(self.profile, "commune", commune_urgency, bonus, reachable)
         if score > 0:
             candidates.append(("commune", score, AgentAction("commune")))
+
+        # Out of range is not the same as not wanted. Walking to the elite is the step the
+        # cascade was missing: without it, narrowing the verb to adjacency would have
+        # quietly deleted the commune win path, since nothing else moves the agent toward
+        # an elite on purpose. Same urgency, so the intent keeps its priority, and a
+        # blocked path resolves to None and hands the turn to the next candidate.
+        if can_commune and elite_near and not elite_adjacent:
+            target = min(elites, key=lambda h: h.get("dist", 99))
+            approach = _score(self.profile, "commune", commune_urgency, bonus, True)
+            if approach > 0:
+                candidates.append(("commune_approach", approach,
+                                   ("commune_approach", target["x"], target["y"])))
 
         # ---- BEACON ----
         if s.get("beacon_on_floor") and s.get("nearest_beacon"):
@@ -631,22 +654,18 @@ class UniversalBrain(Brain):
                 continue
             has_hostiles = bool(s.get("near_hostiles"))
             has_hazards = bool(s.get("hazard_tiles"))
-            # This 8 is an unconditional floor, and `_score` returns max(weight, state),
-            # so it sits at or above every `sigil` weight: 418 calls, 0 binds, measured by
-            # `runtime/weight_audit.py`. The profile is never consulted here and the
-            # situational bumps below are decorative, since the candidate already wins on
-            # the floor alone. Deploy is a standing offer on every turn a sigil exists.
+            # Base 0, not 8. `_score` returns max(weight, state), so an unconditional
+            # floor of 8 sat at or above every `sigil` weight: 418 calls, 0 binds, measured
+            # by `runtime/weight_audit.py`. The profile was never consulted, the situational
+            # bumps below were decorative, and deploy was a standing offer on every turn a
+            # sigil existed. It drained 532 sigils to the floor against 265 recovered.
             #
-            # Dropping it to 0 was tried and reverted (`b71e49e`). It worked on its own
-            # terms: binds went to 36%, sigil occupancy from 3.1% to 28.7%, deploys halved.
-            # It also put artisan into a hard stall, 11.38 decide() calls per game turn
-            # against a baseline of 1.01 on the same seed, with 91% of decisions choosing
-            # `commune`. That loop is NOT caused here. COMMUNE scores 25 + bonuses and this
-            # never competed with it; base 8 was keeping runs out of the states where
-            # commune becomes reachable, and lowering it merely stopped hiding a decision
-            # loop that predates all of this. Fix the commune loop first, then come back
-            # and lower this number, and expect the sigil economy to change when you do.
-            state = 8
+            # This was tried once before and reverted (`b71e49e`), because it put artisan
+            # into an 11.38-decisions-per-turn stall. That stall was the commune livelock
+            # fixed in the same tranche as this line, not a fault of deploy: base 8 had been
+            # keeping runs out of the states where commune became reachable, so lowering it
+            # only stopped hiding the loop. With commune fixed, artisan runs at 1.03.
+            state = 0
             if has_hostiles: state += 5
             if has_hazards: state += 5
             # Deploying Recall used to gain +10 here at exactly the HP where the HEAL
@@ -886,7 +905,8 @@ class UniversalBrain(Brain):
                 if bt and bt != (0, 0):
                     return AgentAction("move", dx=bt[0], dy=bt[1])
                 return None
-            elif kind in ("salvage", "cache", "poi", "workspace", "recover"):
+            elif kind in ("salvage", "cache", "poi", "workspace", "recover",
+                          "commune_approach"):
                 tx, ty = winner[1], winner[2]
                 # Arriving at a deployed sigil is the point of the recover candidate, so
                 # check it before pathing: standing on the tile yields no step.
