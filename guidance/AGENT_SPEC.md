@@ -188,10 +188,27 @@ Two consequences for practice. **Run the audit before tuning a weight**, or you 
 measurement arm on a number the game does not read. And **do not "fix" this by changing
 `max()`**: the semantics are load-bearing everywhere at once, and swapping them would
 invalidate every baseline this project has. Where inertness causes a real pathology, lower
-the state constant at that one site instead. `deploy` is the worked example: an unconditional
-base of 8 sat above every `sigil` weight, so the situational bumps meant nothing and the
-candidate was a standing offer on every turn a sigil existed. Dropping the base to 0 moved
-that site from 0% binds to 36%.
+the state constant at that one site instead.
+
+`deploy` is the worked example, and it is a cautionary one. Its unconditional base of 8 sat
+above every `sigil` weight, so the situational bumps meant nothing and the candidate was a
+standing offer on every turn a sigil existed. Dropping the base to 0 did exactly what it was
+supposed to: binds went 0% to 36%, sigil occupancy 3.1% to 28.7%, deploys halved, shatters up
+eight-fold. It was still **reverted** (`b71e49e`), because it put artisan into a hard stall:
+11.38 `decide()` calls per game turn against 1.01 on the same seed, with **91% of decisions
+choosing `commune`**.
+
+That loop is not deploy's fault and lowering the base did not create it. `COMMUNE` scores
+`25 + late_bonus + boss_bonus`, so it outranks everything whenever it is reachable, and the
+action it picks does not always advance the turn. Deploy at 8 never competed with 25. What
+base 8 was doing was keeping runs out of the resource states where commune becomes reachable
+at all, so the loop stayed hidden. **The commune loop is the blocker.** Fix it, then lower
+deploy's base, and expect the whole sigil economy to move when you do.
+
+The general lesson is worth more than the specific one: a state constant can be load-bearing
+for reasons that have nothing to do with the candidate it belongs to. Measure decisions per
+game turn (a ratio above about 1.05 is a stall) on any change that lets a previously
+dominated candidate start winning.
 
 ## Priority cascade
 
