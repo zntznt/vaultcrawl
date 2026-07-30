@@ -124,3 +124,56 @@ def test_the_heal_urgency_stays_under_the_fatigue_ceiling():
         f"the heal can reach {worst_case}, at or above the fatigue ceiling of {FATIGUE_MAX}. "
         f"If the cast ever fails without spending a turn, nothing can dislodge it and the "
         f"run livelocks, exactly as commune did")
+
+
+def _panic_and_arm(game, hp_fraction, ability="Recall"):
+    sigs = game.system("sigils")
+    sigs.slots.clear()
+    sigs.slots.append({"ability": ability, "base": ability, "durability": 3,
+                       "note": "test", "role": "hub"})
+    p = game.player
+    damage_part(p, "torso", int(p.max_hp * (1 - hp_fraction)))
+    for part in ("head", "left_arm", "right_arm", "left_leg", "right_leg"):
+        try:
+            damage_part(p, part, int(p.max_hp * (1 - hp_fraction)))
+        except Exception:
+            pass
+    s = agent_state(game, p)
+    return s
+
+
+def test_a_panicking_agent_casts_its_heal_instead_of_running():
+    """PANIC returns before the candidate list exists, so HEAL cannot compete below the
+    cutoff. The branch knew about Phase and not about Recall, and fled with the heal in
+    hand on 78.1% of the decisions where casting was possible."""
+    g = _fresh_game()
+    s = _panic_and_arm(g, 0.20)
+    hp_pct = s["vitals"]["hp_pct"]
+    # cartographer carries fight -5, so its panic cutoff is 35, not the fighters' 25.
+    assert hp_pct < 35, f"fixture landed at {hp_pct}%, above cartographer's panic cutoff"
+    assert s["can_heal_meaningfully"], "the fixture did not wound the player meaningfully"
+
+    brain = UniversalBrain("cartographer")
+    brain.decide(g, g.player)
+    label = brain._last_candidates[brain._last_choice][0]
+    assert label == "panic_recall", (
+        f"a panicking agent at {hp_pct}% HP holding a castable Recall chose {label} "
+        f"instead of drinking it")
+
+
+def test_panic_still_prefers_phase_when_a_threat_is_adjacent():
+    """Blinking clear solves what the heal only delays, so Phase keeps priority."""
+    g = _fresh_game()
+    _panic_and_arm(g, 0.20, ability="Phase")
+    sigs = g.system("sigils")
+    sigs.slots.append({"ability": "Recall", "base": "Recall", "durability": 3,
+                       "note": "test", "role": "hub"})
+    s = agent_state(g, g.player)
+    if not s.get("near_hostiles"):
+        pytest.skip("no hostile in range on this floor, so the branch is not exercised")
+
+    brain = UniversalBrain("cartographer")
+    brain.decide(g, g.player)
+    label = brain._last_candidates[brain._last_choice][0]
+    assert label == "panic_phase", (
+        f"Phase lost its priority in PANIC, chose {label}")

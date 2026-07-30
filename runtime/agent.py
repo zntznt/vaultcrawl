@@ -251,6 +251,30 @@ class UniversalBrain(Brain):
                 for i, sig in enumerate(s["sigils"]):
                     if sig.get("verb") == "Phase":
                         return self._forced("panic_phase", AgentAction("cast", index=i))
+            # Healing is an escape. PANIC returns before the candidate list is built, so
+            # HEAL is unreachable below the cutoff by construction, and the branch knew
+            # about Phase and not about Recall: the agent fled with an unused heal in hand.
+            # That cost little while looting was outranking the heal higher up the band
+            # (30 decisions in 136,160), and became the whole remaining problem once the
+            # urgency curve was fixed: of the decisions where a Recall was castable,
+            # panic_flee took 78.1% and the heal 17.7%. Deaths in this game are attrition,
+            # never burst, so running at 3 HP with a Recall slotted is the worst available
+            # move. Phase still goes first, since blinking clear of an adjacent threat
+            # solves the problem the heal only delays.
+            #
+            # `_forced` returns before the candidate list exists, so this branch never
+            # meets the fatigue backstop at all. A forced action that fails without
+            # spending a turn is therefore an unbreakable loop with nothing to break it,
+            # which is strictly worse than the commune livelock (fatigue at least capped
+            # that one). Casting Recall has exactly one failure path, `hp >= max_hp` in
+            # `SigilSystem.cast`, and the guard below is strictly stronger than it: the
+            # `can_heal_meaningfully` half rules out cases the verb would have accepted.
+            # Keep it that way. If Recall ever grows a second way to fail, this branch
+            # needs the same reachability audit COMMUNE just went through.
+            if s.get("can_heal_meaningfully") and s["vitals"]["hp"] < s["vitals"]["max_hp"]:
+                for i, sig in enumerate(s["sigils"]):
+                    if sig.get("verb") == "Recall":
+                        return self._forced("panic_recall", AgentAction("cast", index=i))
             if s["position"]["on_stairs"]:
                 return self._forced("panic_descend", AgentAction("descend"))
             if st:
