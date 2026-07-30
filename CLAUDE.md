@@ -115,12 +115,21 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
    `agent_eval` writes per-run rows into `eval_stats.json`, so use those for spread rather
    than quoting a mean. **Deaths are 74% of losses and they are attrition, not burst**: median
    worst single-turn fall is 17% of max HP, no run in 288 ever took a 50% hit, and every dying
-   run spent dozens of turns below 25% HP. `recall` and `sigil_escape` still fire on 0.00% of
-   decisions, and the reason is **not** the graded-name blindness that was fixed in `9353050`:
-   the agent holds no sigil at all on 93 to 96% of turns, because `deploy` and `recover` are
-   scored on the `explore` profile key (worth 15 to cartographer) while HEAL is scored on
-   `recall` (worth 3 to 6), so the agent deploys its heal instead of casting it. **That
-   mis-keyed candidate is the named next lever, not a balance constant.**
+   run spent dozens of turns below 25% HP. **The long-standing `recall` at 0.00% claim was
+   three separate things and the headline number was never evidence of any of them.** A label
+   share puts every decision in the run in the denominator, and the agent is below 60% HP on
+   under 1% of its decisions, so an emergency verb reads as 0.0% no matter how well it works.
+   Use `python3 -m runtime.availability <world>`, whose UPTAKE section reports the conditional
+   rate: what the agent chose on the decisions where a Recall was genuinely castable. On that
+   instrument the defect was real and large, 13 casts in 187 chances, 7.0%, against locus 25%
+   and explore_unseen 16%. The three causes, all now fixed and none of them the one this
+   paragraph used to name: `deploy` and `recover` borrowed the `explore` key (`efd591b`);
+   `deploy` opened at an unconditional state of 8 that outranked every `sigil` weight
+   (`a59a500`); and HEAL's urgency was `(100 - hp%) // 4`, which cleared the exploration
+   identity floor of 15 only below 40% HP while PANIC hard-overrides at 35, leaving the heal a
+   five-point window. **Raising the `recall` weight could never have worked**: it is 3 to 6 and
+   `runtime/weight_audit.py` measures it at 84 calls and 0 binds, so it has never once been the
+   term that decided anything.
    The rows also carry `egress_open`/`egress_route`/`egress_why`, which
    record what the last stair wanted at the moment the run ended, so **price a threshold from
    an evaluation you already have before spending an hour on an arm.** Counting the stalled

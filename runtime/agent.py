@@ -328,7 +328,21 @@ class UniversalBrain(Brain):
         if reachable:
             for i, sig in enumerate(s["sigils"]):
                 if sig.get("verb") == "Recall":
-                    urgency = (100 - hp_pct) // 4
+                    # Halved divisor, was 4. The old curve gave the heal a five-point
+                    # window and nothing else. The exploration family (`locus`,
+                    # `explore_unseen`, `salvage`, `cache`, `poi`) scores on `explore`,
+                    # whose weight binds on 79 to 85% of calls and reaches 15, so HEAL had
+                    # to clear 15 to be chosen: (100 - hp) // 4 > 15 means HP under 40, and
+                    # PANIC takes the turn at 35 (25 for fighters). The `recall` weight
+                    # cannot help, being 3 to 6 and never once the binding term.
+                    #
+                    # Measured on the conditional rate, which is the only honest instrument
+                    # here: over 187 decisions where a Recall was genuinely castable, the
+                    # agent cast it 13 times, 7.0%, and spent the rest on locus 25%,
+                    # explore_unseen 16%, salvage 11%. Wounded, holding the heal, looting.
+                    # At // 2 the heal clears 15 from 70% HP down, so it is live across the
+                    # whole band the branch is gated to rather than in a sliver of it.
+                    urgency = (100 - hp_pct) // 2
                     score = _score(self.profile, "recall", urgency, bonus, True)
                     candidates.append(("recall", score, AgentAction("cast", index=i)))
                     break

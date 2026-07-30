@@ -156,6 +156,24 @@ to zero — initial push for divergence before the floor dominates.
 `decide(self, game, actor)` calls `agent_state(game, actor)` once per turn, then walks a
 **priority cascade** scoring each candidate, picking the highest.
 
+### A label share is the wrong instrument for an emergency verb
+
+`recall` sat at 0.00% for most of this project's life and was read, repeatedly, as broken
+scoring. The share was never evidence of that. Its denominator is every decision in the run,
+and the agent is below 60% HP on **under 1%** of its decisions, so a verb gated to that band
+reads as zero however well it is working. The same applies to `sigil_escape` and to anything
+else that only applies in a crisis.
+
+The instrument that means something is conditional. `python3 -m runtime.availability <world>`
+reports it as UPTAKE: of the decisions where the verb was genuinely available, what did the
+agent choose? On that measure the heal really was broken, and by a lot. Over 187 decisions
+where a Recall was castable it cast 13 times, 7.0%, against locus 25%, explore_unseen 16% and
+salvage 11%. Wounded, holding the heal, looting.
+
+Before calling a low share a bug, ask how often the verb's own preconditions hold. Before
+calling it fine, check the conditional rate. The two questions have different answers and this
+project spent a long time asking neither.
+
 ### A third of the weights never bind. Check before you tune.
 
 `max()` discards the weight whenever state urgency exceeds it. Where that happens on every

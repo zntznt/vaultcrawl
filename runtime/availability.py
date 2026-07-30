@@ -91,13 +91,28 @@ def sample(world_json: str, runs: int = 2, agents=None) -> dict:
             if v in verbs:
                 t["holding_" + v] += 1
         vitals = s["vitals"]
+        castable = False
         if vitals["hp_pct"] < 60 and vitals["hp"] < vitals["max_hp"]:
             t["wounded"] += 1
             if s.get("can_heal_meaningfully"):
                 t["heal_gate_open"] += 1
                 if "Recall" in verbs:
                     t["could_cast"] += 1
-        return orig_decide(self, game, actor)
+                    castable = True
+        action = orig_decide(self, game, actor)
+        if castable:
+            # Uptake, not share. A verb that only applies in an emergency has a near-zero
+            # label share by construction, because the denominator is every decision in the
+            # run. `recall` sat at 0.02% for the life of this project and was read as broken
+            # scoring; the agent is simply below 60% HP on under 1% of its decisions. The
+            # number that means something is what it chooses when it genuinely could cast.
+            try:
+                idx = self._last_choice
+                label = self._last_candidates[idx][0] if idx is not None else "<none>"
+            except Exception:
+                label = "<unreadable>"
+            t["castable_chose_" + label] += 1
+        return action
 
     def emit(self, etype, **data):
         t = tally[current["agent"]]
@@ -164,6 +179,21 @@ def report(data: dict) -> None:
           f"{_pct(agg.get('could_cast', 0), n):>11}")
     print("\n  `could cast` is the ceiling on the `recall` label share: wounded, heal gate")
     print("  open and a Recall in the slots, all on the same decision.")
+
+    uptake = collections.Counter({k[len("castable_chose_"):]: v for k, v in agg.items()
+                                  if k.startswith("castable_chose_")})
+    total = sum(uptake.values())
+    print("\nUPTAKE: what it chose on the decisions where a Recall was castable\n")
+    if not total:
+        print("  no castable decisions in this sample")
+    else:
+        print(f"  {total} such decisions\n")
+        for label, count in uptake.most_common(10):
+            mark = "   <- the heal" if label == "recall" else ""
+            print(f"  {label:22} {count:6} {count / total:7.1%}{mark}")
+        print("\n  This is the honest instrument for an emergency verb. A label share puts")
+        print("  every decision in the run in the denominator, so a verb that only applies")
+        print("  below 60% HP reads as 0.0% no matter how well it is working.")
 
     print("\nFLOW: where sigils come from and where they go\n")
     hdr2 = (f"  {'AGENT':14} {'FORGED':>7} {'SHATTERED':>10} {'DEPLOYED':>9} "
