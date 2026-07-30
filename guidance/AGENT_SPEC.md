@@ -174,6 +174,19 @@ Before calling a low share a bug, ask how often the verb's own preconditions hol
 calling it fine, check the conditional rate. The two questions have different answers and this
 project spent a long time asking neither.
 
+Uptake across the three fixes, and note what the denominator does:
+
+| | castable decisions | chose to heal |
+|---|---:|---:|
+| original | 187 | 7.0% |
+| after the `// 2` urgency curve | 96 | 17.7% |
+| after the PANIC Recall branch | 21 | **90.5%** |
+
+The opportunity set shrinking from 187 to 21 is the result, not a sampling artifact to
+apologise for. An agent that heals promptly stops accumulating decisions in which it is
+wounded and holding an unspent heal. A metric that only went up would have been the weaker
+outcome.
+
 ### A third of the weights never bind. Check before you tune.
 
 `max()` discards the weight whenever state urgency exceeds it. Where that happens on every
@@ -245,8 +258,15 @@ Three rules fall out of this, and they are the transferable part:
 2. **Check any urgency that can exceed `FATIGUE_MAX`.** Fatigue is the only backstop against a
    non-resolving candidate, and it silently stops working above 60.
 3. **Measure decisions per game turn on any change that lets a previously dominated candidate
-   start winning.** A ratio above about 1.05 is a stall. Win rate will not tell you: the stalled
-   configuration still won runs, it just spent eleven decisions buying each turn.
+   start winning.** Win rate will not tell you: the stalled configuration still won runs, it
+   just spent eleven decisions buying each turn.
+
+   A ratio above about 1.05 means look, not panic. **Read the label mix before calling it a
+   stall.** A livelock is one label swallowing the run (commune at 91%); diffuse dispatch
+   failure is a normal spread with the ratio slightly high, which is what a deep run looks
+   like when more verbs have more ways to miss. Seeker at 1.08 with `locus` topping out at
+   21.8% is the second thing and needs no action. Artisan at 11.38 with commune at 91% was
+   the first.
 
 ## Priority cascade
 

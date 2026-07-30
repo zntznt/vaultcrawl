@@ -129,7 +129,13 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
    identity floor of 15 only below 40% HP while PANIC hard-overrides at 35, leaving the heal a
    five-point window. **Raising the `recall` weight could never have worked**: it is 3 to 6 and
    `runtime/weight_audit.py` measures it at 84 calls and 0 binds, so it has never once been the
-   term that decided anything.
+   term that decided anything. A fourth cause surfaced only once the third was fixed: PANIC
+   returns before the candidate list is built and knew about `Phase` but not `Recall`, so the
+   agent fled at low HP with an unspent heal (`16de718`). Uptake went 7.0%, then 17.7%, then
+   **90.5%**, and the castable-decision count fell from 187 to 21 because an agent that heals
+   promptly stops accumulating wounded turns. **Each fix promoted the next bottleneck from
+   negligible to dominant, so re-measure after every one rather than trusting the ranking you
+   started with.**
    The rows also carry `egress_open`/`egress_route`/`egress_why`, which
    record what the last stair wanted at the moment the run ended, so **price a threshold from
    an evaluation you already have before spending an hour on an arm.** Counting the stalled
