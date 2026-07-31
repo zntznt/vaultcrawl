@@ -275,6 +275,23 @@ adjacent elite, prices the approach candidate against the elite it would walk to
 boss-floor override. An unaffordable commune was never going to fire, so gating it costs no
 reachable win.
 
+Measured on the same four seeds, before and after:
+
+| seeker | before | after |
+|---|---:|---:|
+| decisions | 153,523 | 29,535 |
+| turns bought | 26,774 | 28,498 |
+| decisions per turn | 5.7 | **1.04** |
+| `commune` share | 84.2% | under 3.3% |
+| adjacent hostile present | 82.7% | 3.8% |
+| wins | 0 of 4 | **3 of 4** |
+
+One of the four runs is byte-identical either side (floor 16, 4,672 turns, same death). It
+never entered the lock, so it is a free control: the change touched the locked runs and
+nothing else. Note also what the "adjacent hostile present" row was really reporting. 82.7%
+was not a dangerous game, it was one agent standing next to one boss for tens of thousands of
+decisions.
+
 The generalisation, since one round of this was not enough to learn it: **every input to a
 candidate's reachability test must come from the same place the verb reads it.** Range, price,
 target. A duplicated rule is a rule that will drift, and the failure mode is not a wrong
