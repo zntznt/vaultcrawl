@@ -11,6 +11,9 @@ from runtime.sense import (
 )
 from runtime.agent_action import AgentAction
 from runtime.agent_perception import agent_state
+# The commune price, from the one place that defines it. Duplicating these numbers here is
+# how the brain's estimate drifted from the verb's rule in the first place.
+from runtime.game import COMMUNE_COST, COMMUNE_TRUTHS
 from runtime.tactics import _stairs
 
 # Game.absorb_aspect grants its buff on the third consecutive rest on one tile.
@@ -284,12 +287,6 @@ class UniversalBrain(Brain):
 
         # ---- COMMUNE (any elite, not just final boss) ----
         truths = s["knowledge"]["truths_read"]
-        factions = s.get("factions", {})
-        standings = factions.get("standings", {})
-        standing = max(standings.values()) if standings else 0
-        discount = 1 if standing >= 4 else (0 if standing >= 2 else -1)
-        needed = max(0, 2 - discount)
-        can_commune = truths >= needed or s["matter"]["total"] >= 4
         elites = [h for h in s.get("near_hostiles", []) if h.get("tier", 1) >= 3 or h.get("is_boss")]
         # `Game.commune()` needs an ADJACENT elite (Chebyshev <= 1). With none it returns
         # None and spends no turn. `near_hostiles` is everything within 3, so scoring the
@@ -304,9 +301,40 @@ class UniversalBrain(Brain):
         elite_adjacent = bool(elites_adjacent)
         floor = s["position"]["floor"]
         boss_near = any(h.get("is_boss") for h in elites)
-        # Boss floor: always try commune even if resources are low
-        if boss_near and floor >= 26:
-            can_commune = True
+
+        # Price the commune the way `Game._commune_discount` prices it: off the standing of
+        # the creature actually being communed with. This used to read
+        # `max(standings.values())`, the best standing across every house, so an agent in
+        # good odour with one faction believed it could afford a commune with a creature of
+        # a house that hates it. `Game.commune()` then refused and returned False without
+        # spending a turn, and the candidate came back unchanged next decision.
+        #
+        # The game takes the FIRST adjacent elite in actor order, not the cheapest, so
+        # affordability is checked against the priciest one present. Conservative on
+        # purpose: offering a commune the verb will refuse is what livelocks a run.
+        def _needed_for(h):
+            standings = (s.get("factions", {}) or {}).get("standings", {}) or {}
+            st = standings.get(h.get("faction", ""), 0)
+            discount = 1 if st >= 4 else (0 if st >= 2 else -1)
+            return max(0, COMMUNE_TRUTHS - discount)
+
+        def _affordable(hs):
+            """Can the commune the game would actually attempt be paid for?"""
+            if not hs:
+                return False
+            dearest = max(_needed_for(h) for h in hs)
+            return truths >= dearest or s["matter"]["total"] >= COMMUNE_COST
+
+        can_commune = _affordable(elites_adjacent)
+
+        # No boss-floor override. It used to force `can_commune = True` whenever a boss was
+        # near on floor 26+, on the reasoning that the win condition is worth trying for even
+        # when broke. But the boss path has its own affordability check and also returns
+        # False without spending a turn, so "always try" meant "try forever": commune scores
+        # 25 + 48 late + 100 boss = 173 there, against a FATIGUE_MAX of 60, so nothing could
+        # dislodge it. Seeker reached floor 26 in three runs of four, won none of them, and
+        # spent 153,523 decisions to buy 26,774 turns. An unaffordable commune was never
+        # going to fire, so gating it costs no reachable win and ends the loop.
         reachable = can_commune and elite_adjacent
         # Late-game surge: floors 20+ raise commune priority for healing sustain
         late_bonus = max(0, floor - 19) * 8  # +0 at 19, +8 at 20, +48 at 26
@@ -328,8 +356,11 @@ class UniversalBrain(Brain):
         # quietly deleted the commune win path, since nothing else moves the agent toward
         # an elite on purpose. Same urgency, so the intent keeps its priority, and a
         # blocked path resolves to None and hands the turn to the next candidate.
-        if can_commune and elite_near and not elite_adjacent:
-            target = min(elites, key=lambda h: h.get("dist", 99))
+        # Priced against the one elite this would walk to, not against adjacency it does not
+        # have. Walking to a creature whose commune you cannot pay for is a slower version
+        # of the same mistake.
+        target = min(elites, key=lambda h: h.get("dist", 99)) if elites else None
+        if target is not None and elite_near and not elite_adjacent and _affordable([target]):
             approach = _score(self.profile, "commune", commune_urgency, bonus, True)
             if approach > 0:
                 candidates.append(("commune_approach", approach,

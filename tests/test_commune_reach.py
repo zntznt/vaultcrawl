@@ -95,6 +95,78 @@ def test_commune_is_offered_once_the_elite_is_adjacent(game):
         "walk away from an elite it could commune with this turn")
 
 
+def _set_standing(game, faction, value):
+    fcs = game.system("factions")
+    assert fcs is not None, "no factions system, so the fixture cannot price a commune"
+    fcs.standing[faction] = value
+
+
+def _set_truths(game, n):
+    for name in ("marginalia", "history"):
+        sys_ = game.system(name)
+        if sys_ is not None:
+            sys_.read = n
+            return
+    pytest.skip("no truth-bearing system to set")
+
+
+def test_commune_is_priced_off_the_elite_in_front_of_you(game):
+    """The second livelock, and the same shape as the first.
+
+    The brain used to read `max(standings.values())`, the best standing across every house.
+    `Game._commune_discount` reads the standing of the creature actually being communed
+    with. Stand next to a creature of a house that hates you while in good odour with some
+    other house, and the brain believed it could afford what the verb then refused, without
+    the refusal spending a turn.
+    """
+    elite = _only_elite_at(game, 1)
+    elite.faction = "hostile_house"
+    _set_standing(game, "hostile_house", -1)   # discount -1, so the commune costs 3 truths
+    _set_standing(game, "friendly_house", 4)   # the old code would have read this one
+    _set_truths(game, 1)                       # enough at the friendly price, not the real one
+
+    assert "commune" not in _labels(game), (
+        "commune was offered against a house that will refuse it, so the chosen action "
+        "spends no turn and the agent picks it again from an unchanged state")
+
+
+def test_an_affordable_neighbour_is_still_communed_with(game):
+    """The pricing is a price check, not a ban.
+
+    Standing 2 or 3 gives discount 0, so the commune costs the full 2 truths and the
+    creature is still a hostile. Do not raise this to 4 looking for a bigger discount: at 4
+    the creature stops being hostile at all, drops out of `near_hostiles`, and the test then
+    passes or fails for a reason that has nothing to do with pricing.
+    """
+    elite = _only_elite_at(game, 1)
+    elite.faction = "friendly_house"
+    _set_standing(game, "friendly_house", 2)
+    _set_truths(game, 2)
+
+    assert "commune" in _labels(game), "an affordable commune was not offered"
+
+
+def test_a_broke_agent_is_not_offered_the_boss_commune(game):
+    """The boss-floor override that made the loop permanent.
+
+    `can_commune` used to be forced true whenever a boss was near on floor 26+, so that the
+    win condition was always attempted. The boss path has its own affordability check and
+    also returns without spending a turn, so "always try" meant "try forever", and at
+    25 + 48 late + 100 boss = 173 the fatigue ceiling of 60 could not touch it.
+    """
+    game.floor = 26
+    boss = _only_elite_at(game, 1)
+    boss.is_boss = True
+    boss.faction = "hostile_house"
+    _set_standing(game, "hostile_house", -1)
+    _set_truths(game, 0)
+
+    labels = _labels(game)
+    assert "commune" not in labels, (
+        "a broke agent is still offered a boss commune the game will refuse, which is an "
+        "unbreakable loop at that score")
+
+
 @pytest.mark.parametrize("profile", ["artisan", "cartographer", "emergent",
                                      "exploiter", "seeker", "whisper"])
 def test_every_profile_gets_the_same_reach(game, profile):

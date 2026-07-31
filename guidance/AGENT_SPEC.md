@@ -195,6 +195,15 @@ in the source, edited in balance passes, read by nobody. Measured with
 `python3 -m runtime.weight_audit examples/world.json`, which walks every `_score` call site
 during real runs and tallies which branch of the `max()` won.
 
+**A negative weight does nothing at all.** `max(-5, state)` is `state` for any non-negative
+state, and no candidate's urgency goes negative, so `fight: -5` is arithmetically identical to
+`fight: 0`. Cartographer and whisper both carry it, and neither actually avoids combat: they
+fight exactly as often as the situation urges, indistinguishable from a profile with no
+opinion. `max()` can raise a candidate's floor and can never lower its ceiling, so
+"this profile dislikes X" is not expressible in this formula. If a profile needs to be
+*less* likely to do something, that has to come from starting state or from the candidate not
+being generated, never from a negative number in the table.
+
 Measured at 6 runs, one per profile, clean state, `PYTHONHASHSEED=0`: **12 of 33 call sites
 had never once had a weight decide a score.** The inert keys at those sites were
 `breakdown`, `commune`, `flee`, `recall`, `rest`, `sigil`, `stairs`, `toss`, `ward` and
@@ -249,6 +258,27 @@ The fix narrows the verb to adjacency and adds `commune_approach`, a travel cand
 same urgency. Both halves are required: narrowing alone would have deleted the commune win
 path, because nothing else in the cascade moves the agent toward an elite on purpose. Pinned
 by `tests/test_commune_reach.py`.
+
+**It happened twice.** Fixing the range mismatch left a price mismatch behind, and the second
+one was worse. `Game._commune_discount` prices a commune off the standing of the creature
+being communed with; the brain read `max(standings.values())`, the best standing across every
+house. Stand next to a creature of a house that hates you while in good odour with any other
+house and the brain believed it could afford what the verb refused, again without spending a
+turn. On top of that, `can_commune` was forced true whenever a boss was near on floor 26+, on
+the reasoning that the win condition is worth attempting even when broke. The boss path has
+its own affordability check and also returns without spending a turn, so "always try" meant
+"try forever" at a score of `25 + 48 + 100 = 173` against a fatigue ceiling of 60.
+
+Seeker was the victim this time: floor 26 in three runs of four, no wins, **153,523 decisions
+to buy 26,774 turns**, 84.2% of them commune. The brain now prices against the dearest
+adjacent elite, prices the approach candidate against the elite it would walk to, and has no
+boss-floor override. An unaffordable commune was never going to fire, so gating it costs no
+reachable win.
+
+The generalisation, since one round of this was not enough to learn it: **every input to a
+candidate's reachability test must come from the same place the verb reads it.** Range, price,
+target. A duplicated rule is a rule that will drift, and the failure mode is not a wrong
+decision but a run that stops advancing.
 
 Three rules fall out of this, and they are the transferable part:
 
