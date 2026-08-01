@@ -3100,3 +3100,73 @@ final warden laying down its arms at parley. Route concentration also fell, top 
 All seven still hold: 6 of 6 profiles win, all routes used, top route 44%, no broken verbs,
 `uncontested_share` 0.000, `labels_used` 23.0 to 29.9, `policy_divergence` 0.114 to 0.562. The
 divergence floor is now close to its 0.10 limit and is worth watching.
+
+## Re-baseline at 123 of 288, and the third livelock it exposed
+
+288 runs, clean `~/.vaultcrawl`, `PYTHONHASHSEED=0`, against `c33a4b8`.
+
+| | wins | rate | 95% interval |
+|---|---|---|---|
+| this tranche | 123/288 | 42.7% | [37.0, 48.4] |
+| prior baseline | 77/288 | 26.7% | [22.0, 32.1] |
+
+Non-overlapping. Per profile: artisan 35.4%, cartographer 39.6%, emergent 31.2%,
+exploiter 31.2%, seeker 56.2%, whisper 62.5%.
+
+**Read the caveat before the number.** A livelocked run burns its turn allowance and is cut
+off, so it was always a guaranteed loss rather than a badly played one. Two livelocks were
+fixed in this tranche. Deaths rose from 74% to 90.3% of losses, which is the same fact from
+the other side: the turn-capped non-deaths were mostly loops, and they stopped happening. Runs
+that now finish and runs that now play better are different claims, and this measurement
+evidences the first far more strongly than the second.
+
+The prediction registered before the run was right on direction and wrong on attribution. It
+named artisan and seeker as the carriers, on the grounds that those were the two profiles
+caught livelocking, and predicted cartographer would be flat. Cartographer gained as much as
+artisan, 22.9% to 39.6%. The gains are broad, so the causal story is incomplete.
+
+### Two health conditions moved the wrong way
+
+- **Top route concentration rose**, 44% to 48.8% (standing 60, boss_killed 37, commune 14,
+  truths 9, diplomacy 3). All five routes still used.
+- **The policy-divergence floor fell to 0.09**, crossing the 0.10 line the previous assessment
+  flagged as worth watching, with artisan and seeker now the most alike pair. The median fell
+  too, 0.28 to 0.24. The profiles are converging, which is what removing pathologies should do
+  when the pathologies were themselves distinctive, and is worth watching precisely because
+  the aggregate looks good.
+
+`panic_phase` reads 0.00% across all six profiles. That is **not** by itself evidence of a
+broken verb, for the reason established in `AGENT_SPEC` §A label share is the wrong instrument
+for an emergency verb: it needs low HP, a hostile in range and a Phase sigil in hand at the
+same moment. The conditional-uptake instrument is how to check it, and it has not been run.
+
+### A third livelock, found in the per-run rows rather than the table
+
+The aggregate table cannot show a stall: a locked run's `turns_survived` looks perfectly
+ordinary. Scanning all 288 per-run label histograms for a single dominant label found **15
+runs where one label took 60% or more of the decisions, of which 0 won**.
+
+Thirteen of the fifteen are one failure. The agent reaches floor 26, the final stair is shut,
+and it stands on it choosing `descend` or `panic_descend` for thousands of turns. Every one
+carries the same `egress_why`:
+
+> Fell the warden, commune with it, carry 4 truths (you have 0), or earn standing 7 (you have
+> 5) with its house.
+
+Four routes offered, none pursued. Seeker seed 6 spent 10,573 turns on it; cartographer seed
+38 spent 94.2% of its decisions there. Several were one point of standing short.
+
+Same shape as the other two: a candidate offered on turns its verb cannot succeed, failing
+without spending a turn. Neither descend site checks the gate. `runtime/agent.py` appends
+`("descend", 50, ...)` in the de-escalation branch and another in the stairs branch, and the
+PANIC branch's `panic_descend` is a forced override that bypasses the candidate list entirely,
+which is why three of the thirteen wear that label instead.
+
+**The fix is not to gate on `egress_ready` alone.** The snapshot exposes that flag on every
+floor while `Game.egress_ready()` describes the *last* stair only, so gating on it directly
+would block ordinary descending everywhere. The condition is being at the boss floor with the
+gate shut. All three sites need it, the forced one included.
+
+This is the third instance of one root and the second found only after fixing the one in front
+of it. Do not assume it is the last. `runtime/weight_audit.py` plus a scan of per-run label
+histograms is the pair of instruments that finds them; the aggregate table never will.
