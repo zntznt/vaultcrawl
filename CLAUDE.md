@@ -107,8 +107,13 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
    world and one commit, going from 8 to 48 seeds moved every profile, four of them by two
    or three wins' worth: artisan 37.5 to 18.8%, cartographer 50 to 22.9%, emergent 12.5 to
    29.2%, whisper 75 to 50%. The old "+/-1 win per 8-seed arm" guidance understated the
-   spread by about three times. The current baseline is **77 of 288, 26.7%, 95% interval
-   [22.0, 32.1]**. **There is no target win rate**, and the 40-60 band that was treated as
+   spread by about three times. The current baseline is **123 of 288, 42.7%, 95% interval
+   [37.0, 48.4]**, up from 77 of 288, 26.7%, [22.0, 32.1] and not overlapping it. Two
+   livelock fixes are most of that, and **a livelocked run is a guaranteed loss rather than a
+   badly played one**, so a large part of the gain is runs that now finish rather than runs
+   that now play better. Those are different claims and only the first is evidenced here.
+   Deaths are now 90.3% of losses, up from 74%, which is the same fact seen from the other
+   side: the turn-capped non-deaths were mostly loops. **There is no target win rate**, and the 40-60 band that was treated as
    one for most of this project's life appears in no spec; health is the seven structural
    conditions in `guidance/AGENT_SPEC.md` §What the win rate is for, and the aggregate is a
    tripwire read against its own history in `guidance/PROJECT_ASSESSMENT.md`.
