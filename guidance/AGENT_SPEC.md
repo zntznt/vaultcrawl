@@ -297,6 +297,34 @@ candidate's reachability test must come from the same place the verb reads it.**
 target. A duplicated rule is a rule that will drift, and the failure mode is not a wrong
 decision but a run that stops advancing.
 
+### It happened a third time, on the last stair
+
+`Game.egress_ready()` gates the final descent on four routes. Descending onto that stair with
+none of them satisfied refuses and spends no turn, and no descend site checked it. Over 288
+runs: **13 runs reached floor 26, stood on the shut stair, and spent 83.5% to 94.2% of every
+remaining decision choosing `descend`. None won.** One ran 10,573 turns. Several were a single
+point of standing short of a route they never went and took. Fixed by gating all three descend
+sites; pinned by `tests/test_egress_gate.py`.
+
+Two things this one taught that the first two did not:
+
+- **A forced override is the worst place for this bug.** PANIC's `panic_descend` returns
+  before the candidate list exists, so it cannot be outscored by anything, and no amount of
+  weight tuning elsewhere would have rescued the three runs that wore that label. Audit the
+  forced branches separately from the scored ones; they are invisible to every scoring
+  instrument in the repo.
+- **Check the scope of the flag you gate on.** `egress_ready` is reported on every floor while
+  describing the last stair alone, so it already reads False on floor 2. Gating descent on the
+  flag by itself walls the agent in on the second floor and turns a 4.5% stall into a 100%
+  one. The condition is the boss floor specifically, and `test_ordinary_floors_still_descend`
+  exists to catch exactly that overcorrection.
+
+**How these get found.** Not from the aggregate table: a stalled run's `turns_survived` looks
+entirely ordinary, and all three of these survived a per-profile decisions-per-turn check on at
+least one seed. What finds them is scanning the per-run label histograms in `eval_stats.json`
+for a single dominant label. Any run above about 60% on one label is worth opening; across 288
+runs, 15 were, and 0 of the 15 won.
+
 Three rules fall out of this, and they are the transferable part:
 
 1. **A candidate's reachability test must match its verb's precondition.** A verb that can

@@ -237,6 +237,22 @@ class UniversalBrain(Brain):
         candidates = []
         self._last_forced = False
 
+        # The last stair opens on one of four routes (`Game.egress_ready`): the warden dead,
+        # the warden communed with, EGRESS_TRUTHS truths carried, or EGRESS_STANDING with its
+        # house. Descending onto it while none of those hold refuses and spends no turn.
+        #
+        # `egress_ready` is reported on EVERY floor while describing that final stair alone:
+        # it already reads False on floor 2. Gating descent on the flag by itself would wall
+        # the agent in on the second floor, so the condition is the boss floor specifically.
+        #
+        # Measured before this existed, over 288 runs: 13 runs reached floor 26 and stood on
+        # the shut stair choosing `descend` for the rest of the run, 83.5% to 94.2% of their
+        # decisions, none of them winning, one of them for 10,573 turns. Several were a single
+        # point of standing short of a route they never went and took.
+        boss_floor = s["position"].get("boss_floor", 99)
+        egress_shut = (s["position"]["floor"] >= boss_floor
+                       and not s["position"].get("egress_ready", True))
+
         # ---- PANIC: survival above all ----
         # Non-fighters panic sooner: 35% for fight<=2, 25% for fighters
         #
@@ -278,7 +294,11 @@ class UniversalBrain(Brain):
                 for i, sig in enumerate(s["sigils"]):
                     if sig.get("verb") == "Recall":
                         return self._forced("panic_recall", AgentAction("cast", index=i))
-            if s["position"]["on_stairs"]:
+            # Three of the thirteen stalled runs wore the `panic_descend` label rather than
+            # `descend`, because this branch is a forced override that returns before the
+            # candidate list exists. A hard override cannot be outscored, so a hard override
+            # onto a stair that will not open is the most expensive form of this mistake.
+            if s["position"]["on_stairs"] and not egress_shut:
                 return self._forced("panic_descend", AgentAction("descend"))
             if st:
                 step = step_toward_avoiding_elites(game, actor, st[0], st[1])
@@ -857,7 +877,10 @@ class UniversalBrain(Brain):
                                   dy=(t["y"]>actor.y)-(t["y"]<actor.y))))
 
         # ---- FACTION DE-ESCALATION ----
-        if game.kills >= 4 and not s["adjacent_hostiles"]:
+        # Gated whole, not just the descend arm: walking to a stair that will not open is the
+        # same mistake at one tile per turn. This branch scores a flat 50 and 40, below the
+        # fatigue ceiling of 60 but above most of what would otherwise pursue the four routes.
+        if game.kills >= 4 and not s["adjacent_hostiles"] and not egress_shut:
             if s["position"]["on_stairs"]:
                 candidates.append(("descend", 50, AgentAction("descend")))
             elif st:
@@ -873,7 +896,12 @@ class UniversalBrain(Brain):
                 # stronger pull when closer
                 commune_pull = COMMUNE_PULL_BASE + (10 - distance) * COMMUNE_PULL_STEP
         stuck_pull = 5 if no_targets else 0
-        if s["position"]["on_stairs"]:
+        if egress_shut:
+            # Nothing here. COMMUNE already carries a +20 late bonus while the gate is shut,
+            # and the exploration and forge candidates are what earn truths and standing, so
+            # removing the stair leaves the four routes as the only things left to want.
+            pass
+        elif s["position"]["on_stairs"]:
             candidates.append(("descend", _score(self.profile, "stairs", 2 + commune_pull + stuck_pull, bonus, True),
                                 AgentAction("descend")))
         elif st:
