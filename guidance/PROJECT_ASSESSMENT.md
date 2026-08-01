@@ -3170,3 +3170,58 @@ gate shut. All three sites need it, the forced one included.
 This is the third instance of one root and the second found only after fixing the one in front
 of it. Do not assume it is the last. `runtime/weight_audit.py` plus a scan of per-run label
 histograms is the pair of instruments that finds them; the aggregate table never will.
+
+## Warm versus cold: the world's memory is a one-way ratchet
+
+The experiment this project had never run. `RunChronicle` carries a run's events forward and
+`Upheaval` turns them into live modifiers on the next descent, but `agent_eval` deliberately
+omits that return arrow, so **every balance number in this document describes a world with no
+memory.** Two arms, 48 runs each, identical (agent, seed) pairs, identical order, isolated
+`HOME`, `PYTHONHASHSEED=0`.
+
+| | cold | warm |
+|---|---|---|
+| wins | 16/48 (33.3%) | **6/48 (12.5%)** |
+| mean floor | 17.6 | **11.0** |
+| mean labels used | 30.6 | 27.5 |
+| max top-label share | 47.8% | 63.6% |
+| win paths | standing 9, boss_killed 4, commune 2, truths 1 | commune 4, boss_killed 2 |
+
+Paired: 3 cold-losses became warm-wins, **13 cold-wins became warm-losses**. Of 16 discordant
+pairs, 13 fell one way, p about 0.021 two-sided. This is not seed noise.
+
+### Why, and it is not a bug
+
+`RunChronicle.to_upheaval_events` can emit `idea_ascends`, which empowers a note's enemy. It
+has **no path that emits `power_wanes`**, which would diminish one. `Upheaval` supports waning
+perfectly well; only `vaultcrawl/evolve.py` produces it, and that runs when you edit notes
+between bakes, not when you play. So run-to-run memory can only ever escalate.
+
+By the end of the warm arm, **5 of the 9 enemy-bearing notes were permanently empowered**, and
+nothing in the game can ever unempower them. The chronicle also saturates: it reached 9 events
+and stopped, because `save_chronicle` dedupes on `(kind, note, faction, region, pos)` and later
+runs regenerate what is already stored. So the curriculum is short, monotonic and punitive: a
+few lessons, all of them "the world got harder", and then silence.
+
+The damage is not gradual. Warm mean floor is already 11.3 against cold's 21.2 at seed 0, with
+only 5 events inherited. One prior run is enough to halve how deep the next one gets.
+
+### What this means for the idea
+
+A world that remembers is the design goal, and the machinery genuinely works now (see
+`40b8ec2`; before that fix the two arms were byte-identical because the ascended set held
+death-cause strings that could never match a note id). What it does not yet have is a
+**counterweight**. Impressions accumulate in one direction only, so the syllabus teaches
+exactly one lesson. The interesting version of this feature needs at least one of:
+
+- a `power_wanes` path from play, so notes the player repeatedly defeats fade
+- decay, so an ascendancy expires after N runs rather than persisting forever
+- a cap on how much of the world can be empowered at once
+- a compensating gift, so a harder world is also a richer one (the sanctum and monument
+  events exist and are the obvious candidates, but `forge_grown` produced only 2 events
+  against 5 ascendancies)
+
+Until one of those exists, **do not wire the chronicle into `agent_eval`.** Not because
+cross-run state ruins a benchmark, which is the reason recorded elsewhere in this document,
+but because in its current shape it would make every arm progressively unwinnable and the
+comparison meaningless.
