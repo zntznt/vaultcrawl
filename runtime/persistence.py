@@ -59,8 +59,14 @@ class RunChronicle:
     def record_faction_end(self, faction_id: str, standing: int):
         self.faction_endings[faction_id] = standing
 
-    def record_companion_death(self, companion_name: str, killer_name: str):
-        self.companion_deaths.append((companion_name, killer_name))
+    def record_companion_death(self, companion_name: str, killer_note: str):
+        """`killer_note` is the killer's source NOTE id, or "" for an authorless death.
+
+        It was `killer_name` and callers passed the death-cause string, which is why the
+        `idea_ascends` events this produces never matched a note. Anything that is not a
+        note id is useless here: `Upheaval.ascended` is tested against `sourceNoteId`.
+        """
+        self.companion_deaths.append((companion_name, killer_note))
 
     def record_boss_kill(self):
         self.boss_killed = True
@@ -150,11 +156,16 @@ class RunChronicle:
                     "standing": standing,
                 })
 
-        # Companion deaths → ascended vengeance
-        for comp_name, killer_name in self.companion_deaths:
+        # Companion deaths → ascended vengeance. The killer's note grows stronger next
+        # descent. Skip authorless deaths: a companion burned by a hazard has no idea to
+        # promote, and emitting an event with an empty note puts "" into `Upheaval.ascended`
+        # where it can only ever match a spec with no source.
+        for comp_name, killer_note in self.companion_deaths:
+            if not killer_note:
+                continue
             events.append({
                 "kind": "idea_ascends",
-                "note": killer_name,
+                "note": killer_note,
                 "cause": f"slain_{comp_name}",
             })
 

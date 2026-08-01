@@ -3081,10 +3081,16 @@ class Game:
                 self.items.remove(it)
                 self.items_taken += 1
 
-    def kill(self, actor, cause="other"):
+    def kill(self, actor, cause="other", killer=None):
         """Universal death: remove the actor and announce it on the bus as `actor_died`
         (corpses, scavengers, ecology). `enemy_killed` is emitted separately, only for
-        player/environment kills the factions care about."""
+        player/environment kills the factions care about.
+
+        `killer` is the actor responsible where one exists, and is optional because most
+        deaths here are environmental (traps, fire, bleeding) and have no author. It exists
+        so a companion's death can name its killer by NOTE, which is the only identity the
+        chronicle can carry forward: see the companion branch below.
+        """
         if actor in self.actors:
             self.actors.remove(actor)
         if getattr(actor, 'is_boss', False) and actor.source == self.final_boss_source and not self.won:
@@ -3116,7 +3122,19 @@ class Game:
                     pass
             try:
                 from runtime.persistence import chronicle
-                chronicle().record_companion_death(actor.name, cause)
+                # The killer's NOTE, not the cause string. This passed `cause` for the life
+                # of the project, so the chronicle recorded "predation" and "environment"
+                # where a note id belongs. `to_upheaval_events` emits that value as the
+                # `note` of an `idea_ascends`, and `Upheaval.ascended` is tested against
+                # `spec["sourceNoteId"]` at spawn, so it could never match anything: on the
+                # sample vault, ascended held {"predation", "environment"} while the notes
+                # are `discipline`, `ecs`, `rust` and so on. `empower()` has never once
+                # fired from a chronicle, and a paired warm-versus-cold experiment came back
+                # 6 of 6 runs byte-identical because of it.
+                #
+                # Environmental deaths have no author and record an empty note, which
+                # `to_upheaval_events` then skips rather than inventing an ascendant.
+                chronicle().record_companion_death(actor.name, getattr(killer, "source", "") or "")
             except Exception:
                 pass
             try:
@@ -3559,12 +3577,12 @@ class Game:
                 CraftSystem.apply_wires(self, "enemy_killed")
             except Exception:
                 pass
-            self.kill(dfn, "melee")
+            self.kill(dfn, "melee", killer=att)
         else:
             # critter vs monster (or the reverse): a world event, never a player kill,
             # so no `enemy_killed` — the factions don't credit/blame you for the wild.
             self.log(f"{att.name} fells {dfn.name}.")
-            self.kill(dfn, "predation")
+            self.kill(dfn, "predation", killer=att)
 
     def enemies_act(self):
         """Every non-player actor acts through its brain (lazily assigned by capability
