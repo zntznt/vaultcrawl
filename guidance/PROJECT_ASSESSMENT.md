@@ -3276,3 +3276,54 @@ merely looping. Eight of thirteen converted. The loop was costing more than the 
   most alike pair; median 0.24 to 0.22. This is the third consecutive measurement in which the
   profiles converged, it is now well under the 0.10 line an earlier assessment set as worth
   watching, and nothing in this tranche addressed it. It is the open structural problem.
+
+## The counterweight works, and the divergence hypothesis is dead
+
+Re-run of warm versus cold after `6513be2` added the wane path. 48 runs per arm, identical
+(agent, seed) pairs, isolated `HOME`, `PYTHONHASHSEED=0`.
+
+| | cold | warm, before the wane path | warm, with it |
+|---|---|---|---|
+| wins | 16/48 (33.3%) | 6/48 (12.5%) | **18/48 (37.5%)** |
+| mean floor | 17.6 | 11.0 | 16.0 |
+| paired net vs cold | n/a | **-10** | **+2** |
+
+The ratchet is gone. Warm is now statistically indistinguishable from cold: 16 discordant
+pairs, 9 one way, two-sided p = 0.80. That is the intended outcome. A world that remembers
+should not be a world that punishes; it should be a different world of roughly the same
+weight. It is now.
+
+One incidental gain: **route concentration is lower in the warm arm.** Cold's top route is
+`standing` at 9 of 16 wins (56%); warm's is `boss_killed` at 8 of 18 (44%), and warm reaches
+four routes including a `diplomacy`. A world whose creatures have been empowered and faded
+differently pushes wins through different doors. Warm runs are also shorter and win more often
+(5,062 turns against 6,128), which reads as more decisive rather than more lucky.
+
+### The hypothesis this was really testing, and it failed
+
+The standing worry is that the six profiles keep converging: divergence floor 0.09 then 0.073
+across recent baselines, under the 0.10 line an earlier assessment set. The hypothesis was
+that the convergence is caused by *static worlds*, that the differentiation which disappeared
+had been coming from the pathologies since removed, and that a world changing between runs
+would give the profiles different terrain to be different on.
+
+| | cold | warm |
+|---|---|---|
+| divergence floor | 0.089 | **0.071** |
+| median | 0.256 | 0.260 |
+
+**Wrong, and wrong in direction.** The prediction registered before the run was that warm
+would be higher by 0.02 to 0.04. Warm is *lower* by 0.018 at the floor and flat at the median,
+with `seeker|whisper` the most alike pair in both arms. A remembering world does not keep the
+profiles distinct, and may mildly homogenise them: everyone faces the same empowered notes and
+converges on the same answers to them.
+
+So **profile convergence remains unexplained and unaddressed**, and one plausible cause is now
+eliminated. The next candidates are the ones already documented and not yet acted on: a third
+of `_score` call sites never let a weight bind, and negative weights are arithmetically inert,
+so the mechanism that is supposed to differentiate the profiles is partly missing rather than
+partly starved.
+
+A note on method. The 1-seed smoke of this same comparison put the divergence floor at 0.174
+cold against 0.196 warm, which is the opposite of the 48-seed result and would have "confirmed"
+the hypothesis. Six runs is not a measurement, including when it agrees with you.
