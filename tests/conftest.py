@@ -88,3 +88,29 @@ def _check_stale(listed, seen, items) -> None:
             f"{KNOWN_FAILURES} is out of date.\n\n" + "\n\n".join(problems)
             + "\n\nThis list may only shrink. Delete the line when the bug is fixed."
         )
+
+
+@pytest.fixture(autouse=True)
+def isolated_state_dir(tmp_path, monkeypatch):
+    """Every test gets its own `~/.vaultcrawl`. None of them get the developer's.
+
+    The suite was not hermetic. `~/.vaultcrawl` carries graves, the forge cache and the
+    chronicle, and at least two tests read them: with a warm directory left over from an
+    evaluation, `test_relations.py::test_spawned_creatures_carry_their_house` and
+    `test_travel.py::test_log_dedup_collapses_repeats` both fail, and pass again the moment
+    it is deleted. Nothing was wrong with the code either time.
+
+    That is worse than a flake. The suite is the thing every change in this project is
+    verified against, and it was reporting on the state of a directory rather than on the
+    commit. It stayed hidden because CI always starts clean, so the failure only ever
+    reaches whoever has just finished running an eval, which is precisely whoever is about
+    to check whether their change worked. It cost an hour today and nearly bought a revert
+    of correct code.
+
+    `monkeypatch.setenv` restores the old value per test, and `tmp_path` is unique per test,
+    so this also stops tests leaking state into each other. A test that genuinely needs
+    persistent state should create it under this HOME.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))   # the same lookup on Windows
+    return tmp_path
