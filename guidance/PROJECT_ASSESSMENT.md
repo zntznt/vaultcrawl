@@ -3225,3 +3225,54 @@ Until one of those exists, **do not wire the chronicle into `agent_eval`.** Not 
 cross-run state ruins a benchmark, which is the reason recorded elsewhere in this document,
 but because in its current shape it would make every arm progressively unwinnable and the
 comparison meaningless.
+
+## Post-egress-gate baseline: 130 of 288, and what the aggregate could not show
+
+288 runs, clean `~/.vaultcrawl`, `PYTHONHASHSEED=0`, against `abed371`. The one behavioural
+change since the previous 288 is the egress gate (`6086f50`); the chronicle key fix is
+inert here because `agent_eval` leaves `chronicle_out` off.
+
+| | wins | rate | 95% interval |
+|---|---|---|---|
+| post-gate | 130/288 | 45.1% | [39.4, 50.9] |
+| pre-gate | 123/288 | 42.7% | [37.0, 48.4] |
+
+**The aggregate does not show this fix and must not be used to claim it.** The intervals
+overlap almost entirely. Paired on identical seeds: 12 losses became wins, 5 wins became
+losses, 17 discordant, McNemar exact two-sided **p = 0.14**. Not significant. Predicted in
+advance, for the right reason: 13 runs out of 288 is 4.5 points against a measurement whose
+interval is about plus or minus six.
+
+### What the per-run rows do show, categorically
+
+Runs where a single label took 60% or more of decisions: **15 before, 2 after.** The two
+survivors are `panic_flee` on cartographer seeds 5 and 28, byte-identical to their pre-fix
+rows. They are pre-existing and unrelated; no new loop appeared.
+
+All 13 egress stalls ended. Individually:
+
+| outcome | count |
+|---|---|
+| won | 8 |
+| lost without stalling | 5 |
+| still stalled | 0 |
+
+Seven of the eight wins came by `boss_killed` and one by `commune`, which is the point: the
+agent was standing on a shut stair with four routes available and is now taking them. Seeker
+seed 6, which had spent 10,573 turns choosing `descend`, ran 17,461 turns and won.
+
+**The prediction registered before the run was wrong.** It said fewer than half of the 13
+would convert, on the reasoning that several were genuinely short of every route rather than
+merely looping. Eight of thirteen converted. The loop was costing more than the shortfall was.
+
+### Health
+
+- **Top route concentration fell 48.8% to 41%** (standing 53, boss_killed 52, commune 15,
+  truths 7, diplomacy 3). The regression flagged in the previous baseline has reversed, and
+  the top two routes are now nearly level.
+- Deaths are 93.7% of losses, up from 90.3%. Same fact from the other side: fewer turn-capped
+  non-deaths, because fewer runs stall.
+- **The policy-divergence floor fell again, 0.09 to 0.073**, with artisan and exploiter the
+  most alike pair; median 0.24 to 0.22. This is the third consecutive measurement in which the
+  profiles converged, it is now well under the 0.10 line an earlier assessment set as worth
+  watching, and nothing in this tranche addressed it. It is the open structural problem.

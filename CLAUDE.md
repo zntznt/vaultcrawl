@@ -107,8 +107,13 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
    world and one commit, going from 8 to 48 seeds moved every profile, four of them by two
    or three wins' worth: artisan 37.5 to 18.8%, cartographer 50 to 22.9%, emergent 12.5 to
    29.2%, whisper 75 to 50%. The old "+/-1 win per 8-seed arm" guidance understated the
-   spread by about three times. The current baseline is **123 of 288, 42.7%, 95% interval
-   [37.0, 48.4]**, up from 77 of 288, 26.7%, [22.0, 32.1] and not overlapping it. Two
+   spread by about three times. The current baseline is **130 of 288, 45.1%, 95% interval
+   [39.4, 50.9]**, measured after the egress-gate fix. The step before it was 123 of 288,
+   42.7%, [37.0, 48.4], and those two overlap heavily: **that change is not visible in the
+   aggregate and should not be claimed from it.** What it is visible in is the per-run label
+   histograms, where runs with one label above 60% fell from 15 to 2 and all 13 egress stalls
+   ended, 8 of them becoming wins. Both are up from 77 of 288, 26.7%, [22.0, 32.1] and not
+   overlapping it. Two
    livelock fixes are most of that, and **a livelocked run is a guaranteed loss rather than a
    badly played one**, so a large part of the gain is runs that now finish rather than runs
    that now play better. Those are different claims and only the first is evidenced here.
