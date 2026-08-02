@@ -27,7 +27,14 @@ SEEDS = int(sys.argv[1]) if len(sys.argv) > 1 else 8
 WORLD = "examples/world.json"
 
 home = os.environ.get("HOME", "")
-if os.path.realpath(home) == os.path.realpath(os.path.expanduser("~")) and \
+# Compare against the passwd entry, not `expanduser("~")`. That reads $HOME, so it equals
+# `home` by construction and the guard fired on every run including the correct ones.
+try:
+    import pwd
+    _real_home = pwd.getpwuid(os.getuid()).pw_dir
+except Exception:
+    _real_home = os.path.expanduser("~")
+if os.path.realpath(home) == os.path.realpath(_real_home) and \
         os.environ.get("CHAINED_ALLOW_REAL_HOME") != "1":
     raise SystemExit(
         "refusing to run against the real HOME. This harness deletes and rewrites\n"
@@ -102,6 +109,7 @@ def run_arm(warm: bool) -> list:
                 inherited=state["inherited"], upheaval=state["total"],
                 decisions=calls["n"], per_turn=round(calls["n"] / turns, 3),
                 top_label=top, top_share=round(cnt / tot, 4), labels=len(picked),
+                label_share={k: v / tot for k, v in picked.items()},
             ))
             print(f"  [{'warm' if warm else 'cold'}] {agent:13} seed {seed} "
                   f"F{r.floor_reached:2} won={str(r.won):5} inherit={state['inherited']:2} "
@@ -114,7 +122,9 @@ cold = run_arm(False)
 print(f"\n=== warm arm: {SEEDS * len(AGENTS)} runs ===", flush=True)
 warm = run_arm(True)
 
-out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chained_result.json")
+# Next to the scratch HOME, never in the repo: `__file__` lives in runtime/ now, so the
+# obvious choice would commit a result blob on every run.
+out = os.path.join(home, "chained_result.json")
 with open(out, "w", encoding="utf-8") as fh:
     json.dump({"cold": cold, "warm": warm}, fh, indent=2)
 
@@ -135,8 +145,40 @@ def summarise(name, rows):
           f"nonzero on {sum(1 for u in up if u)}/{n} runs")
 
 
+def divergence(name, rows):
+    """Are the six profiles more distinguishable in this arm, or less?
+
+    The reason this experiment is worth more than its win rate. The profiles have converged
+    on every recent baseline (floor 0.09 then 0.073, under the 0.10 line an earlier
+    assessment set as worth watching), and the differentiation that disappeared may have
+    been coming from the pathologies that were removed. A world that changes between runs
+    gives the profiles different terrain to be different on, so if memory helps anywhere it
+    should show here before it shows in wins.
+    """
+    from runtime.pressure import divergence_matrix
+    shares = {}
+    for a in AGENTS:
+        agg = collections.Counter()
+        for r in rows:
+            if r["agent"] == a:
+                agg.update(r["label_share"])
+        tot = sum(agg.values()) or 1.0
+        shares[a] = {k: v / tot for k, v in agg.items()}
+    m = divergence_matrix(shares)
+    vals = sorted(m.values())
+    lo = min(m, key=m.get)
+    print(f"  {name} divergence: min {vals[0]:.3f}  median {vals[len(vals)//2]:.3f}  "
+          f"max {vals[-1]:.3f}   most alike: {lo} at {m[lo]:.3f}")
+    return vals
+
+
 summarise("COLD", cold)
 summarise("WARM", warm)
+
+print("\nPOLICY DIVERGENCE (the hypothesis: a world with memory keeps profiles distinct)")
+cv = divergence("COLD", cold)
+wv = divergence("WARM", warm)
+print(f"  floor  {cv[0]:.3f} -> {wv[0]:.3f}   median {cv[len(cv)//2]:.3f} -> {wv[len(wv)//2]:.3f}")
 
 by = {(r["agent"], r["seed"]): r for r in cold}
 cw = {(r["agent"], r["seed"]): r for r in warm}
