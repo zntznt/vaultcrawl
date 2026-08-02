@@ -177,11 +177,41 @@ def _starting_bonus(turn: int) -> int:
 # for every profile with explore >= 4. The term is small enough never to overturn a
 # genuine one-point difference in the floor, and it only ever prefers the candidate the
 # situation more urgently wants.
+
+# How much a profile's preference tilts a candidate it does not outright decide. See
+# `_score`: the `max()` alone discards the weight entirely whenever urgency exceeds it,
+# which measured out as 12 of 33 call sites where no weight had ever once decided a score
+# (`runtime/weight_audit.py`). Small on purpose. At the observed weight range of -5 to 15
+# this contributes -0.75 to +2.25 against scores that run 5 to 25, so it breaks ties and
+# leans marginal choices without ever letting a preference overrule a crisis.
+PROFILE_BIAS = 0.15
+
+
 def _score(profile, key, state_bonus, turn_bonus, reachable: bool = True) -> float:
+    """max(weight, urgency), plus a small always-live tilt from the weight.
+
+    The `max()` is the identity floor: an artisan always scores at least 15 on forge, and
+    survival urgency climbs above the floor when the situation demands. That part is
+    unchanged and load-bearing everywhere.
+
+    What is new is `PROFILE_BIAS`. Under `max()` alone a weight below the current urgency
+    is not merely outranked, it is *erased*: the candidate scores identically for all six
+    profiles, so on those turns the agents are one agent. Measured, that was a third of the
+    call sites, and it is why `fight: -5` did nothing at all for cartographer and whisper.
+    `max()` can raise a ceiling and never lower one, so "this profile dislikes X" was
+    previously not expressible.
+
+    The bias term keeps the weight in the arithmetic always, including when negative, while
+    staying far too small to reorder a genuine urgency gap. It does not replace the `max()`;
+    the warning in `guidance/AGENT_SPEC.md` against swapping those semantics wholesale still
+    stands.
+    """
     if not reachable:
         return 0
     floor = profile.get(key, 0)
-    return max(floor, state_bonus) + turn_bonus + max(0, state_bonus) * 0.01
+    return (max(floor, state_bonus) + turn_bonus
+            + max(0, state_bonus) * 0.01
+            + floor * PROFILE_BIAS)
 
 
 class UniversalBrain(Brain):

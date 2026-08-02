@@ -154,8 +154,12 @@ def test_the_sigil_weight_decides_deploy_when_nothing_is_happening(game):
     assert seen[4] != seen[7], (
         f"deploy scored {seen[4]} at weight 4 and {seen[7]} at weight 7, so the profile "
         f"weight is still being discarded by the state floor")
-    assert seen[7] - seen[4] == pytest.approx(3, abs=0.01), (
-        f"deploy should track the weight one for one when quiet, got {seen}")
+    # One for one from the `max()`, plus the always-live PROFILE_BIAS tilt on the same
+    # three points of weight. Was a flat 3 before the bias existed.
+    from runtime.agent import PROFILE_BIAS
+    expected = 3 + 3 * PROFILE_BIAS
+    assert seen[7] - seen[4] == pytest.approx(expected, abs=0.01), (
+        f"deploy should track the weight when quiet, expected {expected}, got {seen}")
 
 
 def test_deploying_recall_is_still_available_when_healing_would_not_help(game):

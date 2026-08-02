@@ -500,24 +500,37 @@ def test_absorb_hazard_stops_when_it_can_no_longer_pay():
     assert "ABSORB_MIN_HP" in code, "and must not trade HP it cannot spare"
 
 
-def test_profile_weights_below_state_urgency_are_inert():
-    """A documented consequence of the scoring formula, found while trying to fix one
-    profile by raising a weight.
+def test_profile_weights_count_even_when_outranked():
+    """This test used to assert the opposite, and the history is the point.
 
-    score = max(profile_floor, state_urgency) + turn_bonus. So a profile weight beneath the
-    typical state urgency for its candidate does nothing at all. Raising cartographer's
-    flee weight from 3 to 6 to 8 produced byte-identical runs. Anyone tuning a profile
-    should know the weight only bites where it exceeds the situation.
+    It was written as documentation for a defect someone hit while trying to fix a profile
+    by raising a weight: under `score = max(floor, urgency)`, raising cartographer's flee
+    weight from 3 to 6 to 8 produced byte-identical runs, because below the state urgency
+    the weight did nothing whatsoever. The test faithfully recorded that as a fact of life.
+
+    It was a bug, and a costly one. `runtime/weight_audit.py` later measured 12 of 33
+    `_score` call sites where no weight had ever once decided a score, and the six profiles
+    converged on every recent baseline until the divergence floor sat under 0.10. A weight
+    that is erased whenever the situation is loud is not a preference, and `max()` could
+    never express an aversion at all.
+
+    `PROFILE_BIAS` keeps the weight in the arithmetic always. The identity floor is
+    unchanged: urgency above the weight still sets the score, and only tilts it by the
+    preference. See `tests/test_profile_bias.py` for the bound on how far it may tilt.
     """
     from runtime.agent import _score
     lo = {"flee": 3}
     hi = {"flee": 8}
     urgent = 20
-    assert _score(lo, "flee", urgent, 0) == _score(hi, "flee", urgent, 0), (
-        "below the state urgency, the weight is inert")
+    assert _score(hi, "flee", urgent, 0) > _score(lo, "flee", urgent, 0), (
+        "above the state urgency the weight is erased again, so raising a profile's weight "
+        "produces byte-identical runs and the profiles cannot differ there")
     calm = 1
     assert _score(hi, "flee", calm, 0) > _score(lo, "flee", calm, 0), (
-        "above it, the weight is what decides")
+        "below it, the weight is still what decides")
+    # The floor still dominates: urgency 20 outranks any weight in the table.
+    assert _score(hi, "flee", urgent, 0) > _score(hi, "flee", calm, 0), (
+        "the identity floor stopped working: a calm candidate outscored an urgent one")
 
 
 def test_every_profile_starts_with_a_way_out():
