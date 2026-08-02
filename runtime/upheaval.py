@@ -49,10 +49,19 @@ class Upheaval:
             # `note` wherever a kind's consumer needs one; this stays tolerant so a
             # chronicle written by an older build still loads.
             k, note = e["kind"], e.get("note", "")
+            # Ascend and wane are mutually exclusive verdicts on one note, and the last
+            # word wins. Without the discards they accumulate as two standing facts, and
+            # since every consumer tests `ascended` before `waned` the ascendancy would
+            # win forever: a note could be empowered once and never fade again however
+            # many times you put it down. Events arrive oldest first (`save_chronicle`
+            # merges old + new and its dedup keeps the earlier copy), so sequential
+            # processing gives the most recent verdict.
             if k == "idea_ascends":
                 u.ascended.add(note)
+                u.waned.discard(note)
             elif k == "power_wanes":
                 u.waned.add(note)
+                u.ascended.discard(note)
             elif k == "note_lost":
                 u.lost.add(note)
             elif k == "kingdom_rises":

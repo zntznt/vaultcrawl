@@ -3110,6 +3110,26 @@ class Game:
                 chronicle().record_death(pos, hp, inv, last_act, had_comp, resting, self.floor)
             except Exception:
                 pass
+        # The player put down a creature of some note. Counted here rather than at the
+        # combat site because every way of killing something routes through `kill`, and a
+        # counterweight that only noticed melee would make the wane path a fighter's
+        # privilege. Berlin: whatever fells it, standing on the far side of it counts.
+        #
+        # Only real graph notes. Ecology fauna carry sources like `fauna:grazer`, which no
+        # enemy spec's `sourceNoteId` can ever match, so recording them would put permanent
+        # dead weight in a chronicle capped at CHRONICLE_MAX entries and crowd out verdicts
+        # that mean something. Filtering at the door is the habit this codebase keeps
+        # learning the hard way: every seam that accepted a foreign key space eventually
+        # cost a feature.
+        if (killer is not None and killer is getattr(self, "player", None)
+                and getattr(actor, "source", "")
+                and actor.source in self.m.get("graph", {}).get("nodes", {})):
+            try:
+                from runtime.persistence import chronicle
+                chronicle().record_note_defeat(actor.source)
+            except Exception:
+                pass
+
         if getattr(actor, 'allegiance', '') == 'companion':
             fcs = self.system("factions")
             faction = getattr(actor, 'faction', '')

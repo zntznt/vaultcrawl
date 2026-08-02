@@ -7,12 +7,18 @@ Wire: lore_read → lost_note (ghost), standing extremes → faction shifts,
 from __future__ import annotations
 from .det import droll
 
+# Times the player must fell creatures of one note, in a single run, before that note fades
+# next descent. Matches the sanctum threshold in `to_upheaval_events`: three is this file's
+# unit of "you did that on purpose rather than once by accident".
+WANE_DEFEATS = 3
+
 
 class RunChronicle:
     """Accumulates events during a run that should persist to the next run."""
 
     def __init__(self):
         self.lore_read_notes: set = set()        # note ids read this run
+        self.note_defeats: dict = {}              # note id -> creatures of it the player felled
         self.forge_regions: dict = {}             # region_id -> forge count
         self.faction_endings: dict = {}           # faction_id -> final standing
         self.companion_deaths: list = []           # (companion_name, killer_name)
@@ -58,6 +64,18 @@ class RunChronicle:
 
     def record_faction_end(self, faction_id: str, standing: int):
         self.faction_endings[faction_id] = standing
+
+    def record_note_defeat(self, note_id: str):
+        """The player put down a creature of this note. Enough of these and the note fades.
+
+        The counterweight to `idea_ascends`. Before this existed the chronicle could only
+        make a world harder: measured over 48 chained runs, 5 of 9 enemy-bearing notes ended
+        permanently empowered with no mechanism anywhere able to undo it, and the warm arm
+        won 6 of 48 against cold's 16. A memory that only escalates is a difficulty ramp,
+        not a history.
+        """
+        if note_id:
+            self.note_defeats[note_id] = self.note_defeats.get(note_id, 0) + 1
 
     def record_companion_death(self, companion_name: str, killer_note: str):
         """`killer_note` is the killer's source NOTE id, or "" for an authorless death.
@@ -168,6 +186,22 @@ class RunChronicle:
                 "note": killer_note,
                 "cause": f"slain_{comp_name}",
             })
+
+        # Notes the player put down repeatedly → they fade. The counterweight, and the only
+        # thing in this file that can make a world EASIER than it was.
+        #
+        # Emitted after the ascendancies on purpose. `Upheaval.from_events` walks the list in
+        # order and the two verdicts are mutually exclusive, so within a single run a note you
+        # felled WANE_DEFEATS times outranks the one time it took your companion. Dominating
+        # something three times is a better description of the run than losing an ally to it
+        # once.
+        for note_id, count in sorted(self.note_defeats.items()):
+            if count >= WANE_DEFEATS:
+                events.append({
+                    "kind": "power_wanes",
+                    "note": note_id,
+                    "defeats": count,
+                })
 
         # Death artifacts: material remains of the agent who died here
         if self.death_pos:
