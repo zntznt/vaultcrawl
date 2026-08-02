@@ -110,6 +110,10 @@ def run_arm(warm: bool) -> list:
                 decisions=calls["n"], per_turn=round(calls["n"] / turns, 3),
                 top_label=top, top_share=round(cnt / tot, 4), labels=len(picked),
                 label_share={k: v / tot for k, v in picked.items()},
+                attractors=dict(r.attractor_scores or {}),
+                coupling=(r.emergence or {}).get("coupling_pairs", 0),
+                coupling_density=(r.emergence or {}).get("coupling_density", 0.0),
+                ambient_share=(r.emergence or {}).get("ambient_share", 0.0),
             ))
             print(f"  [{'warm' if warm else 'cold'}] {agent:13} seed {seed} "
                   f"F{r.floor_reached:2} won={str(r.won):5} inherit={state['inherited']:2} "
@@ -143,6 +147,19 @@ def summarise(name, rows):
     up = [r["upheaval"] for r in rows]
     print(f"  upheaval inherited: min {min(up)} max {max(up)} "
           f"nonzero on {sum(1 for u in up if u)}/{n} runs")
+    print(f"  coupling: {sum(r['coupling'] for r in rows)/n:5.1f} pairs/run   "
+          f"density {sum(r['coupling_density'] for r in rows)/n:.3f}   "
+          f"ambient {sum(r['ambient_share'] for r in rows)/n:.1%}")
+    keys = sorted({k for r in rows for k in r["attractors"]})
+    if keys:
+        line = "  attractors: " + "  ".join(
+            f"{k} {sum(r['attractors'].get(k, 0) for r in rows)/n:.3f}" for k in keys)
+        print(line)
+        # `haunted` needs ghosts, ghosts need note_lost events, note_lost comes from a
+        # chronicle. It is structurally impossible in a cold arm and is the sharpest single
+        # test of whether memory produces a KIND of run the memoryless world cannot.
+        hn = sum(1 for r in rows if r["attractors"].get("haunted", 0) > 0)
+        print(f"  runs with any haunting: {hn}/{n}")
 
 
 def divergence(name, rows):

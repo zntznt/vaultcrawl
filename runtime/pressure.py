@@ -40,6 +40,18 @@ HP_TAIL = 12
 # A verb has to be tried this often before "never worked" is a claim rather than noise.
 MIN_ATTEMPTS_TO_JUDGE = 20
 
+# Events that say "something happened somewhere" rather than naming a system's output.
+# `noise` is 86.8% of every event a run emits, so any statistic computed over the raw bus is
+# a statistic about noise. Excluded from coupling; its share is reported separately.
+AMBIENT_EVENTS = frozenset({"noise"})
+
+# How many recent events an event is paired against. Emergence is one system's output
+# becoming another's input, so what matters is which kinds arrive close together, not which
+# kinds arrive. Four is short enough that a pair is plausibly a consequence rather than a
+# coincidence, and the window is over bus emissions rather than turns because the bus does
+# not carry turn numbers.
+COUPLING_WINDOW = 4
+
 
 @dataclass
 class EmergenceLog:
@@ -53,9 +65,26 @@ class EmergenceLog:
     event_kinds: dict = field(default_factory=dict)
     verb_ok: dict = field(default_factory=dict)
     verb_fail: dict = field(default_factory=dict)
+    # Ordered pairs of non-ambient events seen within COUPLING_WINDOW of each other.
+    couplings: dict = field(default_factory=dict)
+    ambient: int = 0
+    _recent: list = field(default_factory=list)
 
     def observe_event(self, etype: str) -> None:
         self.event_kinds[etype] = self.event_kinds.get(etype, 0) + 1
+        if etype in AMBIENT_EVENTS:
+            self.ambient += 1
+            return
+        # Which kinds arrive together, not which kinds arrive. `event_kinds` counts presence
+        # and saturates: 13 kinds exist and a single run sees 12.3 of them, so it cannot
+        # tell a rich run from a poor one. Ordered pairs have a ceiling of 13 * 13 = 169 and
+        # sit far below it, which is what a metric with headroom looks like.
+        for prev in self._recent:
+            key = prev + ">" + etype
+            self.couplings[key] = self.couplings.get(key, 0) + 1
+        self._recent.append(etype)
+        if len(self._recent) > COUPLING_WINDOW:
+            self._recent.pop(0)
 
     def observe_verb(self, kind: str, ok: bool) -> None:
         d = self.verb_ok if ok else self.verb_fail
@@ -74,9 +103,21 @@ class EmergenceLog:
     def summary(self) -> dict:
         attempts = {k: self.verb_ok.get(k, 0) + self.verb_fail.get(k, 0)
                     for k in set(self.verb_ok) | set(self.verb_fail)}
+        total = sum(self.event_kinds.values()) or 1
+        named = [k for k in self.event_kinds if k not in AMBIENT_EVENTS]
         return {
             "event_kinds": len(self.event_kinds),
             "event_counts": dict(sorted(self.event_kinds.items(), key=lambda kv: -kv[1])),
+            # How many distinct kinds actually followed one another, against how many could.
+            # This is the emergence number: `event_kinds` says which systems ran, this says
+            # which ones met.
+            "coupling_pairs": len(self.couplings),
+            "coupling_possible": len(named) ** 2,
+            "coupling_density": round(len(self.couplings) / max(1, len(named) ** 2), 3),
+            "coupling_top": dict(sorted(self.couplings.items(),
+                                        key=lambda kv: -kv[1])[:8]),
+            # Reported so nobody computes a statistic over a bus that is mostly this.
+            "ambient_share": round(self.ambient / total, 3),
             "verb_success": {k: round(self.verb_ok.get(k, 0) / n, 3)
                              for k, n in sorted(attempts.items()) if n},
             "broken_verbs": self.broken_verbs(),
