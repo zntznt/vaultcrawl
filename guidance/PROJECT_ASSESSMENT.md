@@ -3327,3 +3327,45 @@ partly starved.
 A note on method. The 1-seed smoke of this same comparison put the divergence floor at 0.174
 cold against 0.196 warm, which is the opposite of the 48-seed result and would have "confirmed"
 the hypothesis. Six runs is not a measurement, including when it agrees with you.
+
+## PROFILE_BIAS: the convergence lever, and what it cost
+
+`_score` returned `max(weight, urgency)`, so a weight below the current urgency was not
+outranked but **erased**: the candidate scored identically for all six profiles. Measured at
+12 of 33 call sites where no weight had ever decided a score, and it made `fight: -5`
+arithmetically identical to `fight: 0`. `PROFILE_BIAS = 0.15` (`12a68e1`) adds
+`weight * BIAS` to every score, keeping the preference live without touching the identity
+floor.
+
+Measured with `runtime/chained_eval.py`, 48 runs per arm, identical (agent, seed) pairs
+against the pre-change run, isolated `HOME`, `PYTHONHASHSEED=0`.
+
+| | cold before | cold after | warm before | warm after |
+|---|---|---|---|---|
+| divergence floor | 0.089 | **0.117** | 0.071 | **0.089** |
+| divergence median | 0.256 | 0.233 | 0.260 | 0.265 |
+| wins | 16/48 | 14/48 | 18/48 | 10/48 |
+| max top-label share | 47.8% | 38.2% | 52.0% | 71.9% |
+
+**The target moved, and it was predicted in advance.** The divergence floor rose 0.028 in the
+cold arm and is back above the 0.10 line an earlier assessment set as worth watching, for the
+first time in several baselines. It rose 0.018 warm. The most-alike pair changed from
+`seeker|whisper` to `artisan|exploiter` in both arms, which is what a real change in how
+profiles differ looks like rather than a shuffle.
+
+**Win rate is unaffected where it matters.** Cold 16 to 14, paired 7 gained and 9 lost across
+16 discordant pairs, two-sided p = 0.80. That is the intended result: this was meant to make
+the profiles *distinct*, not better, and a win-rate jump would have meant the constant was
+buffing everyone instead.
+
+**One signal to watch, not yet to act on.** The warm arm fell 18 to 10, paired 4 gained and 12
+lost, p = 0.077. Marginal at this sample and not significant, but it is the only number that
+moved against us. A plausible mechanism, untested: in a world whose notes have been empowered
+and faded, leaning harder into a preference is worth less than responding to what changed, so
+a stronger bias could cost adaptability exactly where the world varies. **Do not act on this
+without a 288-run arm.** If it is real, the lever is the constant, and the bound documented in
+`tests/test_profile_bias.py` allows anything under 0.25.
+
+No stalls: zero dominated runs cold, one warm (`panic_flee` 71.9% on a 599-turn run that died,
+`d/t` 1.03, which is a short run rather than a loop). Peak decisions per turn 1.08 cold and
+1.17 warm, both with healthy label spreads.
