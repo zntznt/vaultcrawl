@@ -3369,3 +3369,84 @@ without a 288-run arm.** If it is real, the lever is the constant, and the bound
 No stalls: zero dominated runs cold, one warm (`panic_flee` 71.9% on a 599-turn run that died,
 `d/t` 1.03, which is a short run rather than a loop). Peak decisions per turn 1.08 cold and
 1.17 warm, both with healthy label spreads.
+
+## Phase A closed, Phase B opened, and two of my conclusions retracted
+
+288 runs, 144 per arm, identical (agent, seed) pairs, isolated `HOME`, `PYTHONHASHSEED=0`,
+at `a90f8f4`.
+
+### The warm signal was real
+
+| | cold | warm |
+|---|---|---|
+| wins | 58/144 (40.3%) | 42/144 (29.2%) |
+| mean floor | 18.4 | 14.8 |
+
+Paired: 19 cold-losses became warm-wins, 35 cold-wins became warm-losses, 54 discordant,
+**two-sided p = 0.040**. The prediction registered before the run was that this would come
+out null, at about 30% odds the effect was real. Wrong. Under current code the warm arm is
+meaningfully handicapped.
+
+What that does **not** establish is that `PROFILE_BIAS` caused it. The only pre-bias
+warm-versus-cold comparison is n=48 and gave +2 at p=0.80, which the next section shows is
+too small to trust for anything.
+
+### Retraction: n=48 divergence numbers cannot carry a conclusion
+
+The same code, measured twice at different sample sizes:
+
+| | n=48 | n=144 |
+|---|---|---|
+| cold divergence floor | 0.117 | **0.059** |
+| warm divergence floor | 0.089 | **0.082** |
+
+Two claims in this document rest on the n=48 column and neither survives.
+
+1. **"`PROFILE_BIAS` lifted the divergence floor above 0.10 and closed health condition 7."**
+   Retracted. At n=144 the cold floor is 0.059. **Condition 7 still fails**, in both arms.
+   The change may still be correct on its merits (a weight erased on a third of call sites is
+   a defect regardless), but the measurement claimed for it does not hold.
+2. **"The dynamic-world explanation for convergence is dead, and refuted in direction."**
+   Retracted. At n=144 the warm floor (0.082) is *above* cold (0.059), which is the direction
+   originally predicted. The n=48 result that reversed it was noise.
+
+The lesson is one this document already recorded after a 1-seed smoke gave the opposite of a
+48-seed answer, and which was then repeated at 48 against 144: **divergence floors are order
+statistics over 15 pairs and are wildly unstable at small n.** Do not report a floor from
+fewer than 144 runs per arm, and prefer the median, which moved far less (0.208 to 0.256
+across the same comparisons).
+
+### The first emergence measurement
+
+`coupling_pairs`, ordered event pairs within a bounded window, replacing an `event_kinds`
+metric pinned at 12.3 of 13:
+
+| | cold | warm |
+|---|---|---|
+| coupling pairs per run | 82.2 | 70.6 |
+| coupling density | 0.661 | 0.675 |
+| ambient (`noise`) share | 88.8% | 89.5% |
+
+**The instrument works.** It separates the arms by 14% where `event_kinds` read 12.3 against
+12.3, and density sits at 0.66 with real headroom rather than at 0.95. It is the first number
+this project has for systems *meeting* rather than merely running.
+
+**The signal it reports is negative.** A world with memory produces *fewer* couplings per run,
+not more. Consistent with the win data: warm runs are shorter (5,304 turns against 7,365) and
+die earlier, so fewer systems get the chance to meet. Memory currently costs interaction.
+
+### `haunted` is still 0, in both arms, and now we know why
+
+The sharpest Phase B prediction was that `haunted` would fire in the warm arm, being
+structurally impossible cold. It fired **0 times in 144 warm runs** despite 143 of them
+inheriting upheaval. Refuted.
+
+The chain: `haunted` needs ghosts, ghosts need `note_lost`, and `to_upheaval_events` emits
+`note_lost` only for notes where `droll(note_id, 3) == 0`. **That is deterministic per note
+id, not a per-run roll.** On the sample vault exactly two of ten notes qualify, `discipline`
+and `second brain`, and the agent has never read either during a chained run. `record_lore`
+is wired (`history.py:218`) and `lore_read` fires 625 times across the benchmark, so the
+remaining unknown is whether those events and that recorder are even on the same path.
+
+So the haunting mechanic is gated behind a fixed 2-of-10 subset *and* the agent choosing to
+read those particular notes. On this world it has never once occurred.
