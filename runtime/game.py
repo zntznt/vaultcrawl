@@ -109,6 +109,17 @@ EGRESS_TRUTHS_TENTHS = 4
 # band, which is the price of the cheapest route no longer being cheap, and every profile
 # still wins at least two ways.
 EGRESS_STANDING = 7
+
+# How deep before a chronicle's ascendancies bite, as a fraction of the descent. An
+# empowered creature on floor 3 meets a player with nothing; the same creature on floor 20
+# meets one with sigils, standing and a forge. Upheaval applied uniformly therefore lands
+# almost entirely on the early game, and the measurement says so: over 144 chained runs
+# against 144 cold ones on identical seeds, warm runs ended at floor 10 or shallower 44% of
+# the time against cold's 24%, median floor 12 against 22, and the paired floor deficit grew
+# with the inherited event count (-2.0 at 8 events, -4.2 at 13). Waning is NOT gated: it
+# makes the world kinder, and rationing relief in the stretch that is already lethal would
+# be exactly backwards.
+UPHEAVAL_EMPOWER_DEPTH = 0.33
 FRIEND_STANDING = 4  # reputation at which a house stops fighting the one you control
 
 
@@ -798,10 +809,7 @@ class Game:
             en = make_enemy(spec, *self.spot_for(spec["sourceNoteId"], free))
             en.faction = self._region_faction.get(spec.get("regionId", ""), "")
             en._home = (en.x, en.y)   # territorial: it belongs to its note's ground
-            if spec["sourceNoteId"] in self.up.ascended:
-                empower(en)
-            elif spec["sourceNoteId"] in self.up.waned:
-                diminish(en)
+            self.apply_upheaval(en, spec["sourceNoteId"])
             self.actors.append(en)
         # towns & doors (the JRPG realms; Alexander: activity nodes + the intimacy
         # gradient): each district's anchor room is SETTLED ground -- safe, restful,
@@ -1677,8 +1685,7 @@ class Game:
                 en = make_enemy(spec_elite, *self.spot_for(spec_elite["sourceNoteId"], free))
                 en.faction = self._region_faction.get(spec.get("regionId", ""), "")
                 src = spec_elite["sourceNoteId"]
-                if src in self.up.ascended: empower(en)
-                elif src in self.up.waned: diminish(en)
+                self.apply_upheaval(en, src)
                 self.actors.append(en)
             # Spawn minions
             for _ in range(minion_count):
@@ -1689,8 +1696,7 @@ class Game:
                 en = make_enemy(spec_minion, *self.spot_for(spec_minion["sourceNoteId"], free))
                 en.faction = self._region_faction.get(spec.get("regionId", ""), "")
                 src = spec_minion["sourceNoteId"]
-                if src in self.up.ascended: empower(en)
-                elif src in self.up.waned: diminish(en)
+                self.apply_upheaval(en, src)
                 self.actors.append(en)
             # Skip the old for-loop — already spawned all enemies
             n = 0  # signal to skip the regular loop below
@@ -1713,10 +1719,7 @@ class Game:
                     if hasattr(en, 'hp'):
                         en.hp = en.max_hp = min(en.hp, en.max_hp)
             src = spec["sourceNoteId"]
-            if src in self.up.ascended:        # your note grew -> the monster grew
-                empower(en)
-            elif src in self.up.waned:
-                diminish(en)
+            self.apply_upheaval(en, src)       # your note grew -> the monster grew
             self.actors.append(en)
 
         for b in self.m["bosses"]:
@@ -3080,6 +3083,31 @@ class Game:
                     self.log(it.flavor)
                 self.items.remove(it)
                 self.items_taken += 1
+
+    def empower_floor(self) -> int:
+        """The shallowest floor on which an ascendancy takes effect."""
+        return max(1, int(getattr(self, "max_floor", 26) * UPHEAVAL_EMPOWER_DEPTH))
+
+    def apply_upheaval(self, actor, src: str) -> str:
+        """Empower or diminish a freshly spawned creature per the chronicle.
+
+        One place on purpose. This logic lived at three separate spawn sites, which is the
+        same shape as the three `descend` sites that each needed the egress gate and the
+        two commune sites that each needed a price: in this codebase a rule copied three
+        times is a rule that will be fixed twice.
+
+        Returns what it did, so a caller or test can assert on it rather than inferring
+        from the creature's stats.
+        """
+        if src and src in self.up.ascended:
+            if self.floor >= self.empower_floor():
+                empower(actor)
+                return "empowered"
+            return "too_shallow"
+        if src and src in self.up.waned:
+            diminish(actor)
+            return "diminished"
+        return "untouched"
 
     def kill(self, actor, cause="other", killer=None):
         """Universal death: remove the actor and announce it on the bus as `actor_died`
