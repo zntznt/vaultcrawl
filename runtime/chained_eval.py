@@ -84,12 +84,41 @@ def _decide(self, game, actor):
 A.UniversalBrain.decide = _decide
 
 
-def run_arm(warm: bool) -> list:
+def _progress(msg: str) -> None:
+    """Append to a file as well as stdout.
+
+    Two runs died today with no way to tell how far they had got, both because the launch
+    piped through `tail`, which buffers until the process exits. `python3 -u` does not help
+    when something downstream is holding the pipe. A file always tells the truth, and
+    `wc -l` on it is the progress bar.
+    """
+    print(msg, flush=True)
+    try:
+        with open(os.path.join(home, "progress.log"), "a", encoding="utf-8") as fh:
+            fh.write(msg + "\n")
+    except OSError:
+        pass
+
+
+def run_arm(warm: bool, pairs=None, state_dir: str = None) -> list:
+    """One arm. `pairs` lets a worker take a slice; `state_dir` isolates its ~/.vaultcrawl.
+
+    The cold arm is embarrassingly parallel, since every run starts from a deleted chronicle
+    and shares nothing. The warm arm cannot be: it is a chain, and each run must see what the
+    previous one left. So cold fans out across processes while warm runs in the parent, and
+    the wall clock becomes max(cold / workers, warm) instead of cold + warm.
+    """
     state["warm"] = warm
-    shutil.rmtree(os.path.join(home, ".vaultcrawl"), ignore_errors=True)
+    if state_dir:
+        os.environ["HOME"] = state_dir      # chronicle_path() expands ~ at call time
+        os.makedirs(state_dir, exist_ok=True)
+    root = os.path.join(os.environ["HOME"], ".vaultcrawl")
+    shutil.rmtree(root, ignore_errors=True)
     rows = []
-    for seed in range(SEEDS):
-        for agent in AGENTS:
+    if pairs is None:
+        pairs = [(seed, agent) for seed in range(SEEDS) for agent in AGENTS]
+    for seed, agent in pairs:
+        if True:
             if not warm:
                 # Cold: no memory of anything, every run a first morning.
                 try:
@@ -115,16 +144,42 @@ def run_arm(warm: bool) -> list:
                 coupling_density=(r.emergence or {}).get("coupling_density", 0.0),
                 ambient_share=(r.emergence or {}).get("ambient_share", 0.0),
             ))
-            print(f"  [{'warm' if warm else 'cold'}] {agent:13} seed {seed} "
-                  f"F{r.floor_reached:2} won={str(r.won):5} inherit={state['inherited']:2} "
-                  f"up={state['total']:2} d/t={calls['n']/turns:.2f}", flush=True)
+            _progress(f"  [{'warm' if warm else 'cold'}] {agent:13} seed {seed} "
+                      f"F{r.floor_reached:2} won={str(r.won):5} "
+                      f"inherit={state['inherited']:2} up={state['total']:2} "
+                      f"d/t={calls['n']/turns:.2f}")
     return rows
 
 
-print(f"=== cold arm: {SEEDS * len(AGENTS)} runs ===", flush=True)
-cold = run_arm(False)
-print(f"\n=== warm arm: {SEEDS * len(AGENTS)} runs ===", flush=True)
-warm = run_arm(True)
+def _cold_slice(args):
+    """A worker's share of the cold arm, in its own process and its own state directory."""
+    idx, pairs = args
+    return run_arm(False, pairs=pairs,
+                   state_dir=os.path.join(home, f"cold_w{idx}"))
+
+
+ALL_PAIRS = [(seed, agent) for seed in range(SEEDS) for agent in AGENTS]
+# One core is left for the warm arm, which runs here in the parent at the same time.
+WORKERS = max(1, min(len(ALL_PAIRS), (os.cpu_count() or 2) - 1))
+
+_progress(f"=== {len(ALL_PAIRS)} runs per arm: cold across {WORKERS} workers, "
+          f"warm sequential in parallel with them ===")
+
+import multiprocessing as mp  # noqa: E402
+
+chunks = [(i, ALL_PAIRS[i::WORKERS]) for i in range(WORKERS)]
+ctx = mp.get_context("fork")   # children inherit the monkeypatched modules
+pool = ctx.Pool(WORKERS)
+cold_async = pool.map_async(_cold_slice, chunks)
+
+# The chain has to be sequential, so it runs here while the pool works.
+warm = run_arm(True, state_dir=os.path.join(home, "warm"))
+
+cold = [row for part in cold_async.get() for row in part]
+pool.close()
+pool.join()
+cold.sort(key=lambda r: (r["seed"], r["agent"]))
+warm.sort(key=lambda r: (r["seed"], r["agent"]))
 
 # Next to the scratch HOME, never in the repo: `__file__` lives in runtime/ now, so the
 # obvious choice would commit a result blob on every run.
