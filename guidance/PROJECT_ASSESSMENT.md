@@ -3450,3 +3450,55 @@ remaining unknown is whether those events and that recorder are even on the same
 
 So the haunting mechanic is gated behind a fixed 2-of-10 subset *and* the agent choosing to
 read those particular notes. On this world it has never once occurred.
+
+## The depth gate closed the warm penalty entirely
+
+288 runs, 144 per arm, identical (agent, seed) pairs, `PYTHONHASHSEED=0`, at `ebb7d0c`.
+
+| | wins | deaths | runs ending F<=10 | median floor | coupling/run |
+|---|---|---|---|---|---|
+| cold (control) | 58/144 | 55% | 24% | 22 | 82.2 |
+| warm, before the gate | 42/144 | 67% | 44% | 12 | 70.6 |
+| **warm, after** | **59/144** | **57%** | **23%** | **19** | **80.7** |
+
+The cold arm is unchanged to the digit: 58/144, 82.2 coupling, 0.059 divergence floor. That
+is a free control and it confirms the change touched only the path it was meant to.
+
+Warm before against after, paired on identical seeds: **40 gained, 23 lost, p = 0.043.**
+Warm against cold now: 28 up, 27 down, **p = 1.000**, where it had been net -16 at p = 0.040.
+The penalty is gone, not reduced.
+
+### Scoring the predictions registered before the run
+
+| prediction | outcome |
+|---|---|
+| early-floor deaths fall from 44% toward cold's 24% | **23%.** Met, and fully. |
+| median floor rises from 12 toward 22 | **19.** Met. |
+| coupling rises from 70.6 toward 82.2 | **80.7.** Met. |
+| win gap narrows but does not close entirely | **Wrong.** It closed completely. |
+
+Three of four, and the miss was pessimism. Worth stating because the record for the day is
+otherwise poor: the warm signal was called null and was real, the divergence floor was claimed
+fixed twice on samples too small to say, and `haunted` was predicted to fire and did not.
+
+### What this says about the design question
+
+Uniform upheaval was not "memory is too punishing", it was **memory landing on the wrong part
+of the difficulty curve**. The player's power scales with depth; the upheaval did not. Once
+empowerment is gated to the deeper third, a world that remembers costs nothing in win rate and
+returns something real: warm now wins by **five routes to cold's four**, with `diplomacy`
+appearing four times and `commune` ten against cold's eight, and companion_flux runs higher
+(0.503 against 0.469).
+
+That is the first evidence in this project of memory *adding* rather than subtracting. It is
+not large and the coupling number is still marginally below cold (80.7 against 82.2), so the
+honest claim is that memory is now free rather than that it is a gain.
+
+### Still open
+
+- `haunted` remains 0 of 144 in both arms. Gated behind a fixed 2-of-10 note subset the agent
+  has never read; unchanged by this work.
+- `echo_cascade` and `industrial` remain at zero.
+- The divergence floor is 0.059 cold and 0.078 warm, both under the 0.10 line, so health
+  condition 7 still fails. Warm is above cold again, which is the third n=144 measurement
+  pointing that way and the opposite of what the n=48 samples said.
