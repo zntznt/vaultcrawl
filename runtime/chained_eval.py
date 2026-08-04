@@ -23,24 +23,10 @@ import shutil
 import sys
 
 AGENTS = ("artisan", "cartographer", "emergent", "exploiter", "seeker", "whisper")
-SEEDS = int(sys.argv[1]) if len(sys.argv) > 1 else 8
+SEEDS = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 8
 WORLD = "examples/world.json"
 
 home = os.environ.get("HOME", "")
-# Compare against the passwd entry, not `expanduser("~")`. That reads $HOME, so it equals
-# `home` by construction and the guard fired on every run including the correct ones.
-try:
-    import pwd
-    _real_home = pwd.getpwuid(os.getuid()).pw_dir
-except Exception:
-    _real_home = os.path.expanduser("~")
-if os.path.realpath(home) == os.path.realpath(_real_home) and \
-        os.environ.get("CHAINED_ALLOW_REAL_HOME") != "1":
-    raise SystemExit(
-        "refusing to run against the real HOME. This harness deletes and rewrites\n"
-        "$HOME/.vaultcrawl between arms, and doing that while any evaluation is running\n"
-        "silently corrupts it: that is exactly how the first attempt at this went wrong.\n"
-        "Run with HOME set to a scratch directory.")
 
 import runtime.agent_eval as ev  # noqa: E402
 import runtime.agent as A  # noqa: E402
@@ -62,7 +48,6 @@ def ChainedGame(manifest, *a, **kw):
     return RealGame(manifest, *a, **kw)
 
 
-ev.Game = ChainedGame
 
 # Decisions per turn, to catch a stall that the win rate would hide.
 calls = collections.Counter()
@@ -81,7 +66,6 @@ def _decide(self, game, actor):
     return r
 
 
-A.UniversalBrain.decide = _decide
 
 
 def _progress(msg: str) -> None:
@@ -151,111 +135,168 @@ def run_arm(warm: bool, pairs=None, state_dir: str = None) -> list:
     return rows
 
 
-def _cold_slice(args):
-    """A worker's share of the cold arm, in its own process and its own state directory."""
-    idx, pairs = args
-    return run_arm(False, pairs=pairs,
-                   state_dir=os.path.join(home, f"cold_w{idx}"))
+def partition(seeds: int, agents, cold_workers: int, warm_chains: int):
+    """Split the work into per-process chunks. Pure arithmetic, so it can be tested.
 
+    Warm chunks are split by SEED, never round-robin over pairs: a chain has to be a
+    coherent history, so all of a seed's agents belong to the same one. Splitting a seed
+    across chains would mean a run inheriting a chronicle written by a different history,
+    which is not the warm condition, it is a muddle.
 
-ALL_PAIRS = [(seed, agent) for seed in range(SEEDS) for agent in AGENTS]
-# One core is left for the warm arm, which runs here in the parent at the same time.
-WORKERS = max(1, min(len(ALL_PAIRS), (os.cpu_count() or 2) - 1))
-
-_progress(f"=== {len(ALL_PAIRS)} runs per arm: cold across {WORKERS} workers, "
-          f"warm sequential in parallel with them ===")
-
-import multiprocessing as mp  # noqa: E402
-
-chunks = [(i, ALL_PAIRS[i::WORKERS]) for i in range(WORKERS)]
-ctx = mp.get_context("fork")   # children inherit the monkeypatched modules
-pool = ctx.Pool(WORKERS)
-cold_async = pool.map_async(_cold_slice, chunks)
-
-# The chain has to be sequential, so it runs here while the pool works.
-warm = run_arm(True, state_dir=os.path.join(home, "warm"))
-
-cold = [row for part in cold_async.get() for row in part]
-pool.close()
-pool.join()
-cold.sort(key=lambda r: (r["seed"], r["agent"]))
-warm.sort(key=lambda r: (r["seed"], r["agent"]))
-
-# Next to the scratch HOME, never in the repo: `__file__` lives in runtime/ now, so the
-# obvious choice would commit a result blob on every run.
-out = os.path.join(home, "chained_result.json")
-with open(out, "w", encoding="utf-8") as fh:
-    json.dump({"cold": cold, "warm": warm}, fh, indent=2)
-
-
-def summarise(name, rows):
-    n = len(rows)
-    w = sum(1 for r in rows if r["won"])
-    print(f"\n{name}: {w}/{n} wins ({w/n:.1%})")
-    print(f"  mean floor {sum(r['floor'] for r in rows)/n:5.1f}   "
-          f"mean turns {sum(r['turns'] for r in rows)/n:7.0f}   "
-          f"mean decisions/turn {sum(r['per_turn'] for r in rows)/n:.3f}")
-    print(f"  mean labels used {sum(r['labels'] for r in rows)/n:.1f}   "
-          f"max top-label share {max(r['top_share'] for r in rows):.1%}")
-    paths = collections.Counter(r["win_path"] for r in rows if r["won"])
-    print(f"  win paths: {dict(paths)}")
-    up = [r["upheaval"] for r in rows]
-    print(f"  upheaval inherited: min {min(up)} max {max(up)} "
-          f"nonzero on {sum(1 for u in up if u)}/{n} runs")
-    print(f"  coupling: {sum(r['coupling'] for r in rows)/n:5.1f} pairs/run   "
-          f"density {sum(r['coupling_density'] for r in rows)/n:.3f}   "
-          f"ambient {sum(r['ambient_share'] for r in rows)/n:.1%}")
-    keys = sorted({k for r in rows for k in r["attractors"]})
-    if keys:
-        line = "  attractors: " + "  ".join(
-            f"{k} {sum(r['attractors'].get(k, 0) for r in rows)/n:.3f}" for k in keys)
-        print(line)
-        # `haunted` needs ghosts, ghosts need note_lost events, note_lost comes from a
-        # chronicle. It is structurally impossible in a cold arm and is the sharpest single
-        # test of whether memory produces a KIND of run the memoryless world cannot.
-        hn = sum(1 for r in rows if r["attractors"].get("haunted", 0) > 0)
-        print(f"  runs with any haunting: {hn}/{n}")
-
-
-def divergence(name, rows):
-    """Are the six profiles more distinguishable in this arm, or less?
-
-    The reason this experiment is worth more than its win rate. The profiles have converged
-    on every recent baseline (floor 0.09 then 0.073, under the 0.10 line an earlier
-    assessment set as worth watching), and the differentiation that disappeared may have
-    been coming from the pathologies that were removed. A world that changes between runs
-    gives the profiles different terrain to be different on, so if memory helps anywhere it
-    should show here before it shows in wins.
+    Cold chunks can be split any way at all, because every cold run starts from a deleted
+    chronicle and shares nothing.
     """
-    from runtime.pressure import divergence_matrix
-    shares = {}
-    for a in AGENTS:
-        agg = collections.Counter()
-        for r in rows:
-            if r["agent"] == a:
-                agg.update(r["label_share"])
-        tot = sum(agg.values()) or 1.0
-        shares[a] = {k: v / tot for k, v in agg.items()}
-    m = divergence_matrix(shares)
-    vals = sorted(m.values())
-    lo = min(m, key=m.get)
-    print(f"  {name} divergence: min {vals[0]:.3f}  median {vals[len(vals)//2]:.3f}  "
-          f"max {vals[-1]:.3f}   most alike: {lo} at {m[lo]:.3f}")
-    return vals
+    all_pairs = [(sd, ag) for sd in range(seeds) for ag in agents]
+    groups = [list(range(i, seeds, warm_chains)) for i in range(warm_chains)]
+    warm = [(True, i, [(sd, ag) for sd in grp for ag in agents])
+            for i, grp in enumerate(groups) if grp]
+    cold = [(False, i, all_pairs[i::cold_workers]) for i in range(cold_workers)]
+    return warm, [c for c in cold if c[2]]
 
 
-summarise("COLD", cold)
-summarise("WARM", warm)
+def _slice(args):
+    """One worker's share: a set of (seed, agent) pairs, its own process, its own HOME."""
+    warm, idx, pairs = args
+    tag = ("warm" if warm else "cold") + f"_w{idx}"
+    return run_arm(warm, pairs=pairs, state_dir=os.path.join(home, tag))
 
-print("\nPOLICY DIVERGENCE (the hypothesis: a world with memory keeps profiles distinct)")
-cv = divergence("COLD", cold)
-wv = divergence("WARM", warm)
-print(f"  floor  {cv[0]:.3f} -> {wv[0]:.3f}   median {cv[len(cv)//2]:.3f} -> {wv[len(wv)//2]:.3f}")
 
-by = {(r["agent"], r["seed"]): r for r in cold}
-cw = {(r["agent"], r["seed"]): r for r in warm}
-to_win = [k for k in by if not by[k]["won"] and cw.get(k, {}).get("won")]
-to_loss = [k for k in by if by[k]["won"] and not cw.get(k, {}).get("won")]
-print(f"\nPAIRED on identical seeds: {len(to_win)} cold-losses became warm-wins, "
-      f"{len(to_loss)} cold-wins became warm-losses, net {len(to_win)-len(to_loss):+d}")
-print(f"\nSaved -> {out}")
+def main() -> int:
+    """Run both arms. Import-safe: nothing here happens merely by importing the module,
+    which is what let `partition` get a unit test instead of a four-hour smoke run."""
+    global home
+    home = os.environ.get("HOME", "")
+    # Compare against the passwd entry, not `expanduser("~")`. That reads $HOME, so it equals
+    # `home` by construction and the guard fired on every run including the correct ones.
+    try:
+        import pwd
+        _real_home = pwd.getpwuid(os.getuid()).pw_dir
+    except Exception:
+        _real_home = os.path.expanduser("~")
+    if os.path.realpath(home) == os.path.realpath(_real_home) and \
+            os.environ.get("CHAINED_ALLOW_REAL_HOME") != "1":
+        raise SystemExit(
+            "refusing to run against the real HOME. This harness deletes and rewrites\n"
+            "$HOME/.vaultcrawl between arms, and doing that while any evaluation is running\n"
+            "silently corrupts it: that is exactly how the first attempt at this went wrong.\n"
+            "Run with HOME set to a scratch directory.")
+
+    ev.Game = ChainedGame
+    A.UniversalBrain.decide = _decide
+
+    ALL_PAIRS = [(seed, agent) for seed in range(SEEDS) for agent in AGENTS]
+    CORES = max(1, os.cpu_count() or 2)
+
+    # The cold arm is embarrassingly parallel: every run starts from a deleted chronicle.
+    COLD_WORKERS = max(1, min(len(ALL_PAIRS), CORES))
+
+    # The warm arm cannot be parallelised *within* a chain, since each run must see what the
+    # last one left. It can be parallelised ACROSS chains: several independent histories, each
+    # sequential, each with its own chronicle. Measured earlier, a chronicle saturates at about
+    # 14 events, so a chain of 48 reaches the same warm condition as a chain of 144 and three
+    # short histories are a fairer sample of "a world that remembers" than one very long one.
+    #
+    # This was the bottleneck. With one chain the cold arm finished in a quarter of the time and
+    # then three cores idled for over an hour waiting on it.
+    WARM_CHAINS = max(1, min(SEEDS, CORES))
+
+    _progress(f"=== {len(ALL_PAIRS)} runs per arm: cold across {COLD_WORKERS} workers, "
+              f"warm across {WARM_CHAINS} independent chains ===")
+
+    import multiprocessing as mp  # noqa: E402
+
+    warm_chunks, cold_chunks = partition(SEEDS, AGENTS, COLD_WORKERS, WARM_CHAINS)
+
+    ctx = mp.get_context("fork")   # children inherit the monkeypatched modules
+    with ctx.Pool(CORES) as pool:
+        # Warm first in the queue: its chains are the long pole, so they should start soonest.
+        parts = pool.map(_slice, warm_chunks + cold_chunks)
+
+    warm = [r for part in parts[:len(warm_chunks)] for r in part]
+    cold = [r for part in parts[len(warm_chunks):] for r in part]
+    cold.sort(key=lambda r: (r["seed"], r["agent"]))
+    warm.sort(key=lambda r: (r["seed"], r["agent"]))
+
+    # Next to the scratch HOME, never in the repo: `__file__` lives in runtime/ now, so the
+    # obvious choice would commit a result blob on every run.
+    out = os.path.join(home, "chained_result.json")
+    with open(out, "w", encoding="utf-8") as fh:
+        json.dump({"cold": cold, "warm": warm}, fh, indent=2)
+
+
+    def summarise(name, rows):
+        n = len(rows)
+        w = sum(1 for r in rows if r["won"])
+        print(f"\n{name}: {w}/{n} wins ({w/n:.1%})")
+        print(f"  mean floor {sum(r['floor'] for r in rows)/n:5.1f}   "
+              f"mean turns {sum(r['turns'] for r in rows)/n:7.0f}   "
+              f"mean decisions/turn {sum(r['per_turn'] for r in rows)/n:.3f}")
+        print(f"  mean labels used {sum(r['labels'] for r in rows)/n:.1f}   "
+              f"max top-label share {max(r['top_share'] for r in rows):.1%}")
+        paths = collections.Counter(r["win_path"] for r in rows if r["won"])
+        print(f"  win paths: {dict(paths)}")
+        up = [r["upheaval"] for r in rows]
+        print(f"  upheaval inherited: min {min(up)} max {max(up)} "
+              f"nonzero on {sum(1 for u in up if u)}/{n} runs")
+        print(f"  coupling: {sum(r['coupling'] for r in rows)/n:5.1f} pairs/run   "
+              f"density {sum(r['coupling_density'] for r in rows)/n:.3f}   "
+              f"ambient {sum(r['ambient_share'] for r in rows)/n:.1%}")
+        keys = sorted({k for r in rows for k in r["attractors"]})
+        if keys:
+            line = "  attractors: " + "  ".join(
+                f"{k} {sum(r['attractors'].get(k, 0) for r in rows)/n:.3f}" for k in keys)
+            print(line)
+            # `haunted` needs ghosts, ghosts need note_lost events, note_lost comes from a
+            # chronicle. It is structurally impossible in a cold arm and is the sharpest single
+            # test of whether memory produces a KIND of run the memoryless world cannot.
+            hn = sum(1 for r in rows if r["attractors"].get("haunted", 0) > 0)
+            print(f"  runs with any haunting: {hn}/{n}")
+
+
+    def divergence(name, rows):
+        """Are the six profiles more distinguishable in this arm, or less?
+
+        The reason this experiment is worth more than its win rate. The profiles have converged
+        on every recent baseline (floor 0.09 then 0.073, under the 0.10 line an earlier
+        assessment set as worth watching), and the differentiation that disappeared may have
+        been coming from the pathologies that were removed. A world that changes between runs
+        gives the profiles different terrain to be different on, so if memory helps anywhere it
+        should show here before it shows in wins.
+        """
+        from runtime.pressure import divergence_matrix
+        shares = {}
+        for a in AGENTS:
+            agg = collections.Counter()
+            for r in rows:
+                if r["agent"] == a:
+                    agg.update(r["label_share"])
+            tot = sum(agg.values()) or 1.0
+            shares[a] = {k: v / tot for k, v in agg.items()}
+        m = divergence_matrix(shares)
+        vals = sorted(m.values())
+        lo = min(m, key=m.get)
+        print(f"  {name} divergence: min {vals[0]:.3f}  median {vals[len(vals)//2]:.3f}  "
+              f"max {vals[-1]:.3f}   most alike: {lo} at {m[lo]:.3f}")
+        return vals
+
+
+    summarise("COLD", cold)
+    summarise("WARM", warm)
+
+    print("\nPOLICY DIVERGENCE (the hypothesis: a world with memory keeps profiles distinct)")
+    cv = divergence("COLD", cold)
+    wv = divergence("WARM", warm)
+    print(f"  floor  {cv[0]:.3f} -> {wv[0]:.3f}   median {cv[len(cv)//2]:.3f} -> {wv[len(wv)//2]:.3f}")
+
+    by = {(r["agent"], r["seed"]): r for r in cold}
+    cw = {(r["agent"], r["seed"]): r for r in warm}
+    to_win = [k for k in by if not by[k]["won"] and cw.get(k, {}).get("won")]
+    to_loss = [k for k in by if by[k]["won"] and not cw.get(k, {}).get("won")]
+    print(f"\nPAIRED on identical seeds: {len(to_win)} cold-losses became warm-wins, "
+          f"{len(to_loss)} cold-wins became warm-losses, net {len(to_win)-len(to_loss):+d}")
+    print(f"\nSaved -> {out}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
