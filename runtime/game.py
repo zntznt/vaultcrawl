@@ -836,6 +836,13 @@ class Game:
                     else tiles[len(tiles) // 2])
             self.level.tiles[door[1]][door[0]] = ">"
             self._gates[door] = r["id"]
+        # The generator draws its own `>` at `level.stairs`, which classic descent uses and
+        # the surface has no meaning for: it is not a district door, so it opens on nothing.
+        # A door drawn on the map that goes nowhere lies to a human and livelocks an agent,
+        # since `on_stairs` reads the glyph while `descend` reads `_gates`.
+        stair = getattr(self.level, "stairs", None)
+        if stair and stair not in self._gates and self.level.walkable(*stair):
+            self.level.tiles[stair[1]][stair[0]] = "."
         # where you WAKE is settled ground too — nothing ambushes you at the start
         start_idx = self.room_at(px, py)
         if start_idx is not None:
@@ -1566,26 +1573,34 @@ class Game:
         return max(EGRESS_TRUTHS_MIN,
                    min(EGRESS_TRUTHS_MAX, notes * EGRESS_TRUTHS_TENTHS // 10))
 
-    def descend(self):
+    def descend(self) -> bool:
+        """Go down. True when the player actually moved, False when nothing happened.
+
+        This returned None on every path, and `dispatch` answered True regardless, so a
+        descend that did nothing was indistinguishable from one that worked. Measured in
+        sandbox: one agent standing on an orphaned `>` chose `panic_descend` 49,437 times
+        in a row for 153 game turns, **324 decisions per turn**, because every one of them
+        left the state it had just read untouched. Fifth instance of one shape in this
+        codebase, after commune range, commune price, the egress stair and interact.
+        """
         if self.sandbox:
             t = self.level.tiles[self.player.y][self.player.x]
             if t in "><":
                 from .body_parts import is_immobilized
                 if is_immobilized(self.player):
                     self.log("Your legs won't hold; you cannot descend.")
-                    return
-                if self.traverse():
-                    return
-                self._z_descend()
-                return
+                    return False
+                if self.traverse() or self._z_descend():
+                    return self._spend_travel_turn()
+                return False
             self.log("No way through here; doors (>) wait in each district's "
                      "heart, stairs (<) climb home.")
-            return
+            return False
         if self.floor >= self.max_floor and not self.won:
             ok, why, route = self.egress_ready()
             if not ok:
                 self.log(f"The way down is shut. {why}")
-                return
+                return False
             self._egress_route = route
         self.floor += 1
         # Victory: leaving past the warden. Named for the ROUTE that opened the stair.
@@ -1600,7 +1615,7 @@ class Game:
             self.log("You slip past the final warden and into the deep quiet. You escape."
                      " You win."
                      )
-            return
+            return True
         rng = random.Random(f"{self.seed}:spawn:{self.floor}")
         lvl = generate_level(self.width, self.height, self.seed, self.floor)
         self._set_level(lvl, z=0)
@@ -1864,6 +1879,7 @@ class Game:
             s.on_floor_enter(self)
         if self._graves:
             self._animate_graves()
+        return True
 
     # ---- actions ----
     def actor_at(self, x: int, y: int):
@@ -1877,47 +1893,68 @@ class Game:
             return self.level.tiles[self.player.y][self.player.x] in "><"
         return (self.player.x, self.player.y) == self.level.stairs
 
-    def ascend(self):
+    def ascend(self) -> bool:
+        """Go up. True when the player actually moved. See `descend` for why this matters."""
         if self.sandbox and self.level.tiles[self.player.y][self.player.x] in "<>":
             from .body_parts import is_immobilized
             if is_immobilized(self.player):
                 self.log("Your legs won't hold; you cannot climb.")
-                return
-            if self.traverse():
-                return
-            self._z_ascend()
-            return
+                return False
+            if self.traverse() or self._z_ascend():
+                return self._spend_travel_turn()
         self.log("There is no way up from here.")
+        return False
 
-    def _z_descend(self):
+    def _spend_travel_turn(self) -> bool:
+        """Crossing a threshold takes time, like every other action.
+
+        Sandbox traversal moved the player without touching the clock, so a stair was a
+        free action. Measured: an agent in panic bounced between two z-levels for 98 of its
+        194 decisions and 0 game turns, because arriving put it on the matching stair and
+        the state it re-read was the state it had just left. Cost is the fix; a loop the
+        clock never advances through is not a loop any backstop can see.
+        """
+        self.turn += 1
+        self._tick_effects()
+        self.enemies_act()
+        self._restore_winded()
+        for s in self.systems:
+            s.on_player_act(self)
+        return True
+
+    def _z_descend(self) -> bool:
         """Move one z-level deeper within the current realm."""
         if not self._dungeon:
-            return
+            self.log("There is nothing below this ground.")
+            return False
         nxt = self.current_z - 1
         if nxt not in self._levels:
             self.log("There is no way deeper from here.")
-            return
+            return False
         self._set_level(self._levels[nxt], z=nxt)
         self.player.x, self.player.y = self.level.player_start
         self.player.z = nxt
         self.log(f"-- You descend deeper (z={nxt}). --")
         for s in self.systems:
             s.on_floor_enter(self)
+        return True
 
-    def _z_ascend(self):
+    def _z_ascend(self) -> bool:
         """Move one z-level upward within the current realm."""
         if not self._dungeon:
-            return
+            self.log("There is nothing above this ground.")
+            return False
         nxt = self.current_z + 1
         if nxt not in self._levels:
             self.log("There is no way up from here.")
-            return
+            return False
         self._set_level(self._levels[nxt], z=nxt)
         self.player.x, self.player.y = self.level.player_start
         self.player.z = nxt
         self.log(f"-- You climb back up (z={nxt}). --")
         for s in self.systems:
             s.on_floor_enter(self)
+        return True
 
     def try_move(self, dx: int, dy: int):
         if not self.alive or self.won:

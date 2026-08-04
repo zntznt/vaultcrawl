@@ -121,15 +121,17 @@ def dispatch(game, action: AgentAction) -> bool:
         if kind == "descend":
             if not game.on_stairs():
                 return False
-            game.descend()
-            return True
+            # `on_stairs` is a glyph test, and a glyph is not a promise. In sandbox the
+            # surface carries an orphaned `>` left by the level generator that leads
+            # nowhere, so the two disagree and the descend does nothing. Report the verb's
+            # own verdict so the brain can stop choosing it.
+            return bool(game.descend())
 
         # -- ascend -------------------------------------------------------------
         if kind == "ascend":
             if not hasattr(game, "ascend"):
                 return False
-            game.ascend()
-            return True
+            return bool(game.ascend())
 
         # -- forge --------------------------------------------------------------
         if kind == "forge":

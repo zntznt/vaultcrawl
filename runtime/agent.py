@@ -332,8 +332,16 @@ class UniversalBrain(Brain):
                 return self._forced("panic_descend", AgentAction("descend"))
             if st:
                 step = step_toward_avoiding_elites(game, actor, st[0], st[1])
-                return self._forced("panic_flee",
-                                    AgentAction("move", dx=step[0], dy=step[1]))
+                # A forced no-op is the worst action in the vocabulary. `dispatch` rejects a
+                # (0, 0) move without spending a turn, and a forced branch returns before the
+                # candidate list exists, so the fatigue backstop never sees it: the agent
+                # re-reads the state it just read and forces the same nothing again. Measured
+                # in sandbox, where `st` points at a stair the surface does not really have,
+                # panic_flee took 51.0% of decisions and 98 of them moved nobody. When there
+                # is nowhere to run, fall through and let the candidates argue.
+                if step and (step[0] or step[1]):
+                    return self._forced("panic_flee",
+                                        AgentAction("move", dx=step[0], dy=step[1]))
 
         # ---- COMMUNE (any elite, not just final boss) ----
         truths = s["knowledge"]["truths_read"]
