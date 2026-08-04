@@ -38,10 +38,11 @@ import json
 import math
 import os
 
-# Dropping these does not test a mechanic, it breaks the harness or the agent's senses, so a
-# dead arm would be read as "this system matters enormously" when it only means the run could
-# not start. Sense and memory feed perception; sigils and salvage feed the agent's own verbs
-# through `agent_state`, and their absence is measured better by the verb-level rows.
+# Shared with `leverage.py` so a sweep and a signal table answer to the same threshold.
+from runtime.leverage import FDR, _bh
+
+# Dropping these does not test a mechanic, it breaks the agent's senses, so a dead arm would
+# read as "this system matters enormously" when it only means the run could not start.
 UNDROPPABLE = {"senses", "memory"}
 
 
@@ -112,13 +113,27 @@ def compare(base: list, arm: list, name: str) -> dict:
     bf = [bk[k]["floor"] for k in shared]
     af = [ak[k]["floor"] for k in shared]
     lost, gained, p = _mcnemar(bk, ak)
+    # How the game was won, not merely how often. `reactions` is why this column exists: its
+    # removal moved the win count 12 to 11 and p to 1.000 while `boss_killed` went 4 to 0 and
+    # every remaining win came by standing or commune. A whole route closed and the aggregate
+    # could not see it. Floor spread could not either, at 9.2 to 6.5.
+    bp = collections.Counter(bk[k]["win_path"] for k in shared if bk[k]["won"])
+    apth = collections.Counter(ak[k]["win_path"] for k in shared if ak[k]["won"])
     return dict(system=name, n=len(shared), base_wins=bw, arm_wins=aw,
                 base_floor=sum(bf) / max(1, len(bf)), arm_floor=sum(af) / max(1, len(af)),
                 base_floor_sd=_sd(bf), arm_floor_sd=_sd(af),
+                base_paths=dict(bp), arm_paths=dict(apth),
+                closed=sorted(set(bp) - set(apth)), opened=sorted(set(apth) - set(bp)),
                 lost=lost, gained=gained, p=p)
 
 
 def report(results: list) -> None:
+    # One arm per system means one hypothesis per system, so the same false-discovery
+    # arithmetic applies here as in `leverage.py`. A sweep of 27 arms at a raw 0.05 hands out
+    # about one and a half significant systems for free, and the top of this table is exactly
+    # where that error would be invisible.
+    for d, keep in zip(results, _bh([d["p"] for d in results])):
+        d["survives_fdr"] = keep
     print(f"\n{'system':18}{'wins':>12}{'p':>9}{'floor':>14}{'floor sd':>16}")
     print(f"{'':18}{'base->drop':>12}{'':>9}{'base->drop':>14}{'base->drop':>16}")
     for d in sorted(results, key=lambda d: d["p"]):
@@ -127,13 +142,39 @@ def report(results: list) -> None:
         sd = f"{d['base_floor_sd']:.1f}->{d['arm_floor_sd']:.1f}"
         mark = ""
         if d["p"] <= 0.05:
-            mark = "  MEAN MOVED"
+            mark = "  MEAN MOVED" + ("" if d.get("survives_fdr") else " (raw p only)")
+        elif d.get("closed"):
+            mark = f"  route closed: {','.join(d['closed'])}"
         elif d["base_floor_sd"] > 0 and abs(
                 d["arm_floor_sd"] / d["base_floor_sd"] - 1) >= 0.25:
             mark = "  spread moved, mean did not"
         print(f"{d['system']:18}{wins:>12}{d['p']:9.4f}{floor:>14}{sd:>16}{mark}")
-    print("\n  A system whose removal moves neither the mean nor the spread is present and "
-          "unused.\n  One that moves only the spread is doing work no win rate can see.")
+    surv = [d["system"] for d in results if d.get("survives_fdr")]
+    raw = [d["system"] for d in results if d["p"] <= 0.05 and not d.get("survives_fdr")]
+    print(f"\n  surviving FDR {FDR:.0%} over {len(results)} arms: {surv or 'none'}")
+    if raw:
+        print(f"  raw p under 0.05 but not surviving: {raw}. About "
+              f"{0.05 * len(results):.1f} of these are expected by chance, so they are a "
+              f"shortlist to confirm at higher n, not a result.")
+    closed = [(d["system"], d["closed"]) for d in results
+              if d.get("closed") and d["p"] > 0.05]
+    if closed:
+        print("\n  ROUTES CLOSED WITHOUT MOVING THE WIN RATE. The second half of the "
+              "criterion,\n  and the aggregate is blind to every line here.")
+        for sysname, paths in closed:
+            d = next(x for x in results if x["system"] == sysname)
+            print(f"     {sysname:16} lost {','.join(paths):14} "
+                  f"{d['base_paths']} -> {d['arm_paths']}")
+    opened = [(d["system"], d["opened"]) for d in results if d.get("opened")]
+    if opened:
+        print("\n  ROUTES THAT OPENED WHEN THE SYSTEM WAS REMOVED. A system suppressing a "
+              "way to win.")
+        for sysname, paths in opened:
+            d = next(x for x in results if x["system"] == sysname)
+            print(f"     {sysname:16} gained {','.join(paths):12} "
+                  f"{d['base_paths']} -> {d['arm_paths']}")
+    print("\n  A system whose removal moves neither the mean, the spread, nor the route mix "
+          "is\n  present and the game does not need it.")
 
 
 def main(argv=None) -> int:
