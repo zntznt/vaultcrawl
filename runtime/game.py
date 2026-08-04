@@ -684,6 +684,11 @@ class Game:
             return
         try:
             from .persistence import save_chronicle
+            from .persistence import chronicle as _chron
+            # The ghost roll is salted with this, so a note's fate depends on the run
+            # rather than on its name. Set here because this is the one place that knows
+            # both the chronicle and the run's identity.
+            _chron().run_seed = str(self.seed)
             fcs = self.system("factions")
             if fcs is not None:
                 from .persistence import chronicle
