@@ -29,7 +29,7 @@ import os
 
 def _run_slice(args):
     """One worker's share, in its own process and its own state directory."""
-    idx, pairs, world, home = args
+    idx, pairs, world, home, sandbox = args
     state_dir = os.path.join(home, f"sbx_w{idx}")
     os.makedirs(state_dir, exist_ok=True)
     os.environ["HOME"] = state_dir
@@ -42,7 +42,12 @@ def _run_slice(args):
         kw["sandbox"] = True
         return RealGame(manifest, *a, **kw)
 
-    ev.Game = SandboxGame
+    # `--classic` leaves the constructor alone, so the classic arm runs through exactly this
+    # instrumentation rather than through `agent_eval`'s own reporting. The two arms then
+    # differ in the mode and in nothing else, which is the only way the contrast is worth
+    # quoting.
+    if sandbox:
+        ev.Game = SandboxGame
 
     calls = collections.Counter()
     picked = collections.Counter()
@@ -64,6 +69,7 @@ def _run_slice(args):
     for seed, agent in pairs:
         calls["n"] = 0
         picked.clear()
+        # The same run seed in both arms, so the comparison is paired.
         r = ev.run_agent(world, agent, run_seed=f"sbx-{seed}")
         turns = r.turns_survived or 1
         tot = sum(picked.values()) or 1
@@ -79,7 +85,7 @@ def _run_slice(args):
             coupling_density=(r.emergence or {}).get("coupling_density", 0.0),
             broken_verbs=(r.emergence or {}).get("broken_verbs", []),
         ))
-        print(f"  [sandbox] {agent:13} seed {seed} F{r.floor_reached:2} "
+        print(f"  [{'sandbox' if sandbox else 'classic'}] {agent:13} seed {seed} F{r.floor_reached:2} "
               f"won={str(r.won):5} t{turns:6} d/t={calls['n']/turns:.2f}", flush=True)
     return rows
 
@@ -89,6 +95,9 @@ def main(argv=None) -> int:
     ap.add_argument("world")
     ap.add_argument("--runs", type=int, default=4, help="runs per agent")
     ap.add_argument("--json", default="", help="write raw rows here")
+    ap.add_argument("--classic", action="store_true",
+                    help="run classic descent through this same instrumentation, for a "
+                         "paired contrast the harness cannot be blamed for")
     args = ap.parse_args(argv)
 
     home = os.environ.get("HOME", "")
@@ -107,13 +116,15 @@ def main(argv=None) -> int:
     workers = max(1, min(len(pairs), os.cpu_count() or 2))
 
     import multiprocessing as mp
-    chunks = [(i, pairs[i::workers], args.world, home) for i in range(workers)]
+    mode = "classic" if args.classic else "sandbox"
+    chunks = [(i, pairs[i::workers], args.world, home, not args.classic)
+              for i in range(workers)]
     chunks = [c for c in chunks if c[1]]
-    print(f"=== sandbox: {len(pairs)} runs across {len(chunks)} workers ===", flush=True)
+    print(f"=== {mode}: {len(pairs)} runs across {len(chunks)} workers ===", flush=True)
     with mp.get_context("fork").Pool(len(chunks)) as pool:
         rows = [r for part in pool.map(_run_slice, chunks) for r in part]
 
-    report(rows)
+    report(rows, mode)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(rows, fh, indent=2)
@@ -121,10 +132,10 @@ def main(argv=None) -> int:
     return 0
 
 
-def report(rows: list) -> None:
+def report(rows: list, mode: str = "sandbox") -> None:
     n = len(rows) or 1
     wins = sum(r["won"] for r in rows)
-    print(f"\nSANDBOX: {wins}/{len(rows)} wins ({wins/n:.1%})")
+    print(f"\n{mode.upper()}: {wins}/{len(rows)} wins ({wins/n:.1%})")
     print(f"  mean floor {sum(r['floor'] for r in rows)/n:5.1f}   "
           f"mean turns {sum(r['turns'] for r in rows)/n:7.0f}   "
           f"decisions/turn {sum(r['per_turn'] for r in rows)/n:.3f}")
@@ -149,7 +160,7 @@ def report(rows: list) -> None:
         print(f"     {r['agent']:13} seed {r['seed']} {r['top_label']:18} "
               f"{r['top_share']:5.1%} d/t={r['per_turn']:.2f} F{r['floor']} won={r['won']}")
 
-    print("\n  mean label share, sandbox:")
+    print(f"\n  mean label share, {mode}:")
     agg = collections.Counter()
     for r in rows:
         agg.update(r["label_share"])
