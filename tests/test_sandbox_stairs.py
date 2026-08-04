@@ -128,6 +128,26 @@ def test_classic_descent_still_reports_its_verdict():
     assert g.floor == before
 
 
+def test_an_agent_can_take_a_portal(sbx):
+    """The same disagreement, pointing the other way, and a Berlin problem.
+
+    `PortalSystem` registers a gate rendered as `◉` with no glyph under it. `on_stairs`
+    tested the glyph, and `dispatch` gates the descend verb on `on_stairs`, so an agent was
+    refused before `traverse` was ever consulted. A human can use the same tile: `play.py`
+    keys off `_gates` membership. Sandbox perception steers the agent at the nearest gate,
+    portals included, so it walked to a threshold it was structurally forbidden to enter.
+    """
+    glyphless = [p for p in sbx._gates if sbx.level.tiles[p[1]][p[0]] not in "<>"]
+    if not glyphless:
+        pytest.skip("this layout spawned no portal to stand on")
+    sbx.player.x, sbx.player.y = glyphless[0]
+    assert sbx.on_stairs() is True, (
+        "a registered gate underfoot does not read as a threshold, so `dispatch` refuses "
+        "the verb and no agent can ever take a portal")
+    assert dispatch(sbx, AgentAction("descend")) is True, (
+        "the agent was refused a threshold a human can walk through")
+
+
 def test_a_null_move_really_is_free(sbx):
     """The premise the next test rests on: dispatch refuses (0, 0) and charges nothing."""
     before = sbx.turn

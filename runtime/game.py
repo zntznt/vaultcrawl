@@ -1584,8 +1584,7 @@ class Game:
         codebase, after commune range, commune price, the egress stair and interact.
         """
         if self.sandbox:
-            t = self.level.tiles[self.player.y][self.player.x]
-            if t in "><":
+            if self.on_stairs():
                 from .body_parts import is_immobilized
                 if is_immobilized(self.player):
                     self.log("Your legs won't hold; you cannot descend.")
@@ -1889,13 +1888,23 @@ class Game:
         return None
 
     def on_stairs(self) -> bool:
+        """Is there a threshold underfoot that `descend`/`ascend` can actually take?
+
+        The glyph alone was the test, and `PortalSystem` registers a gate rendered as `◉`
+        with no `<`/`>` under it. `dispatch` gates the descend verb on this, so an agent
+        standing on a portal was refused before `traverse` was ever consulted: a mechanic a
+        human can use (`play.py` keys off `_gates` membership) that no agent could reach.
+        Sandbox perception even steers the agent at the nearest gate, portals included, so
+        it walked to one it was structurally forbidden to enter.
+        """
         if self.sandbox:
-            return self.level.tiles[self.player.y][self.player.x] in "><"
+            return (self.level.tiles[self.player.y][self.player.x] in "><"
+                    or (self.player.x, self.player.y) in self._gates)
         return (self.player.x, self.player.y) == self.level.stairs
 
     def ascend(self) -> bool:
         """Go up. True when the player actually moved. See `descend` for why this matters."""
-        if self.sandbox and self.level.tiles[self.player.y][self.player.x] in "<>":
+        if self.sandbox and self.on_stairs():
             from .body_parts import is_immobilized
             if is_immobilized(self.player):
                 self.log("Your legs won't hold; you cannot climb.")
