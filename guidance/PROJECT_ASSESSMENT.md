@@ -3502,3 +3502,49 @@ honest claim is that memory is now free rather than that it is a gain.
 - The divergence floor is 0.059 cold and 0.078 warm, both under the 0.10 line, so health
   condition 7 still fails. Warm is above cold again, which is the third n=144 measurement
   pointing that way and the opposite of what the n=48 samples said.
+
+## Ghosts: the first thing only a remembered world can do
+
+288 runs, 144 per arm, identical seeds, at `3fd0e2a`.
+
+| | cold | warm |
+|---|---|---|
+| `haunted` | 0.000 | **0.704** |
+| runs with any haunting | 0/144 | **136/144** |
+| wins | 57/144 | 56/144 |
+| mean floor | 18.4 | 18.4 |
+
+Paired: 34 cold-losses became warm-wins, 35 the other way, **p = 1.000**. The registered
+prediction was that warm would show `haunted > 0` where cold structurally cannot, and it
+held. The three notes that became ghosts are exactly the three the agent actually reads.
+
+Memory now produces a phenomenon the memoryless world cannot, at no cost to the run. That is
+what this whole line of work was for.
+
+### Two problems, both worth fixing before this is called done
+
+**The ghost roll overshot, by the same mechanism as the old ratchet.** Only **3** `note_lost`
+events were generated in the entire chain. They then persist in the chronicle forever, so
+every later run inherits all three and 94% of runs are haunted. A one-in-three-per-run roll
+became a permanent property of the world after the first handful of runs. This is precisely
+the failure the wane path fixed for ascendancies: events accumulate, nothing expires. The
+chronicle has no notion of an event ageing out, and now three separate mechanics depend on
+one that does not exist.
+
+Candidate fixes, in rough order of how well they fit what is already here:
+
+- give chronicle events a time-to-live in runs, which fixes ghosts, ascendancies and
+  contested borders in one place
+- let a ghost be laid to rest by defeating it, the same shape as the wane path
+- cap the simultaneous ghost count rather than the rate
+
+**A new stall, plausibly caused by ghosts and not yet confirmed.** One warm run (artisan,
+seed 20) spent **74.2% of its decisions on `interact` at 3.75 decisions per turn**, against a
+cold maximum of 1.13. It reached floor 26 and won, so it recovered rather than locking, but
+that is the signature. `interact` at a ghost is an obvious suspect, and ghosts are new actors
+that no candidate in the cascade was written with in mind. Fourth instance of the shape if it
+holds: a verb offered against a target it cannot resolve.
+
+The instrument that found it is the per-run label histogram plus decisions-per-turn, the same
+pair that found the other three. It is worth saying plainly that the win rate saw none of
+these: this run reads as clean parity.
