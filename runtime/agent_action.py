@@ -112,8 +112,10 @@ def dispatch(game, action: AgentAction) -> bool:
 
         # -- interact -----------------------------------------------------------
         if kind == "interact":
-            game.interact()
-            return True
+            # The verb's own verdict, not an assumption. Returning True unconditionally
+            # meant `note_result` was never told about a failed interact, so the brain
+            # kept choosing it from an unchanged state at 3.75 decisions per turn.
+            return bool(game.interact())
 
         # -- descend ------------------------------------------------------------
         if kind == "descend":
