@@ -84,6 +84,17 @@ def _run_slice(args):
             coupling=(r.emergence or {}).get("coupling_pairs", 0),
             coupling_density=(r.emergence or {}).get("coupling_density", 0.0),
             broken_verbs=(r.emergence or {}).get("broken_verbs", []),
+            # What the run actually exercised, not merely what it chose. A label says the
+            # brain wanted something; `verb_ok` says the game granted it and `event_counts`
+            # says a system fired. `runtime/leverage.py` needs all three to tell an inert
+            # mechanic from a decorative one from a load-bearing one.
+            verb_ok=dict((r.emergence or {}).get("verb_ok", {})),
+            verb_fail=dict((r.emergence or {}).get("verb_fail", {})),
+            events=dict((r.emergence or {}).get("event_counts", {})),
+            kills=r.kills, items=r.items_collected,
+            sigils_forged=r.sigils_forged, caches=r.caches_opened,
+            floors_cleared=r.floors_cleared, avg_hp=r.average_hp,
+            egress_open=bool(r.egress_open), egress_route=r.egress_route,
         ))
         print(f"  [{'sandbox' if sandbox else 'classic'}] {agent:13} seed {seed} F{r.floor_reached:2} "
               f"won={str(r.won):5} t{turns:6} d/t={calls['n']/turns:.2f}", flush=True)
