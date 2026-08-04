@@ -190,3 +190,21 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
   (`Game(sandbox=True)`, the default interactive mode). Classic descent (`--descent`,
   `--auto`) still uses the original dungeon generator. Still unwired: §10 word-level
   flow, the `siteplan` bake block, continuous-megastructure mode.
+- **Every number in this file describes classic descent, not the mode people play.**
+  `agent_eval` hardcodes `sandbox=False`, so the 130 of 288 baseline, the seven health
+  conditions and every sweep are all classic. Sandbox is the default interactive mode and had
+  never been run with an agent until `runtime/sandbox_eval.py`. The first batch that did found
+  **533 decisions per game turn**, three stacked defects deep, plus a sixth instance of the
+  reachability-versus-precondition class and a Berlin gap where no agent could take a portal a
+  human walks through. Fixed and pinned in `tests/test_sandbox_stairs.py`. Measured after, 48
+  runs per arm on the same seeds: sandbox **10/48** against classic **25/48**, McNemar exact
+  **p = 0.004**, mean floor **1.6** against **20.1**, and **33 of 48 sandbox runs burn the
+  harness budget without resolving**, all of them losses. Coupling density is the one number
+  that favours sandbox, 0.749 against 0.678. Read
+  `guidance/PROJECT_ASSESSMENT.md` §Sandbox mode before touching either mode; the shortfall is
+  a missing descent gradient, not a tuning gap, and there is still no target win rate.
+- **The stall tripwire needs two terms, not one.** Decisions-per-turn above 1.05 catches loops
+  that fail to spend a turn, which was all five of them before sandbox. seeker/sbx-0 spent
+  **87.1% of its decisions on `keeper` at 1.00 d/t**: a loop that pays for every iteration and
+  reads perfectly healthy. Check the per-run top-label share too, and treat above roughly 60%
+  as its own signal.

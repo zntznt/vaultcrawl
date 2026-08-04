@@ -3548,3 +3548,110 @@ holds: a verb offered against a target it cannot resolve.
 The instrument that found it is the per-run label histogram plus decisions-per-turn, the same
 pair that found the other three. It is worth saying plainly that the win rate saw none of
 these: this run reads as clean parity.
+
+## Sandbox mode, measured for the first time, and the livelock that was waiting there
+
+`agent_eval` hardcodes `sandbox=False`. Every number in this document, every baseline, every
+health condition, every sweep, describes **classic descent**. Sandbox is the Alexander compiler
+in `runtime/arch/`, it is LIVE, and it is **the default interactive mode**: it is what a person
+gets from `python3 -m runtime.play world.json`. The mode nobody plays had 288-run baselines. The
+mode everybody plays had never been run with an agent at all.
+
+`runtime/sandbox_eval.py` closes that. It reuses `agent_eval.run_agent` and patches only the
+Game constructor, and `--classic` runs classic descent through the identical instrumentation,
+so the contrast below is a difference in the mode and not in two reporting paths.
+
+### The first two runs found the worst livelock this project has recorded
+
+**533.32 decisions per game turn** on cartographer/sbx-1, against 11.38 for the commune loop
+and 3.75 for interact. Three defects stacked, each sufficient on its own:
+
+1. **A door drawn on nothing.** `generate_level` writes a `>` at `level.stairs` for classic
+   descent. The sandbox surface builds its own district doors and never cleared that one, so the
+   map carried a `>` with no gate behind it. `on_stairs` reads the glyph, `descend` reads
+   `_gates`, they disagreed, and the forced `panic_descend` override rode the disagreement for
+   **49,437 consecutive decisions**.
+2. **A verb with no verdict.** `Game.descend` returned None on every path and `dispatch`
+   answered True regardless, so `note_result` was never told and `FATIGUE_FAILED` never applied.
+   Fifth instance of one shape, after commune range, commune price, the egress stair, interact.
+3. **A free action.** Sandbox traversal moved the player between z-levels without touching the
+   clock, and the arrival tile is the matching stair, so descend-ascend was a zero-cost cycle:
+   98 of 194 decisions and **0** game turns.
+
+A fourth surfaced on the way out: `panic_flee` forced a `(0, 0)` move when there was nowhere to
+run, and `_forced` returns before the candidate list exists, so nothing could break it.
+
+| run | before | after defect 1 | after defect 3 |
+|---|---|---|---|
+| cartographer/sbx-1 | 533.32 | 2.02 | **0.79, and it wins** |
+| artisan/sbx-1 | 324.18 | | **1.03** |
+| exploiter/sbx-0 | 14.03 | | **1.03** |
+
+A fifth, found by the same seam pointing the other way: `PortalSystem` registers a gate with no
+glyph under it, `dispatch` gates descend on `on_stairs`, and `on_stairs` tested the glyph, so
+**no agent could ever take a portal a human walks through freely** while sandbox perception
+steered it to go stand on one. `on_stairs` now asks the question `descend` actually asks. That
+is a Berlin gap, not a balance one, and it landed after the batch below.
+
+### 48 runs per arm, same seeds, at `2847924`
+
+| | sandbox | classic |
+|---|---|---|
+| wins | **10/48, 20.8%** | 25/48, 52.1% |
+| mean floor | **1.6** | 20.1 |
+| mean turns | **35,218** | 6,231 |
+| deaths | **2** | 22 |
+| decisions/turn | 1.016 | 1.016 |
+| labels used per run | **17.4** | 30.6 |
+| coupling pairs | 28.3 | 84.3 |
+| coupling density | **0.749** | 0.678 |
+| max top-label share | **87.1%** | 44.7% |
+| profiles that win | 5/6 | 6/6 |
+| win paths | boss_killed 8, diplomacy 2 | boss_killed 11, commune 7, standing 7 |
+
+Paired: both 5, sandbox-only 5, classic-only 20, neither 18. **McNemar exact p = 0.004.** The
+gap is real and it is not noise.
+
+### What the aggregate hides, again
+
+**33 of 48 sandbox runs burned the harness's entire 49,599-decision budget, and every one of
+them lost.** All 10 wins came from the 15 runs that resolved. So sandbox is not a mode the agent
+plays badly. It is a mode the agent mostly **never finishes**: 2 deaths in 48, `pacifist` at
+0.819, wandering safely forever. Mean floor 1.6 says most runs never enter any district's depths
+at all.
+
+Part of this is the harness. `run_agent` caps at `max_floor=99` times `max_turns_per_floor=500`,
+and sandbox `descend` does not move `floor`, so `floors_cleared` counts 99 phantom floors and an
+unresolved run runs to 49,599 decisions. But the budget is not why the runs do not finish, only
+why they take so long to say so.
+
+**A new stall shape, and decisions-per-turn is blind to it.** seeker/sbx-0 spent **87.1% of
+49,599 decisions on `keeper`** at exactly 1.00 d/t, and `workspace_camp` took ~48% in four more
+runs. The five livelocks before this one all failed to spend a turn, which is precisely what
+made `d/t` the instrument that caught them. These spend a turn every time and loop anyway. Only
+the per-run label histogram sees them. **The tripwire in `CLAUDE.md` (d/t above 1.05) would have
+passed this batch.**
+
+### The one number that favours sandbox
+
+**Coupling density is higher in sandbox, 0.749 against 0.678**, on a quarter of the coupling
+pairs. And the verb space is not narrower: sandbox reaches 36 of the 37 distinct labels classic
+reaches across the batch, missing only `panic_phase`. What is narrower is per-run breadth, 17.4
+against 30.6. Sandbox runs are individually more repetitive and collectively just as wide.
+
+`companion_flux` 0.096 against 0.475 and `standing_range` 0.250 against 0.651 say what the mode
+is missing concretely: companions and faction standing, the two things that make a classic run
+feel populated, barely move in sandbox.
+
+### What this changes
+
+The obvious reading, that sandbox needs balancing to 45%, is the wrong one and this project has
+made that mistake before. There is no target win rate. What the numbers say is narrower:
+
+- Sandbox has **no analogue of the descent gradient**. Classic has a stair that pulls, an egress
+  gate that gives the pull a condition, and 14 of 25 classic wins come by routes (`commune`,
+  `standing`) that sandbox produced zero of. That is not a tuning gap, it is a missing structure.
+- `artisan` won 0 of 8 in sandbox and wins in classic, so the health condition that all six
+  profiles must be able to win is failing in the mode a human actually plays.
+- The stall tripwire needs a second term. `d/t > 1.05` is necessary and is not sufficient; a
+  per-run top-label share above roughly 60% belongs beside it.

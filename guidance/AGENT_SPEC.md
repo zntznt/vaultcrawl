@@ -343,6 +343,15 @@ Three rules fall out of this, and they are the transferable part:
    21.8% is the second thing and needs no action. Artisan at 11.38 with commune at 91% was
    the first.
 
+4. **The ratio is necessary and not sufficient, so read the label share on its own too.** All
+   five livelocks found before sandbox failed to spend a turn, which is exactly what made the
+   ratio catch them, and that shared shape made it look like the whole test. It is not.
+   seeker/sbx-0 spent **87.1% of 49,599 decisions on `keeper` at 1.00 decisions per turn**: a
+   loop that pays for every iteration, so the ratio reads perfectly healthy while the run does
+   one thing for its entire life. `workspace_camp` took about 48% in four more sandbox runs on
+   the same batch. A per-run top-label share above roughly **60%** is its own tripwire and
+   belongs beside the ratio, not behind it.
+
 ## Priority cascade
 
 PANIC (hp<25%: cast Phase or descend/flee) → COMMUNE (truths≥2 or matter≥4 near boss,
