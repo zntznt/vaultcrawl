@@ -95,11 +95,40 @@ def _run_slice(args):
     return rows
 
 
+def _checkpoint_path(home: str, drop: str, sandbox: bool) -> str:
+    mode = "sbx" if sandbox else "cls"
+    return os.path.join(home, f"arm_{mode}_{drop or 'baseline'}.json")
+
+
 def _arm(world: str, runs: int, home: str, drop: str = "", sandbox: bool = False,
-         max_floor: int = 99, workers: int = 0) -> list:
+         max_floor: int = 99, workers: int = 0, resume: bool = True) -> list:
+    """One ablation arm, checkpointed to disk the moment it finishes.
+
+    A 28-arm sweep runs for hours and this container has now restarted under two of them,
+    each time discarding everything: the first lost a 96-run classic confirmation partway
+    through its second arm, the second lost a sandbox sweep after 2 arms of 27. An arm is a
+    natural unit of work and costs nothing to persist, so losing more than the arm in flight
+    was never necessary.
+    """
     import multiprocessing as mp
 
     from runtime.agent_eval import AGENT_NAMES
+
+    ckpt = _checkpoint_path(home, drop, sandbox)
+    if resume and os.path.exists(ckpt):
+        try:
+            with open(ckpt, encoding="utf-8") as fh:
+                rows = json.load(fh)
+            if len(rows) == runs * len(AGENT_NAMES):
+                print(f"  reusing arm {drop or 'baseline':18} ({len(rows)} runs, cached)",
+                      flush=True)
+                return rows
+            # A short file is a half-written arm from a run that died mid-flight. Rerun it
+            # rather than quietly comparing against a partial arm.
+            print(f"  arm {drop or 'baseline'} checkpoint has {len(rows)} of "
+                  f"{runs * len(AGENT_NAMES)} runs, rerunning", flush=True)
+        except Exception:
+            pass
     pairs = [(s, a) for s in range(runs) for a in AGENT_NAMES]
     workers = max(1, min(len(pairs), workers or os.cpu_count() or 2))
     chunks = [(i, pairs[i::workers], world, home, drop, sandbox, max_floor)
@@ -107,7 +136,12 @@ def _arm(world: str, runs: int, home: str, drop: str = "", sandbox: bool = False
     chunks = [c for c in chunks if c[1]]
     print(f"  running arm {drop or 'baseline':18} ({len(pairs)} runs)", flush=True)
     with mp.get_context("fork").Pool(len(chunks)) as pool:
-        return [r for part in pool.map(_run_slice, chunks) for r in part]
+        rows = [r for part in pool.map(_run_slice, chunks) for r in part]
+    tmp = ckpt + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(rows, fh)
+    os.replace(tmp, ckpt)   # atomic, so a restart never leaves a torn checkpoint
+    return rows
 
 
 def _sd(xs: list) -> float:
@@ -235,6 +269,8 @@ def main(argv=None) -> int:
                          "classic and 16 for sandbox; see SANDBOX_MAX_FLOOR")
     ap.add_argument("--workers", type=int, default=0,
                     help="processes per arm; defaults to the core count")
+    ap.add_argument("--no-resume", action="store_true",
+                    help="rerun every arm even if a checkpoint exists")
     args = ap.parse_args(argv)
 
     home = os.environ.get("HOME", "")
@@ -258,10 +294,13 @@ def main(argv=None) -> int:
     mode = "sandbox" if args.sandbox else "classic"
     print(f"=== ablation ({mode}, budget {max_floor * 500} decisions): baseline plus "
           f"{len(drops)} arm(s), {args.runs * 6} runs each ===")
-    base = _arm(args.world, args.runs, home, "", args.sandbox, max_floor, args.workers)
+    resume = not args.no_resume
+    base = _arm(args.world, args.runs, home, "", args.sandbox, max_floor, args.workers,
+                resume)
     results, raw = [], {"baseline": base}
     for d in drops:
-        arm = _arm(args.world, args.runs, home, d, args.sandbox, max_floor, args.workers)
+        arm = _arm(args.world, args.runs, home, d, args.sandbox, max_floor, args.workers,
+                   resume)
         raw[d] = arm
         results.append(compare(base, arm, d))
         r = results[-1]

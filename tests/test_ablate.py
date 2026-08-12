@@ -104,3 +104,51 @@ def test_spread_is_measured_on_floor_not_inferred_from_the_mean():
         "identical means with opposite spreads reported the same spread, so the second half "
         "of the criterion is not being measured at all")
     assert _sd([18] * 12) == 0.0
+
+
+def test_a_finished_arm_is_reused_rather_than_rerun(tmp_path):
+    """A 28-arm sweep runs for hours and this container has restarted under two of them.
+
+    The first restart discarded a 96-run classic confirmation partway through its second arm;
+    the second killed a sandbox sweep after 2 arms of 27. An arm is a natural unit of work and
+    costs nothing to persist, so losing more than the arm in flight was never necessary.
+    """
+    import json
+
+    from runtime.ablate import _arm, _checkpoint_path
+
+    home = str(tmp_path)
+    rows = [{"agent": "seeker", "seed": i, "won": True, "floor": 26, "turns": 100,
+             "win_path": "boss_killed", "kills": 0, "died": False, "resolved": True}
+            for i in range(6)]
+    with open(_checkpoint_path(home, "weather", False), "w", encoding="utf-8") as fh:
+        json.dump(rows, fh)
+
+    # runs=1 times six agents is six runs, which is what the checkpoint holds. If resume is
+    # working this returns instantly without touching the world file, which does not exist
+    # here: a cache miss would raise rather than quietly rerun.
+    got = _arm("/nonexistent/world.json", 1, home, "weather", False, 99, 1, resume=True)
+    assert got == rows
+
+
+def test_a_half_written_checkpoint_is_rerun_not_trusted():
+    """A run killed mid-arm must not leave a partial arm to be compared against."""
+    import json
+    import tempfile
+
+    from runtime.ablate import _arm, _checkpoint_path
+
+    with tempfile.TemporaryDirectory() as home:
+        with open(_checkpoint_path(home, "weather", False), "w", encoding="utf-8") as fh:
+            json.dump([{"agent": "seeker", "seed": 0, "won": True, "floor": 1,
+                        "turns": 1, "win_path": "", "kills": 0, "died": False}], fh)
+        # One row where six are expected. Trusting it would compare a full baseline against a
+        # sixth of an arm and report the difference as the system's effect.
+        with pytest.raises(Exception):
+            _arm("/nonexistent/world.json", 1, home, "weather", False, 99, 1, resume=True)
+
+
+def test_checkpoints_of_the_two_modes_do_not_collide():
+    """Sandbox and classic arms of the same system are different measurements."""
+    from runtime.ablate import _checkpoint_path
+    assert _checkpoint_path("/h", "weather", True) != _checkpoint_path("/h", "weather", False)
