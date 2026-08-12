@@ -129,6 +129,37 @@ while the agent gets one round with the last move hardcoded and can never recrui
   `on_player_act`, so at turn 0 the player's own tile reads as unexplored at distance 0 and
   autoexplore returns. Found while working here, not fixed here.
 
+## Reachability gaps found by ablation, not by reading the keymap
+
+This document was written from the input layer outward: which verbs exist, and who can press
+them. Ablation and `runtime/system_activity.py` came at the same question from the other end,
+by removing systems and by counting whether they ever act, and found three gaps that no key
+table could have shown.
+
+- **`sacrifice` cannot fire in classic descent at all.** Not a verb gap: a placement guard.
+  `SacrificeSystem.on_floor_enter` opens `z = game.current_z; if z > -2: return`, and negative
+  z is a sandbox depths concept. Classic calls `_set_level(lvl, z=0)` on every floor, so
+  `current_z` is 0 for the whole run and the guard fires every time. Restoring the `a` key
+  above brought the shrine's `on_interact` back for interactive play, and it was still true
+  afterwards that classic descent has never placed a shrine to interact with. The two repairs
+  are in different layers and neither implies the other.
+- **No agent can complete a sacrifice even where a shrine exists.** `on_interact` sets
+  `game._pending_sacrifice` and leaves the choice to a front-end popup. This is a fifth entry
+  for the verb-gap list above, alongside `confide`, `recruit`, `player_cast` and
+  `EffectSystem.wear`, and it is worth noting that the count keeps rising as instruments other
+  than the keymap are pointed at it.
+- **No agent could take a portal.** Fixed in `5c7f2f4`. `PortalSystem` registers a gate with
+  no `<`/`>` glyph under it, `dispatch` gates the descend verb on `on_stairs`, and `on_stairs`
+  tested the glyph. Sandbox perception meanwhile steers the agent at the nearest gate, portals
+  included, so it walked to a threshold it was forbidden to enter.
+
+`effects` belongs here for a different reason: it is reachable and starved. `EffectSystem`
+defines six powers and the only way in is `acquire`, called from `Game.commune_landmark`, which
+needs an adjacent wild landmark. Landmarks are placed under `if not self.sandbox and
+self.floor % 3 == 0` from notes of degree 0, so sandbox never populates the pool and classic
+`examples/world.json` offers exactly one orphan note. That is a content gap rather than a code
+one, and it is invisible to every instrument that reads the keymap.
+
 ## A note on the bucket audit
 
 The old three-bucket table (PLAYER-REACHABLE / AMBIENT-ONLY / AUTO-AI-ONLY, 14 / 11 / 3) is not
