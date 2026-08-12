@@ -3655,3 +3655,57 @@ made that mistake before. There is no target win rate. What the numbers say is n
   profiles must be able to win is failing in the mode a human actually plays.
 - The stall tripwire needs a second term. `d/t > 1.05` is necessary and is not sufficient; a
   per-run top-label share above roughly 60% belongs beside it.
+
+## Every system fires. The failures are all downstream
+
+Ablation says roughly twenty of twenty-seven systems change no outcome. That one result has
+causes with opposite fixes, and an ablation table cannot separate them, so
+`runtime/system_activity.py` measures the difference directly: hook calls, own-state changes,
+events emitted, lines logged, over one instrumented run per mode.
+
+One winning run each (classic floor 27 in 6,235 turns, sandbox floor 3 in 1,900):
+
+**No system is ever unreached.** Every one is called about 18,000 times in classic and 5,100
+in sandbox. The cheap hypothesis, that a dead system is simply one the brain never engages,
+is false for all of them. Whatever is wrong is downstream of the call.
+
+| verdict | classic | what it means |
+|---|---|---|
+| active | 23 | acts and speaks, and the outcome still may not move |
+| silent | 3 | `body`, `effects`, `sacrifice`: called constantly, never act, say nothing |
+| busy and mute | 2 | `scent`, `senses` |
+| stateless | 1 | `forge`: acts on the game, keeps nothing of its own |
+
+`portals` joins the silent group in sandbox only; in classic it acts 14 times.
+
+### Two corrections this measurement forced on itself
+
+**`acted` watches a system's own `__dict__`, so a stateless system reads as zero.** The first
+version required only `acted == 0` and called `forge` dead by design, on a run where it emitted
+123 events, and ablation independently shows `forge` opening the `truths` route. Silence now
+requires acted, emitted and logged all empty.
+
+**`busy and mute` sees only the event bus, so a system read directly off its attributes looks
+identical to one nobody reads.** `senses` acts on 46.7% of its calls, emits nothing, and is
+consumed by every perception call the agent makes. The column is a question; ablation answers
+it. Mute plus an unmoved ablation is genuinely unconsumed, which is `scent`. Mute plus a moved
+ablation is direct-read, which is `senses`. Quoting one without the other invites someone to
+delete `senses`.
+
+### `scent` is the clean case, from both instruments at once
+
+It acts on **11.1%** of its classic calls, 2,021 times, more than all but three systems, and
+emits and logs **nothing**. Dropping it left all 24 ablation runs **byte-identical**: same
+wins, deaths, floors, turns and routes, run for run. A system working hard that nothing reads
+is a different defect from a system that does nothing, and it wants a consumer rather than a
+rewrite or a deletion.
+
+### What this changes about the plan
+
+The prescription splits three ways rather than one:
+
+- `body`, `effects`, `sacrifice` are called and do nothing. They need a reason to act, or
+  cutting.
+- `scent` needs a reader.
+- The other twenty are active and still move no outcome. That is the balance question, and it
+  is the only group where "the design is wrong" is the right conclusion.
