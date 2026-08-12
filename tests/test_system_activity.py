@@ -168,3 +168,27 @@ def test_busy_and_mute_is_a_question_not_a_conclusion():
     assert "senses" in doc and "ablation" in doc, (
         "the module no longer warns that busy-and-mute needs cross-checking against "
         "ablation, so `senses` reads as an unused system that should be cut")
+
+
+def test_touched_separates_a_player_only_system_from_a_silent_one():
+    """`body` acts on the player and nothing else. Without this column it reads as dead."""
+    assert verdict(_c(hooks=18285, acted=0, touched=42)) == "stateless", (
+        "a system whose only effect is on the player is being called dead by design, which "
+        "is the same error that misclassified `forge` and then `body`")
+    assert verdict(_c(hooks=18285, acted=0, touched=0)) == "silent"
+
+
+def test_silence_is_documented_as_a_screen_not_a_verdict():
+    """`body` still reads silent, for reasons the module must state rather than hide.
+
+    `on_floor_enter` fires inside `Game.__init__`, before there is a player to watch, and
+    later calls rewrite `player.body` to a dict of the same shape that a length-keyed
+    snapshot cannot see. Anyone reading the table needs to know that before deleting a
+    system on its say-so.
+    """
+    import runtime.system_activity as sa
+    doc = sa.__doc__ or ""
+    assert "body" in doc, "the known false positive is no longer named"
+    assert "ablation" in doc and "screen" in doc, (
+        "the module no longer says a silent verdict is a question for ablation, so the "
+        "table reads as authority it does not have")

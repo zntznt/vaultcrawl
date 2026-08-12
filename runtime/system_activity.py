@@ -15,16 +15,30 @@ Four columns, measured over one instrumented run:
 
   hooks     how many times the game called into it
   acted     hook calls after which the system's own state changed
+  touched   hook calls after which the PLAYER's state changed
   emitted   events it broadcast while it held the floor
   logged    lines it wrote to the player
 
-**`acted` watches the system's own `__dict__`, so a system that acts on the game while
-keeping no state of its own reads as zero.** `forge` proved it: `acted` 0 with 123 events
-emitted in one classic run, which an earlier version of this file called dead by design. It
-was wrong, and ablation independently shows `forge` opening a win route. Silence therefore
-requires all three of acted, emitted and logged to be empty, never `acted` alone. The snapshot
-is also shallow, so a mutation buried inside a nested object is missed. Both errors point the
-same way: this undercounts activity, so anything it reports as acting definitely acted.
+**`acted` watches the system's own `__dict__`, so a system that acts elsewhere and keeps no
+state of its own reads as zero.** This has produced two false "dead by design" verdicts
+already. `forge`: `acted` 0 with 123 events emitted, while ablation shows it opening a win
+route. `body`: `acted` 0 with nothing emitted or logged either, yet `on_floor_enter` calls
+`init_body` on the player and every actor, which is most of what a body system is for. The
+first was caught by the emitted column; the second slipped through it entirely, which is why
+`touched` exists.
+
+Silence therefore requires acted, touched, emitted and logged ALL empty, and even then it is a
+screen rather than a verdict.
+
+`body` is the worked example of why, and it still reads silent after `touched` was added. Two
+things defeat the measurement at once. The stack fires `on_world_start` and `on_floor_enter`
+inside `Game.__init__`, before a player exists to watch, so the initial `init_body` is invisible
+by construction. And on later floors `init_body` rewrites `player.body` to a dict of the same
+shape, which a snapshot keyed on length cannot see. Deepening the snapshot enough to catch that
+would cost more than the answer is worth on an 18,000-hook run.
+
+So: every error here points at undercounting, anything reported as active definitely is, and
+**a silent verdict is a question for ablation, never an answer on its own.**
 
 **`busy and mute` sees only `emit` and `log`, so a system read directly off its attributes
 looks mute when it is anything but.** `senses` lands there and is consumed by every perception
@@ -75,8 +89,12 @@ def _snap(sysobj) -> dict:
     return out
 
 
-def instrument(systems: list, stats: dict, current: list) -> None:
-    """Wrap every hook on every system so calls, state changes and output are counted."""
+def instrument(systems: list, stats: dict, current: list, player=None) -> None:
+    """Wrap every hook on every system so calls, state changes and output are counted.
+
+    `player` is optional and may be supplied later via `set_player`; the game does not exist
+    yet when the systems are built.
+    """
     for s in systems:
         name = getattr(s, "name", repr(s))
         stats.setdefault(name, collections.Counter())
@@ -87,11 +105,21 @@ def instrument(systems: list, stats: dict, current: list) -> None:
             setattr(s, hook, _wrap(s, name, hook, orig, stats, current))
 
 
+# The player, once a game exists. A system that acts only on the player reads as silent
+# without this, which is exactly how `body` was misclassified.
+_PLAYER: list = []
+
+
+def set_player(p) -> None:
+    _PLAYER[:] = [p]
+
+
 def _wrap(sysobj, name, hook, orig, stats, current):
     def wrapped(*a, **kw):
         stats[name]["hooks"] += 1
         stats[name][hook] += 1
         before = _snap(sysobj)
+        pbefore = _snap(_PLAYER[0]) if _PLAYER else None
         current.append(name)
         try:
             return orig(*a, **kw)
@@ -99,6 +127,8 @@ def _wrap(sysobj, name, hook, orig, stats, current):
             current.pop()
             if _snap(sysobj) != before:
                 stats[name]["acted"] += 1
+            if pbefore is not None and _snap(_PLAYER[0]) != pbefore:
+                stats[name]["touched"] += 1
     return wrapped
 
 
@@ -107,7 +137,7 @@ def verdict(c: collections.Counter) -> str:
     speaks = bool(c["emitted"] or c["logged"])
     if hooks == 0:
         return "never called"
-    if acted == 0 and not speaks:
+    if acted == 0 and not speaks and not c["touched"]:
         return "silent"
     if acted == 0:
         return "stateless"
@@ -140,6 +170,7 @@ def measure(world: str, sandbox: bool = False, agent: str = "seeker",
 
     def CountingGame(manifest, *a, **kw):
         g = ctor(manifest, *a, **kw)
+        set_player(g.player)
         _emit, _log = g.emit, g.log
 
         def emit(etype, **data):
@@ -168,12 +199,12 @@ def report(stats: dict, result=None, mode: str = "classic") -> None:
     if result is not None:
         print(f"\n{mode}: floor {result.floor_reached}, {result.turns_survived} turns, "
               f"won={result.won} died={bool(result.cause_of_death)}\n")
-    print(f"{'system':14}{'hooks':>9}{'acted':>8}{'act%':>7}{'emitted':>9}{'logged':>8}"
-          f"  verdict")
+    print(f"{'system':14}{'hooks':>9}{'acted':>8}{'act%':>7}{'touched':>9}{'emitted':>9}"
+          f"{'logged':>8}  verdict")
     for name, c in sorted(stats.items(), key=lambda kv: (kv[1]["acted"], kv[1]["hooks"])):
         h, a = c["hooks"], c["acted"]
-        print(f"{name:14}{h:9}{a:8}{(a / h if h else 0):7.1%}{c['emitted']:9}"
-              f"{c['logged']:8}  {verdict(c)}")
+        print(f"{name:14}{h:9}{a:8}{(a / h if h else 0):7.1%}{c['touched']:9}"
+              f"{c['emitted']:9}{c['logged']:8}  {verdict(c)}")
     tally = collections.Counter(verdict(c) for c in stats.values())
     print("\n  " + "   ".join(f"{k} {v}" for k, v in tally.most_common()))
     dead = sorted(n for n, c in stats.items() if verdict(c) in ("silent", "never called"))

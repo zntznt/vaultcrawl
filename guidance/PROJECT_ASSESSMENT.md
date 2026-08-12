@@ -3709,3 +3709,40 @@ The prescription splits three ways rather than one:
 - `scent` needs a reader.
 - The other twenty are active and still move no outcome. That is the balance question, and it
   is the only group where "the design is wrong" is the right conclusion.
+
+### Why the three silent systems are silent, and one of them cannot ever fire
+
+Reading the code behind the activity table turns "does nothing" into three different faults.
+
+**`sacrifice` is structurally dead in classic descent, and always has been.**
+`SacrificeSystem.on_floor_enter` opens with `z = game.current_z; if z > -2: return`. Negative
+z is a sandbox depths concept; classic descent calls `_set_level(lvl, z=0)` on every floor and
+`current_z` is 0 for the entire run. The guard therefore fires on every floor of every classic
+run this project has ever measured, so no shrine has ever been placed in the mode that
+produced the 130-of-288 baseline and every sweep in this document.
+
+It has a second lock behind the first. `on_interact` sets `game._pending_sacrifice` and logs
+"choose, or reject", leaving the choice to a front-end popup. There is no agent path to that
+popup, so even where a shrine can appear, **no agent can complete a sacrifice.** Same shape as
+the portal gap: a mechanic a human can use and no agent can reach.
+
+**`effects` is reachable and starved.** The only way in is `EffectSystem.acquire`, called from
+one place, `Game.commune_landmark`, which needs a wild landmark adjacent. Landmarks are placed
+under `if not self.sandbox and self.floor % 3 == 0`, drawn from notes of degree 0. So in
+sandbox the pool is never populated at all and effects is unreachable by construction; in
+classic `examples/world.json` offers exactly **one** orphan note, `grocery list`, up to twice
+every third floor. Every power the system defines (lantern, eyeless, drift, small, hush, echo)
+hangs off that single note.
+
+**`body` is a false positive of the instrument, not a dead system.** `on_floor_enter` calls
+`init_body` on the player and every actor, and `_slowed` is set by leg damage at 25% on hits of
+4 or more. It reads silent because the hook fires inside `Game.__init__` before there is a
+player to watch, and later calls rewrite `player.body` to a dict of the same shape. Recorded
+here rather than fixed: deepening the snapshot enough to catch it costs more than the answer is
+worth, and the `touched` column added for it does earn its place elsewhere (decay 106,
+reactions 2,091, weather 1,911 player-touching calls that were previously invisible).
+
+The pattern across all three is worth naming. None of them is dead because the design is
+uninteresting. One is behind a mode check that never passes, one is behind a content
+requirement the vault barely satisfies, and one was never dead at all. **Three systems, three
+faults, and none of them is the fault an ablation table alone would have suggested.**
