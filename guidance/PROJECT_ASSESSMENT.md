@@ -3746,3 +3746,43 @@ The pattern across all three is worth naming. None of them is dead because the d
 uninteresting. One is behind a mode check that never passes, one is behind a content
 requirement the vault barely satisfies, and one was never dead at all. **Three systems, three
 faults, and none of them is the fault an ablation table alone would have suggested.**
+
+### Why `quality` is a lid: the ledger is one-sided, and the roll contradicts its own docstring
+
+Removing `quality` took wins from 12 to 22 of 24, deaths from 11 to 2, mean floor from 18.8 to
+24.8, and opened `truths` from 0 wins to 9. It is the largest single lever measured in this
+codebase and it points the wrong way. Reading it explains why in two parts.
+
+**Part one: the roll is not rare.** `roll()` runs four trials at 15%, halving only on a
+success, and its own docstring says "most items Normal, Legendary is rare". Over 200,000
+samples of the exact call `_qualify_actor` makes, `roll(floor=0, bias=0)`:
+
+| tier | share | effect on a creature |
+|---|---|---|
+| Normal | 52.3% | none |
+| Uncommon | 39.4% | HP x1.5, atk +1 |
+| Rare | 7.8% | HP x2.0, atk +2, def +1 |
+| Epic | 0.4% | HP x2.5, atk +3, def +1 |
+| Legendary | 0.0% | HP x3.0, atk +4, def +2 |
+
+**47.7% of every creature in the world is at least Uncommon**, and the mean HP multiplier
+applied across all enemies is **1.28x**. "Most items Normal" is true by 2.3 points. Whatever
+distribution the author had in mind, a coin flip is unlikely to have been it.
+
+**Part two: the two sides of the ledger are not the same size.** `_qualify_actor` fires on
+`on_floor_enter` for every non-player actor, so the enemy side is the whole population of every
+floor, and a tier also grants that many **special actions** drawn from a nine-item pool that
+includes `split` and `summon`, which multiply enemies outright. The player side is
+`qualify_sigil`, which grants perks from a seven-item pool to a **sigil**, at forge time, for
+the handful of sigils a run carries.
+
+So the system reads as symmetric and is not: dozens of buffed creatures per floor against a few
+graded sigils. That is a difficulty multiplier wearing the name of a loot system, and it
+matches the ablation exactly, including the `truths` route opening, since a run that stops
+dying has time to read.
+
+**What this does not settle.** Quality also produces named Legendary beings, elite variety and
+the forge's grade ladder, and none of that is captured by a win rate. The measurement says what
+it costs, not whether it is worth it. The candidate arm is the base probability: 15 gives 47.7%
+at least Uncommon, 7 would give about 25%, 5 about 19%. That is one number, it is measurable
+with the harness already built, and it should be swept rather than argued.
