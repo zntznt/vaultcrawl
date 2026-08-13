@@ -57,6 +57,19 @@ UNDROPPABLE = {"senses", "memory"}
 # every number taken under it needs re-reading.
 SANDBOX_MAX_FLOOR = 16
 
+# Wall-clock ceiling on a single run, in seconds. The decision budget bounds the DECISION loop
+# and cannot bound a loop inside one decision: dropping `loci` sent a worker into a CPU-bound
+# spin that burned 2h12m at 99.9% on one run, where the whole 24-run arm normally takes ten
+# minutes, and it blocked every later stage behind it indefinitely.
+#
+# A run that cannot finish is a real outcome and is recorded as one (timed_out, unresolved)
+# rather than hidden or waited on. 600s is roughly forty times the slowest healthy run seen.
+RUN_TIMEOUT = 600
+
+
+class _RunTimeout(Exception):
+    pass
+
 
 def _run_slice(args):
     idx, pairs, world, home, drop, sandbox, max_floor = args
@@ -80,13 +93,37 @@ def _run_slice(args):
             return [s for s in build_systems() if getattr(s, "name", "") != drop]
         ev._build_systems = _dropped
 
+    import signal
+
+    def _blew_the_clock(signum, frame):
+        raise _RunTimeout()
+
+    try:
+        signal.signal(signal.SIGALRM, _blew_the_clock)
+        can_time_out = True
+    except (ValueError, AttributeError):
+        can_time_out = False   # not the main thread, or no SIGALRM on this platform
+
     rows = []
     for seed, agent in pairs:
-        r = ev.run_agent(world, agent, run_seed=f"sbx-{seed}", max_floor=max_floor)
+        if can_time_out:
+            signal.alarm(RUN_TIMEOUT)
+        try:
+            r = ev.run_agent(world, agent, run_seed=f"sbx-{seed}", max_floor=max_floor)
+        except _RunTimeout:
+            print(f"    TIMEOUT {agent} sbx-{seed} after {RUN_TIMEOUT}s "
+                  f"(drop={drop or 'baseline'})", flush=True)
+            rows.append(dict(agent=agent, seed=seed, drop=drop or "", won=False,
+                             floor=0, turns=0, kills=0, win_path="", died=False,
+                             resolved=False, timed_out=True))
+            continue
+        finally:
+            if can_time_out:
+                signal.alarm(0)
         rows.append(dict(agent=agent, seed=seed, drop=drop or "", won=bool(r.won),
                          floor=r.floor_reached, turns=r.turns_survived,
                          kills=r.kills, win_path=r.win_path,
-                         died=bool(r.cause_of_death),
+                         died=bool(r.cause_of_death), timed_out=False,
                          # In sandbox most runs neither win nor die, they wander until the
                          # harness budget ends them. That is the mode's characteristic
                          # outcome and neither the win column nor the death column records
@@ -175,6 +212,8 @@ def compare(base: list, arm: list, name: str) -> dict:
     ar = sum(ak[k].get("resolved", True) for k in shared)
     bf = [bk[k]["floor"] for k in shared]
     af = [ak[k]["floor"] for k in shared]
+    ctimeout = sum(1 for k in shared if bk[k].get("timed_out"))
+    atimeout = sum(1 for k in shared if ak[k].get("timed_out"))
     lost, gained, p = _mcnemar(bk, ak)
     # How the game was won, not merely how often. `reactions` is why this column exists: its
     # removal moved the win count 12 to 11 and p to 1.000 while `boss_killed` went 4 to 0 and
@@ -184,6 +223,7 @@ def compare(base: list, arm: list, name: str) -> dict:
     apth = collections.Counter(ak[k]["win_path"] for k in shared if ak[k]["won"])
     return dict(system=name, n=len(shared), base_wins=bw, arm_wins=aw,
                 base_resolved=br, arm_resolved=ar,
+                base_timeouts=ctimeout, arm_timeouts=atimeout,
                 base_floor=sum(bf) / max(1, len(bf)), arm_floor=sum(af) / max(1, len(af)),
                 base_floor_sd=_sd(bf), arm_floor_sd=_sd(af),
                 base_paths=dict(bp), arm_paths=dict(apth),
@@ -226,6 +266,14 @@ def report(results: list) -> None:
         if show_res:
             line += f"{res:>12}"
         print(line + f"{d['p']:9.4f}{floor:>14}{sd:>16}{mark}")
+    timed = [(d["system"], d["arm_timeouts"]) for d in results if d.get("arm_timeouts")]
+    if timed:
+        print(f"\n  ARMS WITH TIMED-OUT RUNS. A run that could not finish is recorded as "
+              f"unresolved,\n  so these arms are floored by a harness limit and their means "
+              f"are not comparable:")
+        for sysname, k in sorted(timed, key=lambda t: -t[1]):
+            print(f"     {sysname:16} {k} run(s) hit the {RUN_TIMEOUT}s ceiling")
+
     surv = [d["system"] for d in results if d.get("survives_fdr")]
     raw = [d["system"] for d in results if d["p"] <= 0.05 and not d.get("survives_fdr")]
     print(f"\n  surviving FDR {FDR:.0%} over {len(results)} arms: {surv or 'none'}")

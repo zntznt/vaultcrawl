@@ -152,3 +152,32 @@ def test_checkpoints_of_the_two_modes_do_not_collide():
     """Sandbox and classic arms of the same system are different measurements."""
     from runtime.ablate import _checkpoint_path
     assert _checkpoint_path("/h", "weather", True) != _checkpoint_path("/h", "weather", False)
+
+
+def test_a_timed_out_run_is_recorded_as_unresolved_not_dropped():
+    """A run that cannot finish is an outcome, not an absence.
+
+    Dropping `loci` sent one sandbox worker into a CPU-bound spin: 2h12m at 99.9% on a single
+    run where the whole 24-run arm normally takes ten minutes. The decision budget bounds the
+    decision LOOP and cannot bound a loop inside one decision, so nothing stopped it, and it
+    blocked every later stage of the pipeline behind it.
+
+    Silently dropping such a run would shrink the arm and flatter it. Recording it keeps the
+    arm the right size and marks it as floored by a harness limit.
+    """
+    from runtime.ablate import RUN_TIMEOUT, compare
+
+    base = _rows([("a", i, True, 26, "boss_killed") for i in range(6)])
+    arm = _rows([("a", i, False, 0, "") for i in range(6)])
+    for r in arm:
+        r["timed_out"] = True
+        r["resolved"] = False
+    for r in base:
+        r["timed_out"] = False
+        r["resolved"] = True
+
+    d = compare(base, arm, "loci")
+    assert d["n"] == 6, "timed-out runs were dropped, so the arm is the wrong size"
+    assert d["arm_timeouts"] == 6 and d["base_timeouts"] == 0
+    assert d["arm_resolved"] == 0, "a timed-out run must not count as resolved"
+    assert RUN_TIMEOUT > 0
