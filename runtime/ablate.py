@@ -67,8 +67,16 @@ SANDBOX_MAX_FLOOR = 16
 RUN_TIMEOUT = 600
 
 
-class _RunTimeout(Exception):
-    pass
+class _RunTimeout(BaseException):
+    """Inherits BaseException, NOT Exception, and that is the whole point.
+
+    `agent_action.dispatch` wraps its entire body in `except Exception: return False`, and
+    `run_agent` has broad catches too. A SIGALRM handler that raised an ordinary Exception
+    was therefore swallowed by whatever verb happened to be executing when the alarm fired:
+    the run carried on, the alarm was already spent, and no second one was ever scheduled.
+    The ceiling silently did nothing. Measured: chunk_15_5 ran 30 minutes and chunk_15_6 ran
+    50, both against a 420s limit, and not one TIMEOUT line was ever printed.
+    """
 
 
 def _run_slice(args):

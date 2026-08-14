@@ -181,3 +181,46 @@ def test_a_timed_out_run_is_recorded_as_unresolved_not_dropped():
     assert d["arm_timeouts"] == 6 and d["base_timeouts"] == 0
     assert d["arm_resolved"] == 0, "a timed-out run must not count as resolved"
     assert RUN_TIMEOUT > 0
+
+
+def test_the_run_timeout_survives_the_games_broad_exception_handlers():
+    """`_RunTimeout` must inherit BaseException, and this is not a style preference.
+
+    `agent_action.dispatch` wraps its entire body in `except Exception: return False`, and
+    `run_agent` has broad catches of its own. While `_RunTimeout` inherited `Exception`, a
+    SIGALRM firing inside any verb was swallowed by that handler: the run carried on, the
+    alarm was already spent, and no second one was ever scheduled. The ceiling silently did
+    nothing.
+
+    The tell was an absence, which is why it went unnoticed for two rounds. Not one TIMEOUT
+    line was ever printed while one chunk ran 30 minutes and the next ran 50, both against a
+    420 second limit. A guard that never fires looks exactly like a guard that is not needed.
+    """
+    from runtime.ablate import _RunTimeout
+
+    assert issubclass(_RunTimeout, BaseException)
+    assert not issubclass(_RunTimeout, Exception), (
+        "_RunTimeout inherits Exception again, so `except Exception` in dispatch will "
+        "swallow the alarm and the per-run ceiling is decoration")
+
+    # The exact shape of the swallow, reproduced.
+    def a_verb_that_catches_everything():
+        try:
+            raise _RunTimeout()
+        except Exception:
+            return "swallowed"
+        return "propagated"
+
+    with pytest.raises(_RunTimeout):
+        a_verb_that_catches_everything()
+
+
+def test_dispatch_still_catches_ordinary_failures():
+    """The premise of the test above: dispatch really does swallow Exception broadly."""
+    import inspect
+
+    from runtime.agent_action import dispatch
+    src = inspect.getsource(dispatch)
+    assert "except Exception" in src, (
+        "dispatch no longer swallows Exception, so the BaseException choice above may no "
+        "longer be load-bearing and should be re-justified rather than assumed")
