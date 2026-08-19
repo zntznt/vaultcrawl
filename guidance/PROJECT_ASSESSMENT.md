@@ -3786,3 +3786,67 @@ the forge's grade ladder, and none of that is captured by a win rate. The measur
 it costs, not whether it is worth it. The candidate arm is the base probability: 15 gives 47.7%
 at least Uncommon, 7 would give about 25%, 5 about 19%. That is one number, it is measurable
 with the harness already built, and it should be swept rather than argued.
+
+## The quality sweep: creature base 15 / 7 / 5, 144 runs per arm
+
+`quality` was the largest lever the ablation found and it pointed the wrong way. This sweeps
+the one number behind it. **The creature side only**: `roll()` was a single literal read by
+monsters, by every ground sigil and by every forge, so sweeping it as found would have moved
+enemy strength and player equipment on the same curve in opposite directions and produced a
+result attributable to neither. It is now split into `CREATURE_QUALITY_BASE` and
+`ITEM_QUALITY_BASE`, and the item side is pinned at 15 in all three arms.
+
+| | base 15 (control) | base 7 | base 5 |
+|---|---|---|---|
+| creatures graded | 47.5% | 25.0% | 18.4% |
+| wins | 63/144 [36, 52] | **100/144** [61, 76] | **111/144** [70, 83] |
+| deaths | 76 | 41 | 29 |
+| mean floor | 18.4 | 21.7 | 23.5 |
+| floor median [IQR] | 26 [9, 26] | 26 [18, 26] | 26 [**26, 27**] |
+| floor sd | 9.0 | 8.0 | **6.7** |
+| labels used | 30.1 | 30.1 | 30.5 |
+
+Paired on seed, exact McNemar, both surviving BH at FDR 10%: 7 against 15 is -20/+57,
+p < 0.0001; 5 against 15 is -9/+57, p < 0.0001. Two identical-config arms measured 26 and 25
+wins of 48 earlier, so the noise floor is about 2 wins per 48; these are 37 and 48 wins on 144
+and are far above it.
+
+### The route that quality was sitting on
+
+| route | 15 | 7 | 5 |
+|---|---|---|---|
+| boss_killed | 30 | 54 | 50 |
+| standing | 20 | 20 | 30 |
+| commune | 11 | 10 | 9 |
+| **truths** | **1** | **13** | **20** |
+| diplomacy | 1 | 3 | 2 |
+
+`truths` goes 1, 13, 20 as creature grading falls, monotonically. That is the same route the
+ablation saw open from 0 wins to 9 when `quality` was removed entirely, now reproduced as a
+dose-response rather than an on-off. Reading the vault is the route quality was suppressing,
+and it was suppressing it by killing runs before they could accumulate truths: deaths fall
+76, 41, 29 across the same arms.
+
+### Why the lowest arm is not simply the best
+
+Arm 5 wins most and is the worst on the second half of the criterion. Its floor IQR is
+**[26, 27]**, meaning the middle half of all runs reach the bottom, and its floor sd falls to
+6.7 from the control's 9.0. Its win interval reaches **83%**, and this project's own standard
+says an arm whose interval approaches 80% is broken rather than tuned. Buying wins by making
+every run end the same way is exactly the failure the spread column exists to catch.
+
+Arm 7 keeps the spread (sd 8.0, IQR [18, 26]) while unlocking the route. On the stated
+criterion, that the game be winnable by using the systems AND that their use introduce
+variance, 7 is the only arm that improves both terms at once.
+
+### What this does not settle
+
+The item side is pinned, so this measures creature difficulty and says nothing about whether
+graded player equipment is priced correctly. **The HP half of `scale_creature` is dead**:
+`BodySystem` builds body parts from unscaled HP before `QualitySystem` runs, `init_body`
+early-returns because `actor.body` already exists, and the first `sync_hp` resets `max_hp` to
+the sum of the unscaled parts. So every arm here moves attack, defence and special-action
+count, and not durability. Fixing that bug would change what this sweep measured, and it
+should be measured again afterwards rather than assumed to hold.
+
+One run in the base 7 arm hit the harness wall-clock ceiling and is recorded as timed out.
