@@ -3850,3 +3850,50 @@ count, and not durability. Fixing that bug would change what this sweep measured
 should be measured again afterwards rather than assumed to hold.
 
 One run in the base 7 arm hit the harness wall-clock ceiling and is recorded as timed out.
+
+### Confirmation on the shipped build
+
+The sweep ran from an isolated copy of the tree. The default landed in `runtime/quality.py` as
+`CREATURE_QUALITY_BASE = 7`, and the same 144 runs were then re-run against the real repo to
+check that the port carried the arm rather than something adjacent to it. It does:
+
+| | sweep arm 7 (isolated) | shipped |
+|---|---|---|
+| wins | 100/144 | 100/144 |
+| deaths | 41 | 41 |
+| mean floor | 21.7 | 21.7 |
+| floor med [IQR] | 26 [18, 26] | 26 [18, 26] |
+| floor sd | 8.0 | 8.0 |
+| win paths | boss 54, standing 20, truths 13, commune 10, diplomacy 3 | identical |
+
+Three runs of 144 differ at all. Two swap `commune` for `diplomacy` in opposite directions and
+cancel; one artisan run ends two floors shorter. That difference is the `_spend_matter` fix,
+and it is the interesting part of this table.
+
+### The bug the change surfaced, and what it is worth
+
+`encounter_resolve`'s flee branch said `self._spend_matter` where `_spend_matter` is a
+module-level function, so it raised `AttributeError` the moment an agent met an elite carrying
+two matter. `dispatch` wraps its body in `except Exception: return False`, so the crash became
+a silently failed verb rather than a traceback: **nothing in 288 classic runs, three ablation
+sweeps or the whole quality sweep ever reported it.** It surfaced only when the creature base
+dropped, because fewer graded foes means longer runs and longer runs mean fuller bags, and
+even then only in a full-suite run where cross-test state pushed one narrator test into the
+branch.
+
+Two things follow, and they point in opposite directions.
+
+The fix is correct and it is nearly worthless as balance: 3 runs in 144 move, the aggregate is
+unchanged to the last digit, and the win-path composition is identical. Flee is the
+fourth-choice option behind coerce, parley and appease, so agents almost never take it.
+
+The bug is a class, and the class is not nearly worthless. A broad `except Exception` in the
+verb dispatcher converts every crash below it into a verb that merely returned False, which is
+indistinguishable from a verb the game legitimately refused. `broken_verbs` counts refusals; it
+cannot tell these apart. That is the sixth instance in this project of a defect that was
+invisible because the instrument reported its symptom as normal behaviour.
+
+Sitting next to it, unfixed and now pinned by a test: flee is **offered** at `matter >= 1` and
+its body **charges** 2. With exactly one matter the agent picks flee, pays nothing, the elite
+does not move, and the encounter resolves into a no-op. Closing that in either direction is a
+balance change and belongs in a measured sweep, not in a bug-fix commit.

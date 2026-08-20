@@ -27,6 +27,29 @@ import json
 import os
 
 
+# Wall-clock ceiling on one run. The decision budget bounds the decision LOOP and cannot
+# bound a loop inside one decision, so a run can spin at 100% CPU indefinitely with the
+# budget untouched. `ablate.py` gained this after a dropped system sent a worker into a
+# CPU-bound spin for 2h12m against an arm that normally finishes in ten minutes; the quality
+# sweep hit the same thing, where one chunk of six runs finished in six minutes and its
+# neighbour was killed twice without finishing.
+RUN_TIMEOUT = 420
+
+
+class _RunTimeout(BaseException):
+    """Inherits BaseException, NOT Exception, and that is the whole point.
+
+    `agent_action.dispatch` wraps its entire body in `except Exception: return False`, and
+    `run_agent` has broad catches too. A SIGALRM handler that raised an ordinary Exception
+    was therefore swallowed by whatever verb happened to be executing when the alarm fired:
+    the run carried on, the alarm was already spent, and no second one was ever scheduled.
+    The ceiling silently did nothing, and the tell was an absence, which is why it survived
+    two rounds of debugging: one chunk ran 30 minutes and the next ran 50, both against this
+    420 second limit, and not one TIMEOUT line was ever printed. A guard that never fires
+    looks exactly like a guard that is not needed.
+    """
+
+
 def _run_slice(args):
     """One worker's share, in its own process and its own state directory."""
     idx, pairs, world, home, sandbox = args
@@ -65,12 +88,40 @@ def _run_slice(args):
 
     A.UniversalBrain.decide = decide
 
+    import signal
+
+    def _blew_the_clock(signum, frame):
+        raise _RunTimeout()
+
+    try:
+        signal.signal(signal.SIGALRM, _blew_the_clock)
+        can_time_out = True
+    except (ValueError, AttributeError):
+        can_time_out = False
+
     rows = []
     for seed, agent in pairs:
         calls["n"] = 0
         picked.clear()
+        if can_time_out:
+            signal.alarm(RUN_TIMEOUT)
         # The same run seed in both arms, so the comparison is paired.
-        r = ev.run_agent(world, agent, run_seed=f"sbx-{seed}")
+        try:
+            r = ev.run_agent(world, agent, run_seed=f"sbx-{seed}")
+        except _RunTimeout:
+            print(f"    TIMEOUT {agent} sbx-{seed} after {RUN_TIMEOUT}s", flush=True)
+            rows.append(dict(agent=agent, seed=seed, won=False, floor=0, turns=1,
+                             win_path="", died=False, decisions=calls["n"],
+                             per_turn=0.0, top_label="-", top_share=0.0, labels=0,
+                             label_share={}, attractors={}, coupling=0,
+                             coupling_density=0.0, broken_verbs=[], verb_ok={},
+                             verb_fail={}, events={}, kills=0, items=0,
+                             sigils_forged=0, caches=0, floors_cleared=0, avg_hp=0.0,
+                             egress_open=False, egress_route="", timed_out=True))
+            continue
+        finally:
+            if can_time_out:
+                signal.alarm(0)
         turns = r.turns_survived or 1
         tot = sum(picked.values()) or 1
         top, cnt = picked.most_common(1)[0] if picked else ("-", 0)
@@ -105,6 +156,11 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("world")
     ap.add_argument("--runs", type=int, default=4, help="runs per agent")
+    ap.add_argument("--seed-start", type=int, default=0,
+                    help="first seed. Lets one arm be split into chunks that each finish "
+                         "inside the container's uptime: a 144-run arm takes longer than "
+                         "this box stays up, and rows are only written at the end, so an "
+                         "unchunked arm loses every run it completed")
     ap.add_argument("--json", default="", help="write raw rows here")
     ap.add_argument("--classic", action="store_true",
                     help="run classic descent through this same instrumentation, for a "
@@ -123,7 +179,8 @@ def main(argv=None) -> int:
             "directories and would race any other evaluation. Use a scratch HOME.")
 
     from runtime.agent_eval import AGENT_NAMES
-    pairs = [(s, a) for s in range(args.runs) for a in AGENT_NAMES]
+    pairs = [(s, a) for s in range(args.seed_start, args.seed_start + args.runs)
+             for a in AGENT_NAMES]
     workers = max(1, min(len(pairs), os.cpu_count() or 2))
 
     import multiprocessing as mp
