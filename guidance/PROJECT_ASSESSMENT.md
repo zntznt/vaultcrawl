@@ -3897,3 +3897,68 @@ Sitting next to it, unfixed and now pinned by a test: flee is **offered** at `ma
 its body **charges** 2. With exactly one matter the agent picks flee, pays nothing, the elite
 does not move, and the encounter resolves into a no-op. Closing that in either direction is a
 balance change and belongs in a measured sweep, not in a bug-fix commit.
+
+## Counting what `dispatch` swallows, and what that immediately found
+
+`agent_action.dispatch` wraps its body in `except Exception: return False`. The runner reads
+False as "the game declined" and files it through `observe_verb(kind, ok=False)` into
+`verb_fail`, alongside every legitimate refusal. `broken_verbs()` then names only a verb that
+**never** succeeds, so a verb that works most of the time and crashes on one branch leaves no
+trace in any report this project produces.
+
+Three handlers swallow. All three now record the exception into the per-run `MetricsTracker`
+as `verb:ExceptionType` with one `file:line`, and **behaviour is deliberately unchanged**:
+dispatch still returns False. The counter is an instrument, not a fix.
+
+One seed of six classic runs reported **160 swallowed crashes across two kinds**. Both were
+real bugs of long standing, and neither had ever appeared in 288 classic runs, three ablation
+sweeps, or 432 runs of the quality sweep.
+
+| crashes | site | what was dead |
+|---|---|---|
+| 157 | `loci.py` | `heal_body` was imported inside `_activate_becalm` and nowhere else. `forge`, `parley`, `explore`, `shield` and `commune` each raised NameError after their effect and before their heal, losing 5, 5, 3, 3 and 10 HP per activation. |
+| 3 | `game.py` | `structures.crystals.discard(pos)` on a dict. The crystal route exists so an agent with **no matter** can still clear weather, so the route reserved for the poorest agent was the only one that never worked. |
+
+A third surfaced from writing the test rather than from a run: `_consume` added a tuple **of**
+keys to `depleted`, documented as a set of `(x, y)`, so every membership test against it was
+false, and the no-match path raised TypeError on an unhashable list.
+
+There was **no test file for `runtime/loci.py` at all**, which is the single best predictor
+here of where the next one is.
+
+### What fixing them did, 144 runs paired on seed
+
+| | before | after |
+|---|---|---|
+| wins | 100/144 [61, 76] | 108/144 [67, 81] |
+| **deaths** | **41** | **31** |
+| runs ending below floor 20 | 37 | 24 |
+| mean floor | 21.7 | 23.2 |
+| floor med [IQR] | 26 [18, 26] | 26 [**26, 27**] |
+| **floor sd** | **8.0** | **6.9** |
+| distinct labels | 30.0 | 31.1 |
+| `forge_used` per 1k turns | 14.8 | 17.3 |
+| `broke` per 1k turns | 2.0 | 3.1 |
+
+**The win rate did not move**: -17/+25 discordant, exact McNemar p = 0.28, nowhere near
+significance. Anyone quoting 100 to 108 as the result of this change would be quoting noise.
+What moved is deaths, down 10, which is exactly the mechanism a restored heal predicts in a
+game whose losses are attrition. No route opened and none closed.
+
+### The uncomfortable part: this partly invalidates the base-7 choice
+
+Floor spread fell from sd 8.0 to **6.9** and the floor IQR collapsed to **[26, 27]**. That is
+the same pattern that disqualified creature base 5 one section above: the middle half of all
+runs now reach the bottom. The shipped default of 7 was selected over 5 precisely because 7
+kept the spread, and it was measured on a build where **five of seven locus heals were dead**.
+
+So the sweep's three arms are still internally valid, since all three carried the same dead
+heals, but **the point chosen from them is no longer the point it was chosen to be.** Restoring
+roughly 26 lost heals per run lowered the effective difficulty underneath the number, and 7 on
+a working build now sits about where 5 sat on a broken one.
+
+The two halves of the stated criterion moved in opposite directions here, which is worth saying
+plainly rather than averaging away. Systems-in-use improved: distinct labels 30.0 to 31.1,
+`forge_used` +17%, `broke` +55%, all of it the salvage and forge loop running more because
+agents live to reach it. Variance got worse. **The creature base should be re-swept on the
+fixed build before 7 is trusted**, and the arm to test first is a value above 7, not below it.
