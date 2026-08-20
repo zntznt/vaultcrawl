@@ -4,6 +4,7 @@ spawns combat, a crafter finds a forge station, a diplomat finds a
 conversation partner. The same world object, different outcomes."""
 from __future__ import annotations
 
+from runtime.body_parts import heal_body
 from runtime.systems import System
 from .det import droll, drng
 
@@ -270,17 +271,23 @@ class LocusSystem(System):
     def _activate_becalm(self, game, lx, ly, locus):
         locus["type"] = "becalm"
         locus["glyph"] = "b"
-        # Heal 5 HP — a moment of peace
-        from runtime.body_parts import heal_body
+        # Heal 5 HP, a moment of peace.
         heal_body(game.player, 5)
         game.log("The locus exhales calm. You feel restored (+5 HP).")
         self._consume(game, locus)
 
     def _consume(self, game, locus):
-        """Mark the locus as consumed. It becomes a depleted record."""
-        self.depleted.add(tuple(
-            k for k, v in self.loci.items() if v is locus
-        ) or [(0, 0)])
+        """Mark the locus as consumed. It becomes a depleted record.
+
+        `depleted` is documented as a set of (x, y) and was being fed a tuple OF keys,
+        `((x, y),)`, so every membership test against it was false. When no key matched it
+        fell through to `or [(0, 0)]` and raised TypeError on the unhashable list, which
+        `dispatch` swallowed as a declined move like everything else here.
+        """
+        for pos, held in list(self.loci.items()):
+            if held is locus:
+                self.depleted.add(pos)
+                break
         locus["depleted"] = True
 
     def points_of_interest(self, game):

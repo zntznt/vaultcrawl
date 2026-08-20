@@ -118,3 +118,50 @@ def test_a_working_interact_still_costs_its_turn(game):
     before = game.turn
     assert game.clear_weather() is True, "an affordable weather clear reported failure"
     assert game.turn > before, "a successful interaction did not spend its turn"
+
+
+def test_the_crystal_route_works_for_an_agent_with_no_matter():
+    """`clear_weather`'s no-matter fallback called a set method on a dict.
+
+    The path exists so a broke agent can still clear weather: stand on a crystal and channel
+    it. `StructureSystem.crystals` is a dict of (x, y) -> growth, and this said
+    `crystals.discard(pos)`, which dicts do not have. AttributeError, every time, propagating
+    out of `interact` into `dispatch`'s `except Exception` and arriving at the brain as an
+    ordinary refusal.
+
+    So the route reserved for the poorest agent was the one route that never worked, and
+    nothing in the verb accounting could say so: `clear_weather` fails legitimately all the
+    time when there is no weather, so `interact` never showed as broken.
+    """
+    from runtime.game import Game, load_manifest
+    from runtime.structures import StructureSystem
+
+    st = StructureSystem()
+    g = Game(load_manifest("examples/world.json"), systems=[st])
+    assert isinstance(st.crystals, dict), (
+        "crystals stopped being a dict, so the fix below needs re-deriving rather than "
+        "trusting")
+
+    salv = g.system("salvage")
+    if salv is not None:
+        salv.inventory(g).comp.clear()          # the whole premise: no matter
+    pos = (g.player.x, g.player.y)
+    st.crystals[pos] = 0
+
+    g.clear_weather()                            # must not raise
+    assert pos not in st.crystals, (
+        "the crystal was not consumed, so the no-matter route did not run")
+
+
+def test_clearing_without_matter_or_a_crystal_still_just_refuses():
+    """The control for the test above: removing the crash must not make the route free."""
+    from runtime.game import Game, load_manifest
+    from runtime.structures import StructureSystem
+
+    st = StructureSystem()
+    g = Game(load_manifest("examples/world.json"), systems=[st])
+    salv = g.system("salvage")
+    if salv is not None:
+        salv.inventory(g).comp.clear()
+    st.crystals.clear()
+    assert g.clear_weather() is False

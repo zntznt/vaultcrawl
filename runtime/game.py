@@ -3420,7 +3420,7 @@ class Game:
                 px, py = self.player.x, self.player.y
                 for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (0, 0)):
                     if (px + dx, py + dy) in getattr(structures, 'crystals', set()):
-                        structures.crystals.discard((px + dx, py + dy))
+                        structures.crystals.pop((px + dx, py + dy), None)
                         crystal_consumed = True
                         self.log("You channel the crystal's energy — the air clears.")
                         break

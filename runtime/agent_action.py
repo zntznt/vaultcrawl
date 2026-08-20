@@ -62,6 +62,26 @@ def _adjacent_monster_matching(game, target: str):
     return fallback
 
 
+def _swallowed(verb: str, exc: BaseException) -> bool:
+    """Record a crash that is about to be reported as an ordinary refusal, then refuse.
+
+    Every `except Exception` below returns False, which the runner reads as "the game said
+    no". A raise and a refusal are not the same thing and the harness could not tell them
+    apart: both land in `verb_fail`, and `broken_verbs()` only names a verb that NEVER
+    succeeds, so a verb that works most of the time and crashes on one branch left no trace
+    at all. `self._spend_matter` in the flee branch did exactly that for the life of the
+    project.
+
+    Behaviour is deliberately unchanged. This counts the swallow; it does not stop it.
+    """
+    try:
+        from runtime.metrics import metrics
+        metrics().record_crash(verb, exc)
+    except Exception:
+        pass
+    return False
+
+
 def dispatch(game, action: AgentAction) -> bool:
     try:
         # Metrics: record every verb usage
@@ -199,8 +219,8 @@ def dispatch(game, action: AgentAction) -> bool:
                     game.wait(allow_heal=False)
                     return True
                 return False
-            except Exception:
-                return False
+            except Exception as e:
+                return _swallowed("breakdown", e)
 
         # -- becalm -------------------------------------------------------------
         if kind == "becalm":
@@ -217,8 +237,8 @@ def dispatch(game, action: AgentAction) -> bool:
             try:
                 from runtime.wear import craft_consumable
                 return craft_consumable(game, action.target)
-            except Exception:
-                return False
+            except Exception as e:
+                return _swallowed("craft_consumable", e)
 
         # -- commune ------------------------------------------------------------
         if kind == "commune":
@@ -237,5 +257,5 @@ def dispatch(game, action: AgentAction) -> bool:
 
         return False
 
-    except Exception:
-        return False
+    except Exception as e:
+        return _swallowed(getattr(action, "kind", "?"), e)

@@ -74,6 +74,11 @@ class RunResult:
     win_path: str = ""
     pressure: dict = None
     emergence: dict = None
+    # Crashes `dispatch` swallowed into refusals, keyed "verb:ExceptionType", with one
+    # file:line each. Expected empty; anything here is a bug the verb accounting cannot see,
+    # because a raise and a refusal both land in `verb_fail`.
+    verb_crashes: dict = None
+    crash_sites: dict = None
 
 
 def run_agent(world_json: str, agent_name: str,
@@ -244,6 +249,9 @@ def run_agent(world_json: str, agent_name: str,
     except Exception as exc:
         egress_why = f"egress_ready raised: {type(exc).__name__}: {exc}"
 
+    # Taken before the RunResult is built, because `_get_metrics()` resets the tracker.
+    _crashes = _get_metrics() or {}
+
     return RunResult(
         agent=agent_name,
         seed=manifest["seed"],
@@ -262,13 +270,15 @@ def run_agent(world_json: str, agent_name: str,
         average_hp=round(avg_hp, 2),
         attractor_scores=tracker.scores(),
         narrative=tracker.narrative(),
-        metrics=_get_metrics(),
+        metrics=_crashes,
         win_path=getattr(game, "win_path", ""),
         egress_open=egress_open,
         egress_route=egress_route,
         egress_why=egress_why,
         pressure=decisions.summary(),
         emergence=emergence.summary(),
+        verb_crashes=dict(_crashes.get("verb_crashes") or {}),
+        crash_sites=dict(_crashes.get("crash_sites") or {}),
     )
 
 

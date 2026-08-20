@@ -117,7 +117,8 @@ def _run_slice(args):
                              coupling_density=0.0, broken_verbs=[], verb_ok={},
                              verb_fail={}, events={}, kills=0, items=0,
                              sigils_forged=0, caches=0, floors_cleared=0, avg_hp=0.0,
-                             egress_open=False, egress_route="", timed_out=True))
+                             egress_open=False, egress_route="", verb_crashes={},
+                             crash_sites={}, timed_out=True))
             continue
         finally:
             if can_time_out:
@@ -146,6 +147,10 @@ def _run_slice(args):
             sigils_forged=r.sigils_forged, caches=r.caches_opened,
             floors_cleared=r.floors_cleared, avg_hp=r.average_hp,
             egress_open=bool(r.egress_open), egress_route=r.egress_route,
+            # Expected empty. Non-empty means `dispatch` swallowed a raise and reported it
+            # as a refusal, which `verb_fail` cannot distinguish from the game saying no.
+            verb_crashes=dict(r.verb_crashes or {}),
+            crash_sites=dict(r.crash_sites or {}),
         ))
         print(f"  [{'sandbox' if sandbox else 'classic'}] {agent:13} seed {seed} F{r.floor_reached:2} "
               f"won={str(r.won):5} t{turns:6} d/t={calls['n']/turns:.2f}", flush=True)
