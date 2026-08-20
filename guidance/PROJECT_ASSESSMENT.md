@@ -3962,3 +3962,48 @@ plainly rather than averaging away. Systems-in-use improved: distinct labels 30.
 `forge_used` +17%, `broke` +55%, all of it the salvage and forge loop running more because
 agents live to reach it. Variance got worse. **The creature base should be re-swept on the
 fixed build before 7 is trusted**, and the arm to test first is a value above 7, not below it.
+
+### The re-sweep, and why the creature base is now 11
+
+The previous section predicted this and it held. Re-swept on the fixed build at 15 / 11 / 7,
+144 runs per arm, paired on `(agent, seed)`, item side pinned at 15 throughout:
+
+| | base 15 | base 11 | base 7 (was shipped) |
+|---|---|---|---|
+| wins | 84/144 [50, 66] | 82/144 [49, 65] | 108/144 [67, 81] |
+| deaths | 60 | 60 | 31 |
+| floor sd | 8.6 | 8.1 | **6.9** |
+| floor med [IQR] | 26 [11, 26] | 26 [15, 26] | 26 [**26, 27**] |
+| floor p10 / p90 | 5 / 27 | 7 / 27 | 10 / 27 |
+| share reaching floor 26+ | 60.4% | 62.5% | **79.9%** |
+| **`truths` wins** | **3** | **9** | 14 |
+| distinct labels | 31.3 | 31.1 | 31.1 |
+
+Paired contrasts: 11 against 15 is p = 0.90, indistinguishable. 7 against 15 is p = 0.0027 and
+7 against 11 is p = 0.0007, both MOVED.
+
+**The default is now 11.** The argument is the same one that picked 7 over 5 on the broken
+build, applied to a build where the heals work. 11 costs nothing measurable in wins against 15
+while carrying **three times as many `truths` wins**, and it keeps the spread that 7 gives up:
+IQR [15, 26] against [26, 27], and 62.5% of runs reaching the bottom against 79.9%. An arm
+where four runs in five end on the same floor is not a game with a varied ending, whatever its
+win column says.
+
+### The lesson worth keeping, which is not about quality at all
+
+A balance constant was swept three ways at 144 runs an arm, chosen on a stated and defensible
+argument, shipped, and then invalidated within the day by a one-line import bug in a different
+file. Nothing about the sweep was wrong. The measurement was clean, the reasoning held, the
+number was right for the build it was taken on, **and the build was lying.**
+
+This is the same shape as the `recall` finding recorded earlier: each fix promotes the next
+bottleneck from negligible to dominant. The operational rule that follows is narrower and more
+useful than "re-measure after every change". It is: **a tuning sweep is only as valid as the
+correctness of the systems underneath it, and this project has no instrument that reports
+system correctness.** It had one for reachability (`broken_verbs`), one for coupling
+(`coupling_density`), one for decision quality (`pressure`), and none at all for "a system ran
+and threw". That gap is what `verb_crashes` now fills, and the first six runs through it found
+three bugs, one of which had been silently deleting most of the game's healing.
+
+Before the next sweep of anything, run `verb_crashes` over a handful of seeds and confirm it is
+empty. It costs six runs and it is the difference between a measurement and a rumour.

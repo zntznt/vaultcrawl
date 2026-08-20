@@ -35,18 +35,27 @@ from runtime.systems import System
 # equipment on the same curve, pushing the outcome in opposite directions, so a null result
 # would have been unattributable to either side.
 #
-# The creature default is 7, not the 15 both sides once shared. That value comes from a
-# 432-run classic sweep of 15 / 7 / 5 at 144 runs per arm, paired on (agent, seed), with the
-# item side pinned at 15 throughout. It was not chosen for its win rate. At 15 the `truths`
-# route won 1 run in 144; at 7 it won 13 and at 5 it won 20, monotonic in creature grading,
-# reproducing as a dose-response the route the ablation saw open when `quality` was dropped
-# outright. 7 is the arm that opens that route while keeping outcome spread (floor sd 8.0,
-# IQR [18, 26]); 5 wins more and collapses to IQR [26, 27] with sd 6.7, which is buying wins
-# by making every run end the same way. See guidance/PROJECT_ASSESSMENT.md.
+# The creature default is 11, and it has been re-derived once. The original 432-run sweep of
+# 15 / 7 / 5 picked 7, on the reasoning that it opened the `truths` route while keeping floor
+# spread, where 5 bought wins by flattening every run to the same ending. That sweep was
+# measured on a build where five of seven locus activations raised NameError before their
+# heal, so all three arms were harder than the game they described. Fixing that (see
+# runtime/loci.py) lowered the difficulty underneath the number and 7 became the flat arm:
+# floor sd 6.9, IQR [26, 27], 79.9% of runs reaching the bottom.
 #
-# The environment overrides exist so a sweep can move one side per process without editing
-# the file, which is how the numbers above were produced.
-CREATURE_QUALITY_BASE = int(os.environ.get("VC_CREATURE_QUALITY_BASE", "7"))
+# Re-swept on the fixed build at 15 / 11 / 7, 144 runs per arm, paired on (agent, seed):
+#
+#     base   wins      deaths  floor sd  floor IQR   truths wins   floor 26+
+#     15     84/144    60      8.6       [11, 26]    3             60.4%
+#     11     82/144    60      8.1       [15, 26]    9             62.5%
+#      7    108/144    31      6.9       [26, 27]    14            79.9%
+#
+# 11 is indistinguishable from 15 on wins (p = 0.90) and keeps its spread, while carrying
+# three times as many `truths` wins. 7 wins more than either (p = 0.0007 against 11) and is
+# the one arm where the middle half of runs all end the same way. Wins are not the target
+# here; a route that stays open and an ending that stays uncertain are.
+#
+CREATURE_QUALITY_BASE = int(os.environ.get("VC_CREATURE_QUALITY_BASE", "11"))
 ITEM_QUALITY_BASE = int(os.environ.get("VC_ITEM_QUALITY_BASE", "15"))
 
 NORMAL, UNCOMMON, RARE, EPIC, LEGENDARY = 0, 1, 2, 3, 4
