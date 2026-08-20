@@ -20,9 +20,34 @@ actions, additive affinities); built-in defaults keep this module working on its
 """
 from __future__ import annotations
 
+import os
 import random
 
 from runtime.systems import System
+
+# Per-trial tier odds, split by side so creature difficulty and player equipment move
+# independently.
+#
+# These shared ONE literal until the sweep that set them apart, and the sharing made a
+# creature-difficulty measurement impossible to interpret: `roll()` is read by
+# `_qualify_actor` for every monster, by `sigils.py` for every sigil found on the ground and
+# by `forge.py` for every sigil the player makes. One number moved enemy strength and player
+# equipment on the same curve, pushing the outcome in opposite directions, so a null result
+# would have been unattributable to either side.
+#
+# The creature default is 7, not the 15 both sides once shared. That value comes from a
+# 432-run classic sweep of 15 / 7 / 5 at 144 runs per arm, paired on (agent, seed), with the
+# item side pinned at 15 throughout. It was not chosen for its win rate. At 15 the `truths`
+# route won 1 run in 144; at 7 it won 13 and at 5 it won 20, monotonic in creature grading,
+# reproducing as a dose-response the route the ablation saw open when `quality` was dropped
+# outright. 7 is the arm that opens that route while keeping outcome spread (floor sd 8.0,
+# IQR [18, 26]); 5 wins more and collapses to IQR [26, 27] with sd 6.7, which is buying wins
+# by making every run end the same way. See guidance/PROJECT_ASSESSMENT.md.
+#
+# The environment overrides exist so a sweep can move one side per process without editing
+# the file, which is how the numbers above were produced.
+CREATURE_QUALITY_BASE = int(os.environ.get("VC_CREATURE_QUALITY_BASE", "7"))
+ITEM_QUALITY_BASE = int(os.environ.get("VC_ITEM_QUALITY_BASE", "15"))
 
 NORMAL, UNCOMMON, RARE, EPIC, LEGENDARY = 0, 1, 2, 3, 4
 NAMES = ["Normal", "Uncommon", "Rare", "Epic", "Legendary"]
@@ -37,12 +62,19 @@ def mark(tier: int) -> str:
     return MARK[max(0, min(LEGENDARY, int(tier)))]
 
 
-def roll(rng: random.Random, floor: int = 0, bias: float = 0.0) -> int:
-    """Binomial quality distribution — most items Normal, Legendary is rare.
-    `floor` guarantees minimum tier. `bias` (>=0) shifts the distribution upward.
-    Each tier above 0 is a success on a binomial trial; successes reduce odds."""
+def roll(rng: random.Random, floor: int = 0, bias: float = 0.0,
+         base: int | None = None) -> int:
+    """Binomial quality distribution. `floor` guarantees a minimum tier, `bias` (>=0) shifts
+    upward, and `base` picks which side's per-trial odds to use, defaulting to the item side.
+
+    Each tier above 0 is a success on a binomial trial and successes reduce the odds. The
+    docstring used to claim "most items Normal, Legendary is rare". On the item side, at 15,
+    that is true by 2.3 points: four trials give Normal 52.3%, Uncommon 39.4%, Rare 7.8%,
+    Epic 0.4%, Legendary 0.0%. Nearly half of everything is graded. Stated rather than
+    fixed, because the item side has never been swept and changing it is an experiment.
+    """
     max_tier = LEGENDARY
-    base_prob = 15 + int(bias * 20)   # default 15/100 per trial, bias raises it
+    base_prob = (ITEM_QUALITY_BASE if base is None else base) + int(bias * 20)
     base_prob = min(90, max(4, base_prob))
     successes = 0
     prob = base_prob
@@ -182,7 +214,7 @@ class QualitySystem(System):
             return
         actor._qualified = True
         r = random.Random(f"{game.seed}:{game.floor}:{actor.x}:{actor.y}:{getattr(actor,'source','')}")
-        tier = roll(r, 0, 0.0)
+        tier = roll(r, 0, 0.0, base=CREATURE_QUALITY_BASE)
         actor.quality = tier
         if tier <= 0:
             actor._special_actions = []

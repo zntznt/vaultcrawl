@@ -62,6 +62,59 @@ def main():
     assert len(mon._special_actions) == mon.quality, "one special action per tier"
     assert all(a in Q.SPECIAL_ACTIONS for a in mon._special_actions), "actions must be registered"
 
+    # --- the two bases are separate knobs, and the creature side is actually wired ---
+    #
+    # This exists because a 432-run sweep lives on one keyword argument. `roll()` was a single
+    # literal read by monsters, by ground sigils and by the forge; the split gave creatures
+    # their own base and set it to 7. Delete `base=CREATURE_QUALITY_BASE` from `_qualify_actor`
+    # and nothing raises, no test above fails, and the game silently reverts to the arm the
+    # sweep rejected. So the check is behavioural: move the creature constant and the creature
+    # distribution must move with it, while the item side must not.
+    assert Q.CREATURE_QUALITY_BASE != Q.ITEM_QUALITY_BASE, \
+        "the split has collapsed back to one value; the sweep chose 7 against 15"
+
+    g3 = Game(load_manifest("examples/world.json"), systems=[Q.QualitySystem()])
+    qs3 = g3.system("quality")
+
+    def graded_share(base):
+        """Fraction of 120 distinct spawn positions that come out above Normal."""
+        saved, Q.CREATURE_QUALITY_BASE = Q.CREATURE_QUALITY_BASE, base
+        try:
+            n = 0
+            for i in range(120):
+                a = make_enemy({"tier": 1, "archetype": "shade", "name": "Shade",
+                                "sourceNoteId": "stoicism"}, 3 + i % 30, 3 + i // 30)
+                qs3._qualify_actor(g3, a)
+                n += a.quality > 0
+            return n / 120.0
+        finally:
+            Q.CREATURE_QUALITY_BASE = saved
+
+    hot, cold = graded_share(90), graded_share(4)
+    assert hot > cold + 0.5, (
+        f"creature base 90 graded {hot:.0%} and base 4 graded {cold:.0%}, which are too close "
+        f"to be two different settings: `_qualify_actor` is ignoring CREATURE_QUALITY_BASE and "
+        f"still rolling on the item default")
+
+    # And the item side must not follow it. Same extreme creature base, sigils unmoved.
+    def sigil_tiers():
+        return [qs3.qualify_sigil(g3, {"note": f"n{i}", "role": "leaf", "ability": "Ward",
+                                       "durability": 2})
+                for i in range(60)]
+
+    before = sigil_tiers()
+    saved, Q.CREATURE_QUALITY_BASE = Q.CREATURE_QUALITY_BASE, 90
+    try:
+        after = sigil_tiers()
+    finally:
+        Q.CREATURE_QUALITY_BASE = saved
+    assert before == after, \
+        "the creature base moved sigil grading, so the two sides are still coupled"
+
+    # `roll()` with no `base=` is the item side. A caller that forgets the kwarg must land on
+    # items, never on creatures, or the default silently becomes the creature setting.
+    assert Q.roll(random.Random(7)) == Q.roll(random.Random(7), base=Q.ITEM_QUALITY_BASE)
+
     print("OK")
 
 

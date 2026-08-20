@@ -2338,7 +2338,7 @@ class Game:
                 self.log("The final boss lays down its arms. You have won through diplomacy.")
         elif choice == "flee":
             if salv and salv.inventory(self).total() >= 2:
-                self._spend_matter(salv.inventory(self), 2)
+                _spend_matter(salv.inventory(self), 2)
                 self.log(f"You toss matter as a distraction. {target.name} chases the clatter.")
                 for dx, dy in ((5, 0), (-5, 0), (0, 5), (0, -5)):
                     nx, ny = target.x + dx, target.y + dy
