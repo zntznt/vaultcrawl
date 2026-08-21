@@ -104,8 +104,8 @@ def scale_creature(actor, tier: int):
         return
     actor.max_hp = int(actor.max_hp * (1.0 + 0.5 * tier))
     actor.hp = actor.max_hp
-    from .body_parts import init_body
-    init_body(actor)   # recompute body parts from scaled HP
+    from .body_parts import rebuild_body
+    rebuild_body(actor)   # re-derive parts from the scaled HP, discarding the old ones
     actor.atk += tier
     actor.defense = getattr(actor, "defense", 0) + tier // 2
     base = getattr(actor, "name", "creature")

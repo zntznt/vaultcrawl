@@ -34,6 +34,24 @@ def init_body(actor):
     sync_hp(actor)
 
 
+def rebuild_body(actor):
+    """Rebuild body parts from the actor's CURRENT max_hp, discarding any existing parts.
+
+    `init_body` is idempotent by design: it returns immediately when `actor.body` already
+    exists, so it cannot be used to re-derive parts after max_hp changes. That made
+    `quality.scale_creature`'s HP boost dead code. BodySystem sits at stack index 21 and
+    QualitySystem at 22, so by the time a creature is graded its body is already built from
+    the UNSCALED hp; `scale_creature` raised `max_hp`, called `init_body`, which returned at
+    once, and the first `sync_hp` reset `max_hp` back to the sum of the unscaled parts.
+    Measured on a tier-2 warden at Rare: 10 -> 20 -> 10.
+
+    So every quality arm ever swept moved attack, defence and special-action count, and not
+    durability, while the sweeps were read as though they moved difficulty as a whole.
+    """
+    actor.body = None
+    init_body(actor)
+
+
 def sync_hp(actor):
     """Keep actor.hp = sum of part HPs. Also restore speed if legs healed."""
     if not getattr(actor, "body", None):

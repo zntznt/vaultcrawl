@@ -207,6 +207,10 @@ class KnowledgeSystem(System):
         base = max(2, base - z)  # -1 sight per z-level below surface
         eff = game.system("effects")
         base += (eff.perception_bonus(game) if eff is not None else 0)
+        # Renounced effects buy sight permanently. The offering text promised this and
+        # `sacrifice.apply` carried a comment claiming it was handled right here; it was not.
+        sac = game.system("sacrifice")
+        base += (getattr(sac, "sight_bonus", 0) if sac is not None else 0)
         kind = self._current_kind(game)
         if kind:
             from .arch import areakinds

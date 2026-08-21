@@ -218,6 +218,11 @@ class Game:
         self._aspect: str = ""              # region-granted temporary trait
         self._aspect_turns: int = 0         # turns spent in current region
         self._cant_camp: bool = False       # true if Renounce Rest was chosen
+        # True only when a human front end is driving and will answer a modal prompt.
+        # `runtime/play.py` sets it. Systems that hand a choice to the player must
+        # resolve that choice themselves when this is False, or the choice is
+        # reachable by humans and by nobody else.
+        self.has_ui: bool = False
         self.player = None
         self.level = None
         self._levels = {}

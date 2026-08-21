@@ -115,6 +115,33 @@ def main():
     # items, never on creatures, or the default silently becomes the creature setting.
     assert Q.roll(random.Random(7)) == Q.roll(random.Random(7), base=Q.ITEM_QUALITY_BASE)
 
+    # --- scale_creature's HP boost must survive the body system ---
+    #
+    # It did not, for the life of the project. `BodySystem` is stack index 21 and
+    # `QualitySystem` is 22, so by the time a creature is graded its body is already built
+    # from the UNSCALED hp. `scale_creature` raised `max_hp`, called `init_body`, which
+    # returns immediately when `actor.body` exists, and the first `sync_hp` reset `max_hp` to
+    # the sum of the unscaled parts. Measured on a tier-2 warden at Rare: 10 -> 20 -> 10.
+    #
+    # The test above (`quality must raise stats`) passed throughout, because it never built a
+    # body first, so it exercised the one arrangement that does not happen in a real game.
+    # Every quality sweep this project has run therefore moved attack, defence and
+    # special-action count and NOT durability, while being read as difficulty as a whole.
+    from runtime.body_parts import init_body as _init, sync_hp as _sync
+    for t in (Q.UNCOMMON, Q.RARE, Q.EPIC, Q.LEGENDARY):
+        a = make_enemy({"tier": 2, "archetype": "warden", "name": "W",
+                        "sourceNoteId": "stoicism"}, 1, 1)
+        start = a.max_hp
+        _init(a)                 # BodySystem, index 21, from unscaled hp
+        Q.scale_creature(a, t)   # QualitySystem, index 22
+        _sync(a)                 # any hit or heal
+        want = int(start * (1.0 + 0.5 * t))
+        assert a.max_hp == want, (
+            f"tier {t}: max_hp {start} -> {a.max_hp}, wanted {want}. The body was rebuilt "
+            f"from the unscaled hp, so the quality HP boost is being reverted")
+        assert sum(p["max"] for p in a.body.values()) == a.max_hp, \
+            "parts and max_hp disagree, so the next sync_hp will revert the scaling again"
+
     print("OK")
 
 

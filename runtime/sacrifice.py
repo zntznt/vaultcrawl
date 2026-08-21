@@ -17,8 +17,11 @@ _OFFERINGS = [
     ("Renounce a Learned Note", "note", "Unlearn a note — gain permanent +1 ATK"),
     ("Renounce Matter", "matter", "Lose all carried matter — gain permanent +3 DEF"),
     ("Renounce Rest", "rest", "Can no longer camp — gain +5 HP and +1 speed"),
-    ("Renounce an Effect", "effect", "Lose one effect — gain permanent +2 sight radius"),
+    ("Renounce an Effect", "effect", "Lose one effect, gain permanent +2 sight radius"),
 ]
+
+# Named, because the offering text quotes it and the two drifted apart once already.
+SIGHT_PER_RENUNCIATION = 2
 
 
 class SacrificeSystem(System):
@@ -27,15 +30,44 @@ class SacrificeSystem(System):
     def __init__(self):
         self.shrines: dict[tuple, list] = {}  # (x,y) -> list of offering texts
         self._done: set = set()               # positions already used
+        # "Renounce an Effect" promises "+2 sight radius" in its own offering text and
+        # granted nothing: `apply` left a comment saying the bonus was "handled in
+        # knowledge.py via _sight()", and `_sight()` had no such term. The offering was pure
+        # loss. `knowledge._sight()` now reads this.
+        self.sight_bonus: int = 0
 
     def on_world_start(self, game):
         self.shrines = {}
         self._done = set()
+        self.sight_bonus = 0
+
+    # Fraction of the descent below which no shrine appears. "Deep levels (rare)" needs a
+    # depth axis, and the two modes do not share one.
+    DEPTH_FRACTION = 0.5
+    SANDBOX_MIN_DEPTH = 2
+
+    def _is_deep(self, game) -> bool:
+        """Deep enough for a shrine, in whichever axis this mode actually moves.
+
+        This used to be `if getattr(game, "current_z", 0) > -2: return`. `current_z` comes
+        from `level.z` and is only ever non-zero in sandbox, so in CLASSIC DESCENT it is 0 on
+        every floor and the guard rejected every one. The whole system was unreachable in the
+        mode every measurement this project has ever taken was run in: 288-run baselines,
+        three ablation sweeps, both quality sweeps. `ablate.py` reported dropping `sacrifice`
+        as inert, which was true and told us nothing, because it was already inert.
+        """
+        z = getattr(game, "current_z", 0)
+        if z < 0:                                    # sandbox: depth is the z axis
+            return z <= -self.SANDBOX_MIN_DEPTH
+        floor = getattr(game, "floor", 0)            # classic: depth is the floor number
+        bottom = getattr(game, "max_floor", 0) or 0
+        if bottom <= 0:
+            return False
+        return floor >= max(2, int(bottom * self.DEPTH_FRACTION))
 
     def on_floor_enter(self, game):
         self.shrines = {}
-        z = getattr(game, "current_z", 0)
-        if z > -2:  # only in deeper levels
+        if not self._is_deep(game):
             return
         rng = random.Random(f"{game.seed}:{game.floor}:sacrifice")
         if rng.random() > 0.30:
@@ -64,10 +96,65 @@ class SacrificeSystem(System):
             return False
         self._done.add(pos)
         game._overlay.pop(pos, None)
-        # the front-end calls a popup to let the player choose
         game._pending_sacrifice = offers
-        game.log("A shrine of renunciation hums before you — choose, or reject.")
+        game.log("A shrine of renunciation hums before you. Choose, or reject.")
+        # A curses front end answers this popup synchronously (runtime/play.py, key "a").
+        # Nothing else does. An agent reaching the shrine therefore had it consumed, popped
+        # from `self.shrines` and added to `_done` above, and received nothing at all: the
+        # verb was strictly worse than not pressing it, and no agent could take a choice a
+        # human walks through. That is a Berlin violation, and it is the second one found in
+        # this codebase of the same shape.
+        if not getattr(game, "has_ui", False):
+            self.resolve(game, offers)
         return True  # consumed the interact
+
+    def _worth(self, game, kind: str) -> int:
+        """Score one offering from GAME STATE, never from the agent's identity.
+
+        Every profile runs this identical function. What differs is what each arrives
+        holding, which is exactly where this project's differentiation is allowed to come
+        from: starting state and what the run has done since, never a class. An agent
+        carrying nothing finds `matter` nearly free; one with five sigils finds `sigil`
+        cheap; one that never camps loses nothing to `rest`.
+
+        Returns gain minus cost. Non-positive means walk away, and walking away stays
+        reachable: a shrine offering nothing this agent wants crumbles unspent.
+        """
+        if kind == "sigil":
+            sigs = game.system("sigils")
+            slots = len(getattr(sigs, "slots", []) or [])
+            return 8 - max(0, 12 - 2 * slots)     # a spare slot is cheap, the last is not
+        if kind == "note":
+            know = game.system("knowledge")
+            known = len(getattr(know, "known", ()) or ())
+            return 6 - max(0, 10 - known)
+        if kind == "matter":
+            salv = game.system("salvage")
+            held = salv.inventory(game).total() if salv else 0
+            return 9 - min(9, held)               # free when broke, dear when rich
+        if kind == "rest":
+            # Camping is worth most to an agent that is hurt and has been using it.
+            hp_pct = game.player.hp * 100 // max(1, getattr(game.player, "max_hp", 1))
+            return 7 - (0 if hp_pct >= 70 else 10)
+        if kind == "effect":
+            eff = game.system("effects")
+            held = len(getattr(eff, "collected", ()) or ())
+            return 5 - max(0, 8 - 3 * held)
+        return 0
+
+    def resolve(self, game, offers) -> str:
+        """Take the best offering on state, or reject all. Returns what was chosen ("" if
+        rejected). Deterministic: ties break on the offering's own key, not on iteration
+        order, so the same run makes the same choice on any machine."""
+        scored = sorted(((self._worth(game, kind), kind) for _, kind, _ in offers),
+                        key=lambda sk: (-sk[0], sk[1]))
+        best, kind = scored[0] if scored else (0, "")
+        if best <= 0 or not kind:
+            game._pending_sacrifice = None
+            game.log("You weigh the shrine's offer and turn away. It crumbles to dust.")
+            return ""
+        self.apply(game, kind)
+        return kind
 
     def apply(self, game, choice: str):
         """Apply the chosen sacrifice permanently."""
@@ -110,7 +197,6 @@ class SacrificeSystem(System):
                     eff.collected.discard(nid)
                     if eff.worn == nid:
                         eff.worn = None
-            eff_sys = game.system("effects")
-            # sight bonus is handled in knowledge.py via _sight()
+            self.sight_bonus += SIGHT_PER_RENUNCIATION
         game._pending_sacrifice = None
         game.log(f"You accept the {choice} renunciation — the shrine crumbles, and you are changed.")
