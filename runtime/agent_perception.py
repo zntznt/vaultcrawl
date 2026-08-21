@@ -184,7 +184,20 @@ def agent_state(game, actor) -> dict:
     caches_list.sort(key=lambda c: c["dist"])
 
     # -- pois ------------------------------------------------------------------
-    pois = points_of_interest(game)
+    # Nearest first. `sense.points_of_interest` concatenates each system's list in STACK
+    # ORDER, and the brain takes `pois[0]`, so which point of interest an agent walked to was
+    # decided by where its provider happens to sit in the system list. Measured over 400
+    # sampled decisions that had more than one candidate: the chosen point was the nearest
+    # zero times, median distance 9 against a nearest of 2, with a median of 23 on offer.
+    #
+    # Two consequences. The agent crossed the map past closer things, and any system whose
+    # list is appended late was unreachable in practice however correctly it placed. That is
+    # what kept the renunciation shrine dead after its depth gate was fixed.
+    #
+    # Chebyshev, because the game is eight-directional everywhere else. The cache list ten
+    # lines above already sorts by exactly this, which is what the intent here was.
+    pois = sorted(points_of_interest(game),
+                  key=lambda pt: max(abs(pt[0] - px), abs(pt[1] - py)))
 
     # -- tension ---------------------------------------------------------------
     tension = getattr(game, "_tension", 0)

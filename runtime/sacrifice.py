@@ -84,6 +84,16 @@ class SacrificeSystem(System):
         self.shrines[pos] = picks
         game._overlay[pos] = "◊"
 
+    def points_of_interest(self, game):
+        """Tiles an autonomous agent may want to visit.
+
+        The shrine had none, so once the depth gate was fixed it was placed on the map and
+        still never reached: an agent has no reason to walk to a tile nothing advertises, and
+        `interact` only fires on the tile you are standing on. Placement is not reachability,
+        and a system can be revived into being just as dead as before.
+        """
+        return list(self.shrines)
+
     def render_overlay(self, game, grid):
         for (x, y) in self.shrines:
             if 0 <= y < len(grid) and 0 <= x < len(grid[0]):
@@ -198,5 +208,12 @@ class SacrificeSystem(System):
                     if eff.worn == nid:
                         eff.worn = None
             self.sight_bonus += SIGHT_PER_RENUNCIATION
+        # `shrine_used` existed in MetricsTracker from the start and nothing ever
+        # incremented it, so "did a shrine fire" was unanswerable from any run's output.
+        try:
+            from runtime.metrics import metrics
+            metrics().systems["shrine_used"] += 1
+        except Exception:
+            pass
         game._pending_sacrifice = None
         game.log(f"You accept the {choice} renunciation — the shrine crumbles, and you are changed.")
