@@ -4007,3 +4007,78 @@ three bugs, one of which had been silently deleting most of the game's healing.
 
 Before the next sweep of anything, run `verb_crashes` over a handful of seeds and confirm it is
 empty. It costs six runs and it is the difference between a measurement and a rumour.
+
+## The shrine and the dead HP half: two asks, five defects, one chain
+
+### `scale_creature`'s HP boost was never applied
+
+`BodySystem` is stack index 21 and `QualitySystem` is 22, so a creature's body parts are
+already built from its **unscaled** hp by the time it is graded. `scale_creature` raised
+`max_hp`, called `init_body`, which returns immediately when `actor.body` exists, and the first
+`sync_hp` reset `max_hp` to the sum of the unscaled parts. A tier-2 warden at Rare measured
+**10, then 20, then 10 again**. New `body_parts.rebuild_body` re-derives parts from the current
+`max_hp`; all four tiers now land exactly on 1.5x, 2.0x, 2.5x and 3.0x.
+
+The existing test passed throughout, because it never built a body first. It exercised the one
+arrangement a real game never produces. **Every quality sweep this project has run moved attack,
+defence and special-action count and not durability**, while being read as difficulty as a
+whole.
+
+### The renunciation shrine, and why "unreachable" had four separate causes
+
+| # | defect | effect |
+|---|---|---|
+| 1 | `on_floor_enter` gated on `current_z > -2` | `current_z` is non-zero only in sandbox, so classic never placed one. Every baseline, ablation and quality sweep ran in a mode where this system did not exist. `ablate` called dropping it inert, which was true and meaningless. |
+| 2 | `on_interact` set `_pending_sacrifice`, read only by `play.py` | An agent that reached a shrine had it consumed and got nothing. The verb was **strictly worse than not pressing it**, and a choice a human walks through was closed to every agent. |
+| 3 | "Renounce an Effect" promised "+2 sight radius" | `apply` carried a comment saying the bonus was handled in `knowledge._sight`. It was not. The offering was pure loss. |
+| 4 | no `points_of_interest`, and `shrine_used` never incremented | Placed but unadvertised, and unobservable either way. |
+
+Fixed in order: `_is_deep` reads the axis each mode actually moves (z for sandbox, floor against
+`max_floor` for classic); `Game.has_ui`, set by `play.interactive`, tells a system whether anyone
+will answer a modal prompt, and without one the shrine resolves through `_worth`, which scores
+from game state and never from profile; `SIGHT_PER_RENUNCIATION` is named, applied and read.
+
+**Defect 1 could not be fixed alone.** With 1 fixed and 2 left, shrines would have begun
+appearing and begun costing agents outright. That is worth stating as a rule: a reachability fix
+to a system with an unfinished consumer is a regression, not a partial improvement.
+
+### The fifth defect, which was not in this system at all
+
+Shrines still never fired. `sense.points_of_interest` concatenates each system's list in **stack
+order** and the brain takes `pois[0]`, so which point an agent crossed a floor for was decided by
+where its provider sits in the system list. Measured over 400 sampled decisions with more than
+one candidate: **the chosen point was the nearest zero times**, median distance 9 against a
+nearest of 2, with a median of 23 on offer. The cache list ten lines above already sorts by
+exactly this distance.
+
+So the agent walked past closer things on nearly every decision it made, and any system appended
+late was unreachable in practice however correctly it placed.
+
+### What all of it measured, 144 runs per arm paired on seed
+
+| | baseline | + HP and shrine | + nearest POI |
+|---|---|---|---|
+| wins | 82/144 | 86/144 | 79/144 |
+| deaths | 60 | 55 | 62 |
+| floor sd | 8.1 | 8.4 | 8.2 |
+| **kills per run** | **16.3** | **15.2** | **14.6** |
+| distinct labels | 31.1 | 31.0 | 30.8 |
+
+Both contrasts against baseline are noise: p = 0.71 and p = 0.80. **These are correctness fixes
+with no detectable effect on the aggregate, and that is the finding, not a disappointment.** The
+one number that moves monotonically is kills per run, down 10% across the tranche, which is the
+HP scaling doing exactly and only what it says: graded creatures are now genuinely harder to
+kill.
+
+### The shrine is still not finished, and the remaining step is a design decision
+
+With nearest-first sorting the shrine is placed, advertised and outcompeted: one or two per
+descent against dozens of closer loci, caches and ground sigils. A seeker's closest approach
+across a full run is **6 tiles**. Giving it its own brain candidate, the way `cache`, `salvage`
+and `workspace` have, would finish it, and that is a change to the agent's candidate set rather
+than a bug fix. It is not taken here.
+
+The general shape is worth naming, because this is the sixth instance of it: **placement is not
+reachability**. A system can be revived into being exactly as dead as before, and the only way to
+tell is to instrument uptake rather than existence. `runtime/availability.py` already reports
+conditional uptake for verbs; nothing does it for world content.
