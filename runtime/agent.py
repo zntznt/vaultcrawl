@@ -46,6 +46,21 @@ TENSION_PRESSURE_AT = 100
 # all and wins nothing. The pull is not a bug, it was just louder than every identity in
 # the table.
 COMMUNE_PULL_BASE = 12
+# How far a renunciation shrine pulls, and how hard. Shrines are rare, one or two in a full
+# descent, so the pull has to reach further than a locus's 12 or the agent is never near one
+# at the moment it decides.
+#
+# The STEP is why this is not a single number. A flat `RANGE - dist` ramp put the shrine at a
+# median score of 17.9 inside 3 to 5 tiles against a best rival of exactly 17.9: a dead tie on
+# 134 decisions, which `deesc_stairs` won 61 times. The agent walked to within three tiles of
+# every shrine on its route and then oscillated away, so the candidate reached its target and
+# never resolved. That is the same shape as the recover bug and the two livelocks before it,
+# and it is invisible in any aggregate: the shrine "won" 12 decisions and spent 0 shrines.
+#
+# A per-tile step makes the last few tiles decisive, so a trip once started finishes. This
+# copies COMMUNE_PULL_BASE/STEP directly, which exists for the same reason.
+SHRINE_RANGE = 14
+SHRINE_PULL_STEP = 2
 COMMUNE_PULL_STEP = 2
 
 
@@ -73,6 +88,17 @@ def _tension_urgency(s) -> int:
     return max(0, (t - TENSION_PRESSURE_AT) // 10)
 
 
+# `shrine` is deliberately the same number in all six profiles, which is the only key in
+# this table that is. The differentiation is real and it arrives from somewhere else:
+# `SacrificeSystem._worth` prices each offer against what the agent is actually carrying, so
+# an agent with a spare sigil slot, a full bag or nothing to lose values the same shrine
+# differently without the table saying so. Six invented numbers would be preference asserted
+# rather than measured, and `_worth` is preference derived from the run.
+#
+# The value is 5, in a table whose weights run -5 to 15, so it never outranks a profile's
+# identity action on its own. The shrine wins by being close and worth taking, both of which
+# come through the state term. Sweep this one number if the shrine turns out unreachable or
+# irresistible; do not split it into six without a measurement that needs six.
 PROFILES = {
     "artisan": {
         "forge": 15, "breakdown": 10, "explore": 6,
@@ -84,6 +110,7 @@ PROFILES = {
         "workspace_terminal": 3,
         "workspace_depleted": 4,
         "workspace_camp": 2,
+        "shrine": 5,
     },
     "cartographer": {
         "explore": 15, "shield": 5, "recall": 6, "rest": 5, "sigil": 5,
@@ -95,6 +122,7 @@ PROFILES = {
         "workspace_terminal": 12,
         "workspace_depleted": 4,
         "workspace_camp": 3,
+        "shrine": 5,
     },
     "emergent": {
         # `stairs` was 1, the joint lowest in the table, and the stairs candidate's base
@@ -121,6 +149,7 @@ PROFILES = {
         "workspace_terminal": 2,
         "workspace_depleted": 3,
         "workspace_camp": 3,
+        "shrine": 5,
     },
     "exploiter": {
         "shield": 15, "fight": 10, "forge": 6, "flee": 5,
@@ -132,6 +161,7 @@ PROFILES = {
         "workspace_terminal": 3,
         "workspace_depleted": 3,
         "workspace_camp": 10,
+        "shrine": 5,
     },
     "seeker": {
         "forge": 8, "explore": 8, "fight": 8, "shield": 8,
@@ -142,6 +172,7 @@ PROFILES = {
         "workspace_terminal": 6,
         "workspace_depleted": 6,
         "workspace_camp": 6,
+        "shrine": 5,
     },
     "whisper": {
         "parley": 15, "commune": 10, "becalm": 10, "flee": 6,
@@ -153,6 +184,7 @@ PROFILES = {
         "workspace_terminal": 4,
         "workspace_depleted": 12,
         "workspace_camp": 5,
+        "shrine": 5,
     },
 }
 
@@ -760,6 +792,25 @@ class UniversalBrain(Brain):
             if score > 0:
                 candidates.append(("locus", score, ("salvage", loc[0], loc[1])))
 
+        # ---- RENUNCIATION SHRINE ----
+        # Its own candidate rather than a borrowed one. The shrine had no candidate at all,
+        # so once its depth gate and its POI were fixed it was placed, advertised and still
+        # outcompeted: one or two per descent against dozens of closer loci, caches and
+        # ground sigils, and a seeker's closest approach across a whole run was 6 tiles.
+        #
+        # It is NOT scored on `explore`. Borrowing that key is what made `deploy` and
+        # `recover` misbehave for the life of the project (efd591b): a key shared by two
+        # unrelated decisions cannot express a preference for either.
+        sh = s.get("nearest_shrine")
+        if sh and sh[2] is not None and sh[2] <= SHRINE_RANGE:
+            # Distance pull, plus what the offer is actually worth to this run. A shrine
+            # whose every offer this agent would refuse contributes nothing here and the
+            # trip is never taken, which is the same judgement `_worth` makes on arrival.
+            state = max(0, SHRINE_RANGE - sh[2]) * SHRINE_PULL_STEP + max(0, sh[3])
+            score = _score(self.profile, "shrine", state, bonus, True)
+            if score > 0:
+                candidates.append(("shrine", score, ("shrine", sh[0], sh[1])))
+
         # ---- DEPLOY SIGIL (check all sigils, pick best) ----
         # Scored on `sigil`, not `explore`. Borrowing the exploration weight meant a
         # cartographer valued putting a sigil on the floor at 15, the same as mapping the
@@ -1041,12 +1092,19 @@ class UniversalBrain(Brain):
                     return AgentAction("move", dx=bt[0], dy=bt[1])
                 return None
             elif kind in ("salvage", "cache", "poi", "workspace", "recover",
-                          "commune_approach"):
+                          "commune_approach", "shrine"):
                 tx, ty = winner[1], winner[2]
                 # Arriving at a deployed sigil is the point of the recover candidate, so
                 # check it before pathing: standing on the tile yields no step.
                 if kind == "recover" and max(abs(actor.x - tx), abs(actor.y - ty)) <= 1:
                     return AgentAction("recover")
+                # Same for the shrine, and it must be the EXACT tile: `on_interact` reads
+                # `(player.x, player.y)` and nothing else. Without this the agent walks to
+                # the shrine, produces no step because it is already there, and returns None
+                # forever, which is a candidate that reaches its target and then stalls on
+                # it. That is the shape of the recover bug and of two livelocks before it.
+                if kind == "shrine" and (actor.x, actor.y) == (tx, ty):
+                    return AgentAction("interact")
                 step = step_toward(game, actor, tx, ty, safe=True)
                 if step != (0, 0):
                     return AgentAction("move", dx=step[0], dy=step[1])

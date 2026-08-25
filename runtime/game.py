@@ -2613,6 +2613,29 @@ class Game:
                     return True
         if not self.alive or self.won:
             return False
+        # A renunciation shrine UNDERFOOT outranks the weather, and this is a narrow
+        # exception rather than a reordering. `interact` is one overloaded verb with a fixed
+        # precedence, and anything late in that chain is unreachable whenever anything
+        # earlier is live. Shrines sat behind weather, and weather is common: measured over a
+        # full seeker run, both of the two times an agent ever managed to stand on a shrine,
+        # weather was active, `interact` returned into `clear_weather`, and the shrine was
+        # untouched. Uptake stayed at zero after four separate fixes upstream of this line.
+        #
+        # The guard is the exact tile, not a radius, which is what makes it safe. The
+        # cautionary case above, preempting on any adjacent "npc", was broad enough to
+        # hijack everything else `interact` does and cost every profile its run. This
+        # condition is true once or twice in a whole descent, and the weather will still be
+        # there next turn where the shrine will not.
+        sac = self.system("sacrifice")
+        if sac is not None and (self.player.x, self.player.y) in getattr(sac, "shrines", {}):
+            if sac.on_interact(self):
+                self.turn += 1
+                self._tick_effects()
+                self.enemies_act()
+                self._restore_winded()
+                for s in self.systems:
+                    s.on_player_act(self)
+                return True
         weather = self.system("weather")
         if weather:
             props = getattr(weather, 'props_at', None)

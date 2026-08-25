@@ -297,10 +297,15 @@ def _tally(xs) -> dict[str, int]:
 def _get_metrics() -> dict | None:
     """Collect metrics snapshot from the MetricsTracker for eval output."""
     try:
-        from runtime.metrics import metrics as _m, reset_metrics
+        from runtime.metrics import metrics as _m
         m = _m()
         summary = m.summary()
-        reset_metrics()
+        # The tracker used to be reset here, and it is a trap rather than a tidy-up.
+        # `reset_run_state()` already resets it from `Game.__init__`, so a Game IS the reset;
+        # doing it again on the way out meant anything reading `metrics()` AFTER a run saw
+        # zeros. That cost real time: uptake of the renunciation shrine was diagnosed as zero
+        # three separate times, and three separate fixes were aimed at it, on a counter the
+        # harness had already wiped. Read `RunResult.metrics` for the snapshot.
         return summary
     except Exception:
         return None

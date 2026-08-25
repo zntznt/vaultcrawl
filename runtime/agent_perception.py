@@ -578,6 +578,24 @@ def agent_state(game, actor) -> dict:
 
     nearby_landmark = game.commune_landmark() is not None
 
+    # Renunciation shrines. Reported with the best offer on the table, not merely with a
+    # position, because walking to a shrine whose every offer this run would refuse is pure
+    # waste. `SacrificeSystem._worth` already scores an offer from game state, so the brain
+    # can be told what the trip is worth before taking it rather than after.
+    nearest_shrine = None
+    sac_sys = game.system("sacrifice")
+    if sac_sys is not None:
+        for (sx, sy), offers in (getattr(sac_sys, "shrines", {}) or {}).items():
+            d = max(abs(sx - actor.x), abs(sy - actor.y))
+            if nearest_shrine is not None and d >= nearest_shrine[2]:
+                continue
+            try:
+                worth = max((sac_sys._worth(game, kind) for _n, kind, _t in offers),
+                            default=0)
+            except Exception:
+                worth = 0
+            nearest_shrine = (sx, sy, d, worth)
+
     # Loci: polymorphic encounter nodes
     loci_sys = game.system("loci")
     loci_count = 0
@@ -668,6 +686,8 @@ def agent_state(game, actor) -> dict:
         "nearby_landmark": nearby_landmark,
         "loci_count": loci_count,
         "nearest_locus": nearest_locus,
+        # (x, y, chebyshev distance, best offer worth) or None.
+        "nearest_shrine": nearest_shrine,
         "beacon_on_floor": beacon_on_floor,
         "nearest_beacon": nearest_beacon,
         "nearest_fabricator": nearest_fabricator,
