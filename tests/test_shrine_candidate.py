@@ -150,8 +150,19 @@ def test_closer_always_scores_higher():
 # --- 5. the precedence exception ------------------------------------------------------------
 
 def test_a_shrine_underfoot_outranks_the_weather():
-    """`interact` is one verb with a fixed chain and the shrine sat behind weather."""
+    """`interact` is one verb with a fixed chain and the shrine sat behind weather.
+
+    The agent is given matter first, and that is not incidental. This test used to pass on a
+    fresh game where the shrine offered to take matter from an agent holding none: `apply`
+    guarded the cost with `if salv` and granted +3 DEF anyway, so the assertion below was
+    reading a free reward. With `_OFFERINGS` filtered to what the agent can actually pay,
+    that offer is no longer made and the same setup correctly resolves to a refusal. Give it
+    something real to trade.
+    """
     g = _game()
+    salv = g.system("salvage")
+    if salv is not None:
+        salv.inventory(g).add({"iron": 2})
     sac, pos = _place_shrine(g, 0, 0)
     weather = g.system("weather")
     if weather is not None:

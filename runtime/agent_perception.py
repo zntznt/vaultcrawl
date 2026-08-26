@@ -590,7 +590,13 @@ def agent_state(game, actor) -> dict:
             if nearest_shrine is not None and d >= nearest_shrine[2]:
                 continue
             try:
-                worth = max((sac_sys._worth(game, kind) for _n, kind, _t in offers),
+                # The FILTERED offers, the same list the shrine will present on arrival.
+                # Scoring the raw placement draw made the agent walk to shrines for trades
+                # it could not pay: `sigil` and `effect` were dealt 485 times across a
+                # 432-run sweep and chosen zero, because their costs assume holdings the
+                # agent does not have.
+                live = sac_sys.offers_for(game, offers)
+                worth = max((sac_sys._worth(game, kind) for _n, kind, _t in live),
                             default=0)
             except Exception:
                 worth = 0

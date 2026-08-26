@@ -171,7 +171,7 @@ def test_each_offering_can_win_the_choice_from_some_state(kind):
     if salv is not None:
         salv.inventory(g).comp.clear()
     if eff is not None:
-        eff.collected = set()
+        eff.collected = {}
     g.player.hp = g.player.max_hp
     if kind == "sigil" and sigs is not None:
         sigs.slots = [{"ability": "Ward", "base": "Ward", "durability": 3,
@@ -179,7 +179,7 @@ def test_each_offering_can_win_the_choice_from_some_state(kind):
     if kind == "note" and know is not None:
         know.known = {f"n{i}" for i in range(12)}
     if kind == "effect" and eff is not None:
-        eff.collected = {f"e{i}" for i in range(3)}
+        eff.collected = {f"e{i}": "n" for i in range(3)}
     if kind == "rest":
         g.player.hp = g.player.max_hp          # rest is only worth giving up while healthy
     assert sac._worth(g, kind) > 0, (
@@ -226,7 +226,7 @@ def test_renouncing_an_effect_actually_buys_sight():
     sac, know = g.system("sacrifice"), g.system("knowledge")
     eff = g.system("effects")
     if eff is not None:
-        eff.collected = {"lantern", "small"}
+        eff.collected = {"lantern": "n1", "small": "n2"}
     before = know._sight(g)
     sac.apply(g, "effect")
     assert sac.sight_bonus == SIGHT_PER_RENUNCIATION
@@ -317,3 +317,132 @@ def test_what_was_on_the_table_is_recorded_not_only_what_won():
     assert set(pool) == {"sigil", "matter", "rest"}, (
         f"the offered pool recorded {pool}, so a losing offering cannot be told apart from "
         f"one that was never dealt")
+
+
+# --- offerings the agent can actually pay --------------------------------------------------
+
+def _strip(g):
+    """An agent holding nothing: no slots, no notes, no matter, no effects."""
+    sigs, know = g.system("sigils"), g.system("knowledge")
+    salv, eff = g.system("salvage"), g.system("effects")
+    if sigs is not None:
+        sigs.slots = []
+    if know is not None:
+        know.known = set()
+    if salv is not None:
+        salv.inventory(g).comp.clear()
+    if eff is not None:
+        eff.collected = {}
+    return g
+
+
+def _shrine_at_player(g, offers):
+    """Put a shrine under the player's feet with an exact offer list."""
+    sac = g.system("sacrifice")
+    pos = (g.player.x, g.player.y)
+    sac.shrines = {pos: list(offers)}
+    return sac, pos
+
+
+def test_an_agent_holding_nothing_can_renounce_nothing_but_rest():
+    """`rest` is the odd one: it takes a capability rather than an object, so it stays
+    payable as long as the capability is still there."""
+    g = _strip(_game())
+    sac = g.system("sacrifice")
+    for kind in ("sigil", "note", "matter", "effect"):
+        assert not sac.can_renounce(g, kind), (
+            f"the shrine would offer to take {kind} from an agent that has none, and `apply` "
+            f"then skips the cost and grants the reward anyway")
+    assert sac.can_renounce(g, "rest")
+    g._cant_camp = True
+    assert not sac.can_renounce(g, "rest"), "camping cannot be renounced twice"
+
+
+def test_unpayable_offers_are_dropped_from_the_draw():
+    g = _strip(_game())
+    sac = g.system("sacrifice")
+    picks = [("s", "sigil", ""), ("r", "rest", ""), ("e", "effect", "")]
+    live = sac.offers_for(g, picks)
+    assert [o[1] for o in live] == ["rest"], (
+        f"offers_for kept {[o[1] for o in live]}, so a trade the agent cannot make is still "
+        f"on the table")
+
+
+def test_a_draw_with_nothing_payable_falls_back_rather_than_crumbling():
+    """A rare permanent opportunity lost to an unlucky draw is worse than one that offers a
+    different trade. The fallback is sorted, so it is the same on any machine."""
+    g = _strip(_game())
+    salv = g.system("salvage")
+    if salv is not None:
+        salv.inventory(g).add({"iron": 3})     # matter is now payable, nothing else is
+    sac = g.system("sacrifice")
+    live = sac.offers_for(g, [("s", "sigil", ""), ("e", "effect", "")])
+    assert [o[1] for o in live] == sorted(o[1] for o in live)
+    assert "matter" in [o[1] for o in live]
+    assert all(sac.can_renounce(g, o[1]) for o in live)
+
+
+def test_the_shrine_never_presents_an_offer_the_agent_cannot_pay():
+    """End to end, through the verb, on both the agent and the human path."""
+    g = _strip(_game())
+    sac, pos = _shrine_at_player(
+        g, [("s", "sigil", ""), ("e", "effect", ""), ("n", "note", "")])
+    g.has_ui = True                            # keep the offers on the table to inspect
+    sac.on_interact(g)
+    presented = g._pending_sacrifice or []
+    assert all(sac.can_renounce(g, o[1]) for o in presented), (
+        f"presented {[o[1] for o in presented]} to an agent that holds none of them")
+
+
+def test_the_cost_is_always_paid_now_that_the_offer_is_filtered():
+    """The latent half of the bug. `apply` grants its reward unconditionally and guards only
+    the cost, so a `sigil` renunciation by an agent with no slots was +8 max HP for free. It
+    never fired, because `sigil` never won a choice, but it was one balance change away from
+    firing."""
+    g = _game()
+    sac, sigs = g.system("sacrifice"), g.system("sigils")
+    sigs.slots = [{"ability": "Ward", "base": "Ward", "durability": 3,
+                   "note": "x", "role": "leaf"} for _ in range(3)]
+    before_slots, before_hp = len(sigs.slots), g.player.max_hp
+    assert sac.can_renounce(g, "sigil")
+    sac.apply(g, "sigil")
+    assert len(sigs.slots) == before_slots - 1, "the reward was granted and the cost was not"
+    assert g.player.max_hp == before_hp + 8
+
+
+def test_perception_scores_the_filtered_offers():
+    """Scoring the raw placement draw made the agent walk to shrines for trades it could not
+    pay."""
+    from runtime.agent_perception import agent_state
+
+    g = _strip(_game())
+    sac, pos = _shrine_at_player(g, [("s", "sigil", "")])   # unpayable, only pick
+    g.player.x, g.player.y = pos[0] - 3, pos[1]            # stand off it, so it is a target
+    sh = agent_state(g, g.player)["nearest_shrine"]
+    assert sh is not None
+    fallback = sac.offers_for(g, sac.shrines[pos])
+    expected = max((sac._worth(g, o[1]) for o in fallback), default=0)
+    assert sh[3] == expected, (
+        f"perception reported worth {sh[3]} where the shrine will actually offer "
+        f"{[o[1] for o in fallback]} worth {expected}")
+
+
+def test_renouncing_an_effect_removes_it_rather_than_raising():
+    """`EffectSystem.collected` is a dict and `apply` called `.discard(nid)` on it, a set
+    method. AttributeError on every call.
+
+    It never fired, because `effect` was chosen 0 times out of 233 dealings across a 432-run
+    sweep, and `dispatch`'s `except Exception` would have swallowed it into a refused verb if
+    it had. **Filtering the offer pool to what the agent holds is what would have made it
+    reachable**, which is the rule this session keeps relearning: a reachability fix to a
+    system with an unfinished consumer is a regression, not a partial improvement.
+    """
+    g = _game()
+    eff, sac = g.system("effects"), g.system("sacrifice")
+    eff.collected = {"lantern": "n1", "small": "n2"}
+    eff.worn = "lantern"
+    assert isinstance(eff.collected, dict), (
+        "collected stopped being a dict, so the pop below needs re-deriving not trusting")
+    sac.apply(g, "effect")
+    assert len(eff.collected) == 1, "the renounced effect is still collected"
+    assert eff.worn != "lantern", "the renounced effect is still worn"

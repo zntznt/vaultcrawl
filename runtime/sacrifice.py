@@ -123,6 +123,16 @@ class SacrificeSystem(System):
             return False
         self._done.add(pos)
         game._overlay.pop(pos, None)
+        # Filtered HERE rather than at placement, because placement happens on floor entry
+        # and the agent reaches the shrine hundreds of turns later carrying something else
+        # entirely. The state that matters is the state at the moment of the choice.
+        offers = self.offers_for(game, offers)
+        if not offers:
+            game._pending_sacrifice = None
+            game.log("The shrine offers nothing you have left to give. It crumbles.")
+            self._record("shrine_offered")
+            self._record("shrine_empty")
+            return True
         game._pending_sacrifice = offers
         game.log("A shrine of renunciation hums before you. Choose, or reject.")
         # A curses front end answers this popup synchronously (runtime/play.py, key "a").
@@ -134,6 +144,55 @@ class SacrificeSystem(System):
         if not getattr(game, "has_ui", False):
             self.resolve(game, offers)
         return True  # consumed the interact
+
+    @staticmethod
+    def can_renounce(game, kind: str) -> bool:
+        """Does the agent actually HOLD the thing this offering takes away?
+
+        `_OFFERINGS` was sampled with no reference to the agent, so a shrine would offer to
+        take a sigil slot from an agent with no sigil slots. `apply` then guarded that with
+        `if sigs and sigs.slots` and silently performed the nothing half of the trade: the
+        cost was skipped, the reward was granted, and a permanent buff came free.
+
+        The sweep found it from the other end. Over 432 runs at three gain levels, `sigil`
+        was dealt 252 times and chosen 0, `effect` dealt 233 and chosen 0, because their cost
+        terms are calibrated for an agent holding several of each and the agent arrives at
+        shrines with a median of 0 slots and 1 effect. Two of five offerings were dead and
+        the choice was `matter` against `rest`.
+
+        `rest` is the odd one: it takes away camping, which is a capability rather than an
+        object, so what it needs is that the capability is still there to lose.
+        """
+        if kind == "sigil":
+            sigs = game.system("sigils")
+            return len(getattr(sigs, "slots", []) or []) >= 1
+        if kind == "note":
+            know = game.system("knowledge")
+            return len(getattr(know, "known", ()) or ()) >= 1
+        if kind == "matter":
+            salv = game.system("salvage")
+            return bool(salv) and salv.inventory(game).total() >= 1
+        if kind == "rest":
+            return not getattr(game, "_cant_camp", False)
+        if kind == "effect":
+            eff = game.system("effects")
+            return len(getattr(eff, "collected", ()) or ()) >= 1
+        return False
+
+    def offers_for(self, game, picks):
+        """The offers this shrine can actually make, given what the agent is carrying.
+
+        The shrine's character is its placement draw and that is kept where possible: the
+        three kinds it rolled, filtered to the ones the agent can pay. When an unlucky draw
+        leaves nothing payable, it falls back to whatever the agent CAN renounce rather than
+        crumbling, because a rare permanent opportunity lost to a draw is worse than one that
+        offers a different trade. The fallback is sorted, so it is the same on any machine.
+        """
+        live = [o for o in picks if self.can_renounce(game, o[1])]
+        if live:
+            return live
+        pool = [o for o in _OFFERINGS if self.can_renounce(game, o[1])]
+        return sorted(pool, key=lambda o: o[1])[:3]
 
     def _worth(self, game, kind: str) -> int:
         """Score one offering from GAME STATE, never from the agent's identity.
@@ -245,7 +304,14 @@ class SacrificeSystem(System):
             if eff and eff.collected:
                 nid = next(iter(sorted(eff.collected)), None)
                 if nid:
-                    eff.collected.discard(nid)
+                    # `EffectSystem.collected` is a dict of archetype -> note id, and this
+                    # said `.discard(nid)`, a set method. AttributeError on every call, the
+                    # same shape as `structures.crystals.discard` in `clear_weather`. It
+                    # never fired because `effect` was never once chosen, 0 of 233 dealings
+                    # across a 432-run sweep, and `dispatch`'s `except Exception` would have
+                    # swallowed it into a refused verb if it had. Filtering the offer pool to
+                    # what the agent holds is what would have made it reachable.
+                    eff.collected.pop(nid, None)
                     if eff.worn == nid:
                         eff.worn = None
             self.sight_bonus += SIGHT_PER_RENUNCIATION
