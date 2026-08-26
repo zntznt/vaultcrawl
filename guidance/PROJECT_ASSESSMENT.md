@@ -4082,3 +4082,72 @@ The general shape is worth naming, because this is the sixth instance of it: **p
 reachability**. A system can be revived into being exactly as dead as before, and the only way to
 tell is to instrument uptake rather than existence. `runtime/availability.py` already reports
 conditional uptake for verbs; nothing does it for world content.
+
+## The shrine's own candidate: five more links, and the first result that moved
+
+Uptake was still zero after the depth gate, the agent-side resolution, the sight bonus and the
+`points_of_interest` were all fixed. Five more things had to be true, each found by measuring
+rather than by reading:
+
+1. **Perception must price the trip.** `nearest_shrine` reports `(x, y, distance, best offer
+   worth)`, the worth coming from `SacrificeSystem._worth`, so the agent is told what a trip is
+   worth before taking it rather than on arrival.
+2. **Its own weight, not a borrowed one.** Scored on a new `shrine` key present in all six
+   profiles. Borrowing `explore` is what made `deploy` and `recover` misbehave for the life of
+   the project.
+3. **Arriving must act.** The navigation branch returns `None` on a zero step, so without an
+   arrival case the agent reaches the tile and stalls on top of it forever. `recover` carries
+   the identical special case for the identical reason.
+4. **The pull must steepen.** On a flat ramp the shrine scored a median **17.9** inside 3 to 5
+   tiles against a best rival of exactly **17.9**: a dead tie on 134 decisions that
+   `deesc_stairs` won 61 times. The agent walked to within three tiles of every shrine on its
+   route and oscillated away.
+5. **`interact` is one overloaded verb with a fixed precedence**, and the shrine sat behind
+   weather. Both of the two times an agent ever stood on a shrine, weather was live and
+   `interact` returned into `clear_weather`.
+
+Attribution at 6 runs, shrines actually spent: full build **6**, flat ramp **4**, no weather
+exception **2**.
+
+### The instrument that hid it, which cost the most time of anything here
+
+`_get_metrics` reset the tracker on its way out, though `Game.__init__` already resets it via
+`reset_run_state`. So **anything reading `metrics()` after a run saw zeros**. Shrine uptake was
+diagnosed as zero three separate times, and three fixes were aimed at that phantom, on a counter
+the harness had already wiped. The reset is gone; `RunResult.metrics` carries the snapshot.
+
+Two of those three fixes turned out to be independently justified, because the evidence for them
+came from other probes (the score-tie table and the weather trace) that did not touch the broken
+counter, and the attribution run above confirms both. That is luck, not method. **A measurement
+that reads zero should be checked against a second instrument before it is treated as a
+finding.**
+
+### What it measured, 144 runs paired on seed
+
+| | no candidate | with candidate |
+|---|---|---|
+| wins | 79/144 [47, 63] | **94/144** [57, 73] |
+| deaths | 62 | 47 |
+| **floor sd** | 8.2 | **8.4** |
+| floor med [IQR] | 26 [15, 26] | 26 [15, 27] |
+| share reaching floor 26+ | 61.1% | 68.1% |
+| distinct labels | 30.8 | **31.5** |
+| win paths | boss 39, standing 19, commune 11, truths 9 | boss 33, standing 28, **commune 22**, truths 9 |
+
+Exact McNemar, -6/+21 discordant, **p = 0.0059, MOVED**. This is the first change in this whole
+sequence that the aggregate can actually see.
+
+**And it is the first that improves both halves of the criterion at once.** Every earlier win
+gain in this project came with the floor spread collapsing: base 5 bought 111 wins at sd 6.7 and
+IQR [26, 27], base 7 bought 108 at sd 6.9. This one takes wins 79 to 94 while spread goes **up**,
+8.2 to 8.4, the low quartile does not move, distinct labels rise, and `commune` doubles as a way
+of winning. It is not flattening the outcome, it is adding a decision.
+
+The likely reason is worth stating because it generalises: a shrine is a **choice**, not a
+buff. `_worth` prices five permanent trades against what the run is actually carrying, so two
+agents at the same shrine take different deals and diverge afterwards. Content that opens a
+decision widens the outcome distribution; content that hands out a number narrows it.
+
+The re-measured baseline reproduced the previous one exactly, 79/144, 62 deaths, sd 8.2, labels
+30.8, across a container restart and a fresh worktree, which is a determinism check worth having
+had.
