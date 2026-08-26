@@ -4151,3 +4151,28 @@ decision widens the outcome distribution; content that hands out a number narrow
 The re-measured baseline reproduced the previous one exactly, 79/144, 62 deaths, sd 8.2, labels
 30.8, across a container restart and a fresh worktree, which is a determinism check worth having
 had.
+
+### The flee mismatch, closed and measured at nil
+
+`flee` was offered at `matter >= 1` and its branch charged 2, so an agent holding exactly one
+matter picked flee, paid nothing, watched the elite not move, and the encounter resolved into
+nothing. Two more defects sat in the same seven lines: the matter was spent **before** a
+walkable tile was found, so an elite boxed into a corner took the payment and stayed put, and
+neither failure logged anything at all.
+
+Closed toward the **gate**, not the body, and the mercy clause decides that. Ten lines above the
+branch sits `# Mercy: desperate agents always get a way out`, offering flee at `matter >= 1`.
+Raising the gate to 2 would have broken that guarantee for exactly the agent it exists for.
+
+144 runs paired on seed: wins 94 to 93, **-1/+0 discordant, p = 1.000**, and **4 runs of 144
+differ at all**. Deaths unchanged at 47, win paths unchanged but for one `standing`. This is a
+null result and it is the expected one: `flee` is the fourth-choice option behind coerce, parley
+and appease, so agents almost never reach it. The value of the fix is that the game no longer
+offers a move that does nothing, not that it plays differently.
+
+**A test that scans source for a constant's name is not a test that the constant is used.** The
+first version of the gate check asserted `"FLEE_MIN" in source`, and it passed on a file where
+the constant was defined and both gates were still bare literals, which is precisely the state
+it existed to catch. The working version moves `FLEE_MIN` at runtime and asserts on which option
+the encounter resolved to. Prefer a behavioural check over a source scan wherever one is
+possible, and mutate the source scan before trusting it.
