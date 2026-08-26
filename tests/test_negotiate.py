@@ -142,17 +142,118 @@ def test_the_flee_branch_spends_matter_instead_of_raising():
         f"run")
 
 
-def test_flee_is_offered_at_one_matter_and_charges_two():
-    """A recorded mismatch, not a fix. The option gate is `matter >= 1`; the branch body is
-    `>= 2`. With exactly one matter the agent picks flee, pays nothing, and the elite does
-    not move: the encounter resolves into a no-op. Closing it either way is a balance change
-    and belongs in a measured sweep, so this pins the current behaviour rather than blessing
-    it."""
+def test_flee_works_at_the_matter_it_is_offered_at():
+    """The gate and the body used to disagree, and the gap was a silent no-op.
+
+    `flee` was offered at `matter >= 1` and its branch charged 2, so an agent holding exactly
+    one matter picked flee, paid nothing, watched the elite not move, and the encounter
+    resolved into nothing at all. It was pinned rather than fixed while it was still one of
+    several open questions.
+
+    It is closed toward the GATE rather than the body, and the mercy clause is why. Ten lines
+    above the branch sits `# Mercy: desperate agents always get a way out`, offering flee at
+    `matter >= 1`. Raising the gate to 2 would have broken that guarantee for precisely the
+    agent it exists for: the one who is nearly out of everything. So the cost is now
+    `min(FLEE_COST, held)`, the full toss when affordable and everything you have when not.
+    """
     g = _game()
     foe, _ = _flee_encounter(g, 1)
-    assert g.system("salvage").inventory(g).total() == 1, "one matter must not be charged"
-    assert (foe.x, foe.y) == (g.player.x + 1, g.player.y), (
-        "the elite moved on a flee the agent could not afford")
+    assert g.system("salvage").inventory(g).total() == 0, (
+        "one matter was offered as a flee and not spent, so the option and its body still "
+        "disagree")
+    assert (foe.x, foe.y) != (g.player.x + 1, g.player.y), (
+        "the elite did not move, so a flee the game offered did nothing")
+
+
+def test_the_full_cost_is_charged_when_it_can_be_afforded():
+    """The other side: the cheap path must not become the only path."""
+    from runtime.game import FLEE_COST
+
+    g = _game()
+    before = g.system("salvage").inventory(g).total()
+    _foe, _ = _flee_encounter(g, 4)
+    spent = before + 4 - g.system("salvage").inventory(g).total()
+    assert spent == FLEE_COST, f"charged {spent} where the full cost is {FLEE_COST}"
+
+
+def test_the_gate_and_the_body_read_the_same_constant():
+    """The literals drifted apart once and nothing noticed for the life of the project.
+
+    Checked by moving the constant rather than by reading the source. A source scan for the
+    name passes on a file where the constant is defined and the gates are still bare
+    literals, which is exactly the state this test exists to catch, and it did pass on it.
+    """
+    import runtime.game as G
+
+    assert G.FLEE_MIN <= G.FLEE_COST, (
+        "flee is offered below the minimum it can ever spend, which is the original bug")
+
+    # Raise the floor above what the agent holds. If the option gates read the constant, flee
+    # stops being offered and the encounter resolves some other way. If they are literals,
+    # flee is still offered and still spends.
+    # Asserted on the CHOICE, not on the matter spent. Both worlds leave the bag untouched
+    # here, because a body that reads the constant refuses the throw anyway; only which
+    # option the encounter picked tells them apart.
+    g = _game()
+    saved = G.FLEE_MIN
+    G.FLEE_MIN = 3
+    try:
+        _foe, chose = _flee_encounter(g, 1)
+    finally:
+        G.FLEE_MIN = saved
+    assert chose != "flee", (
+        "with FLEE_MIN raised above what the agent holds, the encounter still offered flee, "
+        "so an option gate is a bare literal and can drift from the body again in silence")
+
+
+def test_the_matter_is_only_spent_once_the_throw_has_somewhere_to_land():
+    """An elite with no walkable tile 5 steps away used to take the payment and stay put.
+
+    The old order spent first and searched afterwards, which is the same silent half-failure
+    as the gate mismatch, one line further out.
+    """
+    g = _game()
+    foe = _foe(g)
+    foe.tier, foe.is_boss = 3, False
+    foe.x, foe.y = g.player.x + 1, g.player.y
+    for a in list(g.actors):
+        if a is not foe and a is not g.player:
+            a.hp = 0
+    g.system("salvage").inventory(g).add({"iron": 4})
+    before = g.system("salvage").inventory(g).total()
+
+    walkable = g.level.walkable
+    g.level.walkable = lambda x, y: False        # nowhere for the clatter to land
+    try:
+        g.encounter_resolve(foe)
+    finally:
+        g.level.walkable = walkable
+
+    assert g.system("salvage").inventory(g).total() == before, (
+        "matter was spent on a throw that had nowhere to land")
+    assert (foe.x, foe.y) == (g.player.x + 1, g.player.y)
+
+
+def test_a_flee_that_does_nothing_still_says_so():
+    """Silent failure is the class this project keeps rediscovering: an action the brain
+    cannot tell has failed is one it will choose again from an unchanged state."""
+    g = _game()
+    foe = _foe(g)
+    foe.tier, foe.is_boss = 3, False
+    foe.x, foe.y = g.player.x + 1, g.player.y
+    for a in list(g.actors):
+        if a is not foe and a is not g.player:
+            a.hp = 0
+    g.system("salvage").inventory(g).add({"iron": 4})
+    n = len(getattr(g, "messages", []) or [])
+    walkable = g.level.walkable
+    g.level.walkable = lambda x, y: False
+    try:
+        g.encounter_resolve(foe)
+    finally:
+        g.level.walkable = walkable
+    assert len(getattr(g, "messages", []) or []) > n, (
+        "the flee failed and logged nothing at all")
 
 
 if __name__ == "__main__":
@@ -161,6 +262,10 @@ if __name__ == "__main__":
                test_spurned_moves_enrage_it, test_a_bored_creature_disengages,
                test_requirements_cost_no_round, test_fickleness_exists_and_is_seeded,
                test_the_flee_branch_spends_matter_instead_of_raising,
-               test_flee_is_offered_at_one_matter_and_charges_two):
+               test_flee_works_at_the_matter_it_is_offered_at,
+               test_the_full_cost_is_charged_when_it_can_be_afforded,
+               test_the_gate_and_the_body_read_the_same_constant,
+               test_the_matter_is_only_spent_once_the_throw_has_somewhere_to_land,
+               test_a_flee_that_does_nothing_still_says_so):
         fn()
         print(f"ok {fn.__name__}")

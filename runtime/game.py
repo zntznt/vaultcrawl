@@ -24,6 +24,15 @@ ROOM_NOUN = {"hub": "Hall", "bridge": "Gallery", "orphan": "Sealed Alcove",
 # communion with the deepest thought: either path resolves the run without violence
 COMMUNE_TRUTHS = 2   # marginalia + lore fragments read
 COMMUNE_COST = 4     # total salvaged matter, any mix
+# What a distraction throw costs at an elite encounter, and what it costs when you cannot
+# afford that. The encounter offered `flee` at `matter >= 1` and the branch charged 2, so an
+# agent holding exactly one matter picked flee, paid nothing, saw the elite not move, and the
+# encounter resolved into a silent no-op. The gate is honoured rather than raised, because
+# the mercy clause a few lines below it reads "desperate agents always get a way out" and
+# offers flee at `matter >= 1`: raising the gate to 2 would break that guarantee for exactly
+# the agent it is written for, the one who is nearly out of everything.
+FLEE_COST = 2
+FLEE_MIN = 1
 # What communing with the WARDEN costs, in truths, before the standing discount.
 #
 # It used to be nothing. The code said so: "always free, reaching the boss is enough". Every
@@ -2300,7 +2309,7 @@ class Game:
                  (getattr(self.system("history"), "read", 0) or 0)
         if source_known or truths >= 2:
             options.append("parley")
-        if matter >= 1:
+        if matter >= FLEE_MIN:
             options.append("flee")
         if truths >= 1:
             options.append("appease")
@@ -2309,7 +2318,7 @@ class Game:
 
         # Mercy: desperate agents always get a way out
         if hp_pct < 30 and not options:
-            if matter >= 1:
+            if matter >= FLEE_MIN:
                 options.append("flee")
             else:
                 options.append("appease")
@@ -2342,15 +2351,33 @@ class Game:
                 self._win("diplomacy")
                 self.log("The final boss lays down its arms. You have won through diplomacy.")
         elif choice == "flee":
-            if salv and salv.inventory(self).total() >= 2:
-                _spend_matter(salv.inventory(self), 2)
-                self.log(f"You toss matter as a distraction. {target.name} chases the clatter.")
+            # Spend up to FLEE_COST, and everything you have when that is less. Paired with
+            # the FLEE_MIN gate above, this makes the option and its body agree: whenever
+            # flee is offered it does something, and it never charges for nothing.
+            #
+            # The throw is also only paid for once it has somewhere to land. The old order
+            # spent the matter first and then looked for a walkable tile, so an elite boxed
+            # into a corner took the payment and stayed put, which is the same silent
+            # half-failure one line further out.
+            bag = salv.inventory(self) if salv else None
+            held = bag.total() if bag is not None else 0
+            landed = None
+            if held >= FLEE_MIN:
                 for dx, dy in ((5, 0), (-5, 0), (0, 5), (0, -5)):
                     nx, ny = target.x + dx, target.y + dy
                     if self.level.walkable(nx, ny):
-                        target.x, target.y = nx, ny
-                        self.emit("noise", pos=(nx, ny), volume=8)
+                        landed = (nx, ny)
                         break
+            if landed is not None:
+                _spend_matter(bag, min(FLEE_COST, held))
+                target.x, target.y = landed
+                self.emit("noise", pos=landed, volume=8)
+                self.log(f"You toss matter as a distraction. {target.name} chases the clatter.")
+            elif held < FLEE_MIN:
+                self.log(f"You have nothing to throw, and {target.name} does not look away.")
+            else:
+                self.log(f"There is nowhere for the clatter to land. {target.name} holds its "
+                         f"ground.")
         elif choice == "appease":
             self.log(f"You commune briefly. {target.name} lowers its guard.")
             target.allegiance = "wild"
