@@ -262,12 +262,55 @@ def nearest_perceived_hostile(game, observer):
     return perceive(game, observer).nearest_hostile(game, observer)
 
 
+def scent_step(game, observer):
+    """One step along the player's diffused trail, for a nose standing on it.
+
+    This is `runtime/scent.py`'s consumer, and it had none. `ScentSystem` diffuses the
+    player's trail through walkable space, decays it, blocks it on walls and exposes both
+    `scent_at` and `strongest_neighbour`; the two things that called any of it were
+    `behavior.py`, a utility-oracle module imported by nothing but two tests, and the
+    `scent_mask` consumable. So the grid was computed every turn of every run and read by
+    nobody. `system_activity.py` has the shape of it: busy and mute, acting on 11.1% of its
+    classic calls while emitting and logging nothing, which is why dropping it left all 24
+    ablation arms unchanged.
+
+    The signal was never the problem. Measured over one classic seeker run: 23,770
+    investigation steps, of which the observer stood on a live scent tile in 12,022 and had a
+    followable trail adjacent in 12,163. Half of every creature's investigating happened on
+    top of a path it could not smell.
+
+    The division of labour with `SenseField.scent` is deliberate and they are not duplicates.
+    `SenseField` lays a mark per actor and answers "something passed near here", which is
+    DETECTION and already feeds `p.leads` above. `ScentSystem` answers "and it went that
+    way", which is a GRADIENT. Straight-lining at a detection walks into the wall between you
+    and it; following a gradient rounds the corner the prey rounded.
+
+    Gated on standing ON the trail, not on being near one, which keeps it narrow: a creature
+    that has merely caught a whiff still uses the ordinary lead machinery.
+    """
+    prof = profile(observer)
+    if not prof.has(SMELL):
+        return None
+    ss = game.system("scent")
+    if ss is None:
+        return None
+    from runtime.scent import SCENT_TRACK_MIN
+    if ss.scent_at(observer.x, observer.y) <= 0:
+        return None          # not on a trail; a whiff is the lead system's business
+    return ss.gradient_step(game, observer.x, observer.y, SCENT_TRACK_MIN)
+
+
 def investigate_step(game, observer):
     """Exploratory layer: with no identified target, walk toward the most salient percept
     (a heard noise, a scent, a remembered sighting). Returns a step or (0,0)."""
     p = perceive(game, observer)
     if p.hostiles(game, observer):
         return (0, 0)   # has a real target; the brain handles it
+    # A trail underfoot beats a remembered position, and only for a nose. It is the fresher
+    # and more precise signal: the prey was HERE, and the gradient says which way it left.
+    step = scent_step(game, observer)
+    if step is not None:
+        return step
     lead = p.best_lead(observer)
     if lead is None:
         return (0, 0)
