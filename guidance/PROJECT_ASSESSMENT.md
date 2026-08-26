@@ -4243,3 +4243,73 @@ there, every arm that raised wins flattened the endings.
 It is also the clearest case yet that **the win column is the wrong instrument for this
 project**. Two changes in one tranche, one touching 4 runs and one touching 108, are
 indistinguishable in the aggregate and both read as p above 0.3.
+
+## Sweeping the shrine `_worth` gains: the knob is inert and it says which knob is not
+
+The five `_worth` gains were literals chosen to be state-driven rather than measured, which was
+said plainly when they landed. Swept as a single scalar (`VC_SHRINE_GAIN_PCT`) at 60 / 100 / 160,
+144 runs per arm, paired on `(agent, seed)`.
+
+One scalar rather than five knobs was deliberate: five gains swept independently is a
+five-dimensional space, roughly one shrine fires per run, and the arms would be indistinguishable
+long before the space was covered.
+
+| | gain 60 | gain 100 | gain 160 |
+|---|---|---|---|
+| wins | 84/144 [50, 66] | 88/144 [53, 69] | 81/144 [48, 64] |
+| deaths | 56 | 51 | 56 |
+| floor sd | 8.5 | 8.7 | 8.5 |
+| floor med [IQR] | 26 [11, 27] | 26 [11, 27] | 26 [11, 27] |
+| shrines offered | 137 | 141 | 146 |
+| **uptake** | **98%** | **99%** | **100%** |
+
+**The knob does nothing.** Uptake moves 98 to 100 percent across a 2.7x range of gains, wins
+overlap completely (p = 0.48 against control), and the floor IQR is byte-identical across all
+three arms. A parameter that cannot change behaviour over that range is not a tuning parameter.
+
+### What the sweep found instead
+
+| offering | chosen / dealt at 60 | at 100 | at 160 |
+|---|---|---|---|
+| `matter` | 64/94 | 73/94 | 79/102 |
+| `rest` | 56/92 | 53/93 | 50/98 |
+| `note` | 14/68 | 13/73 | 17/73 |
+| **`sigil`** | **0/80** | **0/88** | **0/84** |
+| **`effect`** | **0/77** | **0/75** | **0/81** |
+
+**Two of five offerings are dealt 252 and 233 times across the sweep and chosen zero times, at
+every gain level.** That is not sampling noise and it is not a preference: it is arithmetic.
+
+Measured at live shrine resolutions, the agent's state is `slots` median **0** (range 0 to 1)
+and `effects` median **1** (range 0 to 1), against `known` 12 to 13, `matter` 0 to 2 and HP 91
+to 99 percent. Put those into the cost terms:
+
+* `sigil` costs `max(0, 12 - 2 * slots)`, which at 0 slots is **12**. The gain is 8, and 12 at
+  the top arm. It can never be positive.
+* `effect` costs `max(0, 8 - 3 * held)`, which at 1 effect is **5**. The gain is 5, and 8 at the
+  top arm, so its best case is exactly zero, and zero is refused.
+
+**Both dead offerings have cost formulas calibrated against a state the agent never reaches.**
+`sigil` assumes an agent with several spare slots and `effect` assumes several collected
+effects; the agent arrives at shrines with neither. Scaling the gains cannot fix a cost written
+to the wrong scale, which is exactly what the flat sweep shows.
+
+### The recommendation, which is not a gain change
+
+Leave `GAIN_PCT` at 100. The sweep is unambiguous that it is not the lever.
+
+The cleaner fix is not to retune the costs either. **`_OFFERINGS` is sampled without reference
+to what the agent holds, so the shrine offers to take a sigil slot from an agent with no sigil
+slots**, and `apply` then guards that with `if sigs and sigs.slots` and silently does the
+nothing half of the trade. Filtering the sample to renunciations the agent can actually make
+would make all five offerings live and would make the choice a real one, where today it is
+`matter` against `rest` and nothing else. That is a design change rather than a tuning change
+and it is not taken here.
+
+### The transferable part
+
+This is the fourth time in this project that a tuning sweep has returned "wrong knob". The
+pattern is now clear enough to state: **before sweeping a parameter, check that the thing it
+gates is reachable at the state the parameter will be read in.** The per-kind uptake table cost
+one extra field in the row capture and it answered in one sweep what three arms of outcome
+statistics could not.
