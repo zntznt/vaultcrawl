@@ -4313,3 +4313,78 @@ pattern is now clear enough to state: **before sweeping a parameter, check that 
 gates is reachable at the state the parameter will be read in.** The per-kind uptake table cost
 one extra field in the row capture and it answered in one sweep what three arms of outcome
 statistics could not.
+
+### Filtering `_OFFERINGS` to what the agent holds
+
+`_OFFERINGS` was sampled with no reference to the agent, so a shrine offered to take a sigil
+slot from an agent with none. `apply` guarded the cost with `if sigs and sigs.slots` and granted
+the reward unconditionally, so the trade was free. `can_renounce` now gates every offering on
+the agent holding the thing, filtered at the moment of the choice rather than at placement,
+since placement happens on floor entry and the agent arrives hundreds of turns later carrying
+something else.
+
+144 runs paired on seed against the same build with the filter off:
+
+| | unfiltered | filtered |
+|---|---|---|
+| wins | 88/144 | 83/144 (p = 0.27) |
+| floor sd | 8.7 | 8.5 |
+| shrines offered | 141 | 137 |
+| **refused** | **2** | **10** |
+| **uptake** | **99%** | **93%** |
+
+| offering | chosen/dealt before | after |
+|---|---|---|
+| `matter` | 73/94 | **18/40** |
+| `note` | 13/73 | **50/78** |
+| `rest` | 53/93 | 59/71 |
+| `sigil` | 0/88 | 0/25 |
+| `effect` | 0/75 | 0/60 |
+
+**The trade the agent makes is now a different trade.** `matter` was the dominant choice, 73 of
+139 takes, and is now a minor third at 18: an agent almost never carries matter at a shrine, so
+the offer that used to be free is now usually not on the table at all. `note` went from 13 wins
+to 50. Refusals went from 2 to 10, which is the first time the shrine has had an expressible
+"no". None of this is visible in the win column, which is the third such case this session.
+
+### A prediction of mine that was wrong, and the arithmetic that says why
+
+I wrote that filtering "would make all five offerings live". **It does not.** `sigil` and
+`effect` are still chosen zero times, out of 25 and 60 dealings.
+
+The filter admits an offering at **1** held. The offering becomes worth taking at:
+
+| offering | admitted at | first positive at | worth at the admit floor |
+|---|---|---|---|
+| `sigil` | 1 slot | **3 slots** | -2 |
+| `effect` | 1 effect | **2 effects** | 0 |
+| `note` | 1 note | 5 notes | -3, but agents hold 12 to 13 |
+| `matter` | 1 matter | any | +8 |
+| `rest` | can camp | any, when healthy | +7 |
+
+So the filter and the pricing disagree by a band, and for `sigil` and `effect` the agent lives
+inside that band: median 0 slots and 1 effect at shrine time. Being able to make a trade and
+wanting to are different questions, correctly answered by different functions, and fixing the
+first does not fix the second.
+
+That band is not obviously a bug. An offering the agent holds but declines is a real choice, and
+the shrine refusing 7% of the time is healthier than the 1% it managed before. What is a
+question for the design is that **`sigil` and `effect` are priced for an agent that hoards, and
+this agent does not**: it ends runs with 0 to 1 sigil slots and 0 to 1 effects. Either the rest
+of the game should make hoarding happen, or those two costs should be priced for the agent that
+actually arrives. That is a claim about the economy, not about the shrine, and it is not settled
+here.
+
+### The bug the filter would have made reachable
+
+`apply("effect")` called `.discard(nid)` on `EffectSystem.collected`, which is a **dict**.
+AttributeError on every call, the same shape as `structures.crystals.discard` in
+`clear_weather`. It never fired because `effect` was chosen 0 times in 233 dealings, and
+`dispatch`'s `except Exception` would have swallowed it if it had. Filtering the pool is exactly
+what would have made it reachable. **A reachability fix to a system with an unfinished consumer
+is a regression**, and this is the second time that rule has paid out in one session.
+
+One test also had to change, and the reason is the finding rather than an inconvenience.
+`test_a_shrine_underfoot_outranks_the_weather` passed on a fresh game only because the shrine
+offered to take matter from an agent holding none and granted +3 DEF for it. The assertion was
+reading a free reward and calling it the shrine working.
