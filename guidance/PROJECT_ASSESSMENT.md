@@ -4176,3 +4176,70 @@ the constant was defined and both gates were still bare literals, which is preci
 it existed to catch. The working version moves `FLEE_MIN` at runtime and asserts on which option
 the encounter resolved to. Prefer a behavioural check over a source scan wherever one is
 possible, and mutate the source scan before trusting it.
+
+## Giving `scent` a reader: the largest behavioural change of the tranche, and no win-rate move
+
+`runtime/scent.py` diffused the player's trail through walkable space, decayed it, blocked it
+on walls and exposed `scent_at` and `strongest_neighbour` every turn of every run. The only
+things that touched any of it were `runtime/behavior.py`, a utility-oracle module **imported by
+nothing but two test files**, and the `scent_mask` consumable, which deletes the grid rather
+than reading it. The grid was built and thrown away.
+
+`system_activity.py` already had the shape of this: busy and mute, acting on 11.1% of its
+classic calls while emitting and logging nothing, which is why dropping `scent` left all 24
+ablation arms unchanged. **That reads as "this system does not matter" and it meant "this system
+has no reader".** Those are different diagnoses with different fixes, and the ablation could not
+tell them apart.
+
+The signal was never thin. Measured over one classic seeker run before any change: **23,770
+investigation steps, the observer standing on a live scent tile in 12,022 of them** and with a
+followable trail adjacent in 12,163.
+
+### Two things had to be true
+
+`strongest_neighbour` scanned four orthogonals in an eight-directional game. A tracker that can
+only step orthogonally along a trail is strictly slower than the prey that laid it: it loses
+ground on every diagonal and can never close. After the fix, **907 of 2,716 followed steps are
+diagonal**, a third that could not previously have happened. Diffusion stays orthogonal on
+purpose, being a kernel where diagonals are correctly two steps away.
+
+`SenseField.scent` and `ScentSystem` are not duplicates, and the split is the design.
+`SenseField` marks per actor and answers "something passed near", which is **detection** and
+already fed `Perception.leads`. `ScentSystem` answers "and it went that way", which is a
+**gradient**. Straight-lining at a detection walks into the wall between you and it; following a
+gradient rounds the corner the prey rounded.
+
+### 144 runs paired on seed
+
+| | before | after |
+|---|---|---|
+| wins | 93/144 [56, 72] | 87/144 [52, 68] |
+| deaths | 47 | 53 |
+| floor sd | 8.5 | **8.6** |
+| floor med [IQR] | 26 [13, 26] | 26 [**11, 27**] |
+| turns per run | 7,347 | **6,749** |
+| **runs differing at all** | | **108/144** |
+| `commune` wins | 22 | **11** |
+| `standing` wins | 27 | 31 |
+
+**Wins 93 to 87 at p = 0.34, which is not a move**, and it should not be reported as one. What
+did move is everything else: **108 of 144 runs play out differently**, against 4 of 144 for the
+flee fix in the same tranche. Deaths are up 6, runs are 8% shorter, and the spread is marginally
+wider rather than narrower.
+
+The largest route shift is `commune`, halved from 22 wins to 11. A plausible mechanism is
+available and is not established here: commune requires standing at a landmark, and a creature
+following your trail arrives to interrupt it. That is a hypothesis the route table suggests, not
+a finding, and it would need its own instrument to confirm.
+
+### Why this is the best result of the session against the stated criterion
+
+The criterion is that the game be winnable **by using the systems that are implemented**, and
+that their use **introduce variance**. A system went from computing a rich signal nobody read to
+driving 108 of 144 runs, the outcome envelope did not shift, and the spread did not collapse.
+That is both halves moving the right way at once, which the quality sweep never managed:
+there, every arm that raised wins flattened the endings.
+
+It is also the clearest case yet that **the win column is the wrong instrument for this
+project**. Two changes in one tranche, one touching 4 runs and one touching 108, are
+indistinguishable in the aggregate and both read as p above 0.3.
