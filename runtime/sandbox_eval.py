@@ -118,7 +118,7 @@ def _run_slice(args):
                              verb_fail={}, events={}, kills=0, items=0,
                              sigils_forged=0, caches=0, floors_cleared=0, avg_hp=0.0,
                              egress_open=False, egress_route="", verb_crashes={},
-                             crash_sites={}, timed_out=True))
+                             crash_sites={}, shrine={}, timed_out=True))
             continue
         finally:
             if can_time_out:
@@ -151,6 +151,10 @@ def _run_slice(args):
             # as a refusal, which `verb_fail` cannot distinguish from the game saying no.
             verb_crashes=dict(r.verb_crashes or {}),
             crash_sites=dict(r.crash_sites or {}),
+            # Shrine uptake as a RATE, so a build that refuses every shrine and one that
+            # never reaches a shrine are distinguishable. They are opposite problems and a
+            # bare take-count reports both as the same low number.
+            shrine=dict((r.metrics or {}).get("shrine", {})),
         ))
         print(f"  [{'sandbox' if sandbox else 'classic'}] {agent:13} seed {seed} F{r.floor_reached:2} "
               f"won={str(r.won):5} t{turns:6} d/t={calls['n']/turns:.2f}", flush=True)

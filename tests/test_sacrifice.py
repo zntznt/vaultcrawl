@@ -240,3 +240,80 @@ def test_the_offering_text_and_the_constant_agree():
     from runtime.sacrifice import _OFFERINGS
     text = next(t for _n, k, t in _OFFERINGS if k == "effect")
     assert f"+{SIGHT_PER_RENUNCIATION} sight" in text
+
+
+# --- the gains, and the telemetry a sweep needs to read them ---------------------------------
+
+def test_the_gains_are_a_named_table_not_five_literals():
+    """They were five literals inside `_worth`, chosen to be state-driven rather than
+    measured, which was said plainly at the time. A sweep needs them addressable."""
+    from runtime.sacrifice import SHRINE_GAIN
+    assert set(SHRINE_GAIN) == {"sigil", "note", "matter", "rest", "effect"}
+    assert all(isinstance(v, int) and v > 0 for v in SHRINE_GAIN.values())
+
+
+def test_the_gain_scalar_moves_every_offering_together():
+    import runtime.sacrifice as S
+
+    saved = S.GAIN_PCT
+    try:
+        S.GAIN_PCT = 200
+        assert S._gain("matter") == S.SHRINE_GAIN["matter"] * 2
+        S.GAIN_PCT = 50
+        assert S._gain("matter") == S.SHRINE_GAIN["matter"] // 2
+    finally:
+        S.GAIN_PCT = saved
+
+
+def test_lowering_the_scalar_makes_an_offering_refusable():
+    """The point of the knob. At the default the agent took every shrine it ever reached:
+    zero rejections in four runs, so `_worth` had no expressible "no"."""
+    import runtime.sacrifice as S
+
+    g = _game()
+    sac = g.system("sacrifice")
+    salv = g.system("salvage")
+    if salv is not None:
+        salv.inventory(g).comp.clear()
+        salv.inventory(g).add({"iron": 4})
+    offers = [("m", "matter", "")]
+    saved = S.GAIN_PCT
+    try:
+        S.GAIN_PCT = 200
+        assert sac._worth(g, "matter") > 0
+        S.GAIN_PCT = 20
+        assert sac._worth(g, "matter") <= 0, (
+            "scaling the gains to a fifth still leaves every offer worth taking, so the knob "
+            "cannot express reluctance and the sweep has nothing to move")
+    finally:
+        S.GAIN_PCT = saved
+
+
+def test_resolutions_are_counted_with_their_denominator():
+    """`shrine_used` alone counts takes. A build that refuses every shrine and one that never
+    reaches a shrine then report the same number, and those are opposite problems."""
+    from runtime.metrics import metrics, reset_metrics
+
+    g = _game()
+    sac = g.system("sacrifice")
+    reset_metrics()
+    sac.resolve(g, [("m", "matter", "")])
+    sh = metrics().summary()["shrine"]
+    assert sh["offered"] == 1, "a resolution was not counted, so uptake has no denominator"
+    assert sh["used"] + sh["rejected"] == 1
+
+
+def test_what_was_on_the_table_is_recorded_not_only_what_won():
+    """An offering that never wins and one the pool rarely deals need opposite fixes: raise
+    its gain, or change what `_OFFERINGS` samples. Measured over 4 runs, `sigil` was dealt 5
+    times and chosen 0, so it is the first and not the second."""
+    from runtime.metrics import metrics, reset_metrics
+
+    g = _game()
+    sac = g.system("sacrifice")
+    reset_metrics()
+    sac.resolve(g, [("s", "sigil", ""), ("m", "matter", ""), ("r", "rest", "")])
+    pool = metrics().summary()["shrine"]["pool"]
+    assert set(pool) == {"sigil", "matter", "rest"}, (
+        f"the offered pool recorded {pool}, so a losing offering cannot be told apart from "
+        f"one that was never dealt")

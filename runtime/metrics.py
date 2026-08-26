@@ -123,6 +123,15 @@ class MetricsTracker:
             # verb raised and the runner was told the game refused.
             "verb_crashes": dict(self.verb_crashes),
             "crash_sites": dict(self.crash_sites),
+            # offered / used / rejected, plus which offering was taken. Uptake needs the
+            # denominator: refusing every shrine and never finding one are opposite states.
+            "shrine": {
+                "offered": self.systems.get("shrine_offered", 0),
+                "used": self.systems.get("shrine_used", 0),
+                "rejected": self.systems.get("shrine_rejected", 0),
+                "choice": dict(self.systems.get("shrine_choice", {}) or {}),
+                "pool": dict(self.systems.get("shrine_pool", {}) or {}),
+            },
         }
 
 

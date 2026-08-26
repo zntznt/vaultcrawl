@@ -8,6 +8,7 @@ Deterministic: shrine placement and offerings are seeded.
 """
 from __future__ import annotations
 
+import os
 import random
 
 from runtime.systems import System
@@ -22,6 +23,22 @@ _OFFERINGS = [
 
 # Named, because the offering text quotes it and the two drifted apart once already.
 SIGHT_PER_RENUNCIATION = 2
+
+# What each renunciation is WORTH, before the cost of what it takes from you. These were five
+# literals inside `_worth` chosen to be state-driven rather than measured, which was said
+# plainly at the time and is now swept.
+#
+# `GAIN_PCT` scales all five together. That is deliberate: five gains swept independently is a
+# five-dimensional space and roughly 1 shrine fires per run, so the arms would be
+# indistinguishable long before the space was covered. One scalar asks the question the design
+# actually has, which is whether the shrine is too eager or too reluctant, and the per-kind
+# uptake table below says which individual gain to move next if any.
+SHRINE_GAIN = {"sigil": 8, "note": 6, "matter": 9, "rest": 7, "effect": 5}
+GAIN_PCT = int(os.environ.get("VC_SHRINE_GAIN_PCT", "100"))
+
+
+def _gain(kind: str) -> int:
+    return SHRINE_GAIN.get(kind, 0) * GAIN_PCT // 100
 
 
 class SacrificeSystem(System):
@@ -133,23 +150,23 @@ class SacrificeSystem(System):
         if kind == "sigil":
             sigs = game.system("sigils")
             slots = len(getattr(sigs, "slots", []) or [])
-            return 8 - max(0, 12 - 2 * slots)     # a spare slot is cheap, the last is not
+            return _gain("sigil") - max(0, 12 - 2 * slots)     # a spare slot is cheap, the last is not
         if kind == "note":
             know = game.system("knowledge")
             known = len(getattr(know, "known", ()) or ())
-            return 6 - max(0, 10 - known)
+            return _gain("note") - max(0, 10 - known)
         if kind == "matter":
             salv = game.system("salvage")
             held = salv.inventory(game).total() if salv else 0
-            return 9 - min(9, held)               # free when broke, dear when rich
+            return _gain("matter") - min(9, held)               # free when broke, dear when rich
         if kind == "rest":
             # Camping is worth most to an agent that is hurt and has been using it.
             hp_pct = game.player.hp * 100 // max(1, getattr(game.player, "max_hp", 1))
-            return 7 - (0 if hp_pct >= 70 else 10)
+            return _gain("rest") - (0 if hp_pct >= 70 else 10)
         if kind == "effect":
             eff = game.system("effects")
             held = len(getattr(eff, "collected", ()) or ())
-            return 5 - max(0, 8 - 3 * held)
+            return _gain("effect") - max(0, 8 - 3 * held)
         return 0
 
     def resolve(self, game, offers) -> str:
@@ -159,12 +176,36 @@ class SacrificeSystem(System):
         scored = sorted(((self._worth(game, kind), kind) for _, kind, _ in offers),
                         key=lambda sk: (-sk[0], sk[1]))
         best, kind = scored[0] if scored else (0, "")
+        # Every resolution is recorded, taken or not. `shrine_used` alone counts only the
+        # takes, so a build where the agent refuses every shrine and one where it never
+        # reaches a shrine report the same number, and those are opposite problems. Uptake is
+        # a rate and a rate needs its denominator.
+        self._record("shrine_offered")
+        # Which kinds were on the table, not only which won. Without this, an offering that
+        # never wins is indistinguishable from one the pool rarely deals, and the fix for
+        # each is the opposite: raise its gain, or change what `_OFFERINGS` samples.
+        for _n, k, _t in offers:
+            self._record("", k, table="shrine_pool")
         if best <= 0 or not kind:
+            self._record("shrine_rejected")
             game._pending_sacrifice = None
             game.log("You weigh the shrine's offer and turn away. It crumbles to dust.")
             return ""
         self.apply(game, kind)
         return kind
+
+    @staticmethod
+    def _record(key: str, kind: str = "", table: str = "shrine_choice"):
+        try:
+            from runtime.metrics import metrics
+            m = metrics()
+            if kind:
+                d = m.systems.setdefault(table, {})
+                d[kind] = d.get(kind, 0) + 1
+            else:
+                m.systems[key] = m.systems.get(key, 0) + 1
+        except Exception:
+            pass
 
     def apply(self, game, choice: str):
         """Apply the chosen sacrifice permanently."""
@@ -210,10 +251,7 @@ class SacrificeSystem(System):
             self.sight_bonus += SIGHT_PER_RENUNCIATION
         # `shrine_used` existed in MetricsTracker from the start and nothing ever
         # incremented it, so "did a shrine fire" was unanswerable from any run's output.
-        try:
-            from runtime.metrics import metrics
-            metrics().systems["shrine_used"] += 1
-        except Exception:
-            pass
+        self._record("shrine_used")
+        self._record("", choice)
         game._pending_sacrifice = None
         game.log(f"You accept the {choice} renunciation — the shrine crumbles, and you are changed.")
