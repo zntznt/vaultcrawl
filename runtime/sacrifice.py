@@ -36,6 +36,41 @@ SIGHT_PER_RENUNCIATION = 2
 SHRINE_GAIN = {"sigil": 8, "note": 6, "matter": 9, "rest": 7, "effect": 5}
 GAIN_PCT = int(os.environ.get("VC_SHRINE_GAIN_PCT", "100"))
 
+# What each renunciation COSTS, as a function of how many you hold. These are the numbers the
+# gain sweep pointed at: it came back flat across a 2.7x range of gains precisely because two
+# offerings were priced against holdings the agent never reaches, and scaling a gain cannot
+# rescue a cost written to the wrong scale.
+#
+# Measured over 4,710 sampled shrine states, the agent holds:
+#
+#     sigil slots   0 in 88% of states, then 1, 2, 3, 4. Never more than 4.
+#     effects       0 in 68%, 1 in 32%. NEVER two.
+#
+# The old formulas reached zero cost at 6 slots and at 3 effects. Neither is attainable: the
+# first is beyond anything observed, and the second never happens at all. So `sigil` was worth
+# -2 at the only holding it commonly saw, `effect` was worth exactly 0 at the ONLY holding it
+# ever sees, and zero is refused. Both were dead by arithmetic rather than by preference,
+# chosen 0 times out of 25 and 60 dealings after the pool was filtered.
+#
+# Repriced against the distribution that exists. The shape is unchanged and it is the right
+# shape: giving up your last one is dear, giving up a spare is cheap. Only the scale moves,
+# from "zero at six" to "zero at four", which is the top of the observed range.
+#
+#     sigil    1 slot -> +2   2 -> +4   3 -> +6   4 -> +8
+#     effect   1 -> +3
+#
+# For reference, what those compete against at a typical shrine: `rest` +7 while healthy,
+# `note` +6 at the 12 to 13 notes agents carry, `matter` +7 to +9 when any is carried. So a
+# last sigil slot at +2 is a marginal call that usually loses, and a spare fourth at +8 beats
+# everything, which is what the fiction says it should do.
+#
+# EFFECT_STEP is a ramp the game currently never climbs: the agent is never observed holding
+# two effects, so `effect` is in practice a flat cost of 2. The ramp stays so the formula
+# remains sensible if the economy ever changes, and it is called out rather than pretended to
+# be a curve.
+SIGIL_COST_BASE, SIGIL_COST_STEP = 8, 2
+EFFECT_COST_BASE, EFFECT_COST_STEP = 4, 2
+
 
 def _gain(kind: str) -> int:
     return SHRINE_GAIN.get(kind, 0) * GAIN_PCT // 100
@@ -209,7 +244,9 @@ class SacrificeSystem(System):
         if kind == "sigil":
             sigs = game.system("sigils")
             slots = len(getattr(sigs, "slots", []) or [])
-            return _gain("sigil") - max(0, 12 - 2 * slots)     # a spare slot is cheap, the last is not
+            # A spare slot is cheap, the last is not. Zero at 4 held, the top of the
+            # observed range; it used to be zero at 6, which nothing ever reached.
+            return _gain("sigil") - max(0, SIGIL_COST_BASE - SIGIL_COST_STEP * slots)
         if kind == "note":
             know = game.system("knowledge")
             known = len(getattr(know, "known", ()) or ())
@@ -225,7 +262,10 @@ class SacrificeSystem(System):
         if kind == "effect":
             eff = game.system("effects")
             held = len(getattr(eff, "collected", ()) or ())
-            return _gain("effect") - max(0, 8 - 3 * held)
+            # The agent is never observed holding two, so this is a flat cost of 2 in
+            # practice. It used to be a cost of 5 against a gain of 5, worth exactly zero at
+            # the only holding that occurs, and zero is refused.
+            return _gain("effect") - max(0, EFFECT_COST_BASE - EFFECT_COST_STEP * held)
         return 0
 
     def resolve(self, game, offers) -> str:

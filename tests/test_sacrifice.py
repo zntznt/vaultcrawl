@@ -446,3 +446,125 @@ def test_renouncing_an_effect_removes_it_rather_than_raising():
     sac.apply(g, "effect")
     assert len(eff.collected) == 1, "the renounced effect is still collected"
     assert eff.worn != "lantern", "the renounced effect is still worn"
+
+
+# --- priced for the agent that actually arrives -----------------------------------------------
+
+# Measured over 4,710 sampled shrine states on the sample world. The agent holds 0 sigil slots
+# in 88% of them and never more than 4; it holds 0 or 1 effects and NEVER two. Every threshold
+# below is checked against this, not against a hypothetical hoarder.
+OBSERVED_MAX_SLOTS = 4
+OBSERVED_MAX_EFFECTS = 1
+
+
+def _with_slots(g, n):
+    g.system("sigils").slots = [{"ability": "Ward", "base": "Ward", "durability": 3,
+                                 "note": "x", "role": "leaf"} for _ in range(n)]
+    return g
+
+
+def _with_effects(g, n):
+    g.system("effects").collected = {f"e{i}": "n" for i in range(n)}
+    return g
+
+
+def test_an_effect_is_worth_taking_at_the_only_holding_that_ever_occurs():
+    """`effect` cost 5 against a gain of 5, so it was worth exactly zero at one held, and zero
+    is refused. One held is the ONLY state it ever sees: over 4,710 sampled shrine states the
+    agent holds 0 or 1 effects and never two, so a formula that only pays off at two or three
+    could never pay off at all. Chosen 0 times out of 60 dealings before this."""
+    g = _with_effects(_game(), 1)
+    assert g.system("sacrifice")._worth(g, "effect") > 0, (
+        "renouncing your only effect is still not worth doing, which is the state the agent "
+        "is in every single time the offer is made")
+
+
+def test_the_last_sigil_slot_is_a_marginal_call_and_a_spare_is_not():
+    """The shape was always right and only the scale was wrong. Giving up your last slot
+    should be a close call; giving up one of four should be easy."""
+    g = _game()
+    sac = g.system("sacrifice")
+    worth = [sac._worth(_with_slots(g, n), "sigil") for n in range(1, OBSERVED_MAX_SLOTS + 1)]
+    assert worth == sorted(worth), f"cost does not fall as holdings rise: {worth}"
+    assert worth[0] > 0, "the last slot is not tradeable at all, so 49% of its offers are dead"
+    assert worth[0] < 5, (
+        f"the last slot is worth {worth[0]}, which beats `note` at +6 and rivals `rest` at "
+        f"+7, so giving up your only sigil slot has become the easy choice")
+    assert worth[-1] >= 7, (
+        f"a spare fourth slot is worth {worth[-1]} and still loses to `rest` at +7, so the "
+        f"cheap end of the curve never wins either")
+
+
+def test_both_costs_reach_zero_inside_the_range_the_agent_reaches():
+    """The bug in one line. The old formulas zeroed at 6 slots and 3 effects; the agent is
+    never observed above 4 and never above 1. A cost curve calibrated beyond the observed
+    range is a curve the game never rides."""
+    from runtime.sacrifice import (EFFECT_COST_BASE, EFFECT_COST_STEP,
+                                   SIGIL_COST_BASE, SIGIL_COST_STEP)
+    sigil_zero = -(-SIGIL_COST_BASE // SIGIL_COST_STEP)
+    effect_zero = -(-EFFECT_COST_BASE // EFFECT_COST_STEP)
+    assert sigil_zero <= OBSERVED_MAX_SLOTS, (
+        f"sigil cost reaches zero at {sigil_zero} slots and the agent is never seen above "
+        f"{OBSERVED_MAX_SLOTS}")
+    assert effect_zero <= OBSERVED_MAX_EFFECTS + 1, (
+        f"effect cost reaches zero at {effect_zero} effects and the agent is never seen "
+        f"above {OBSERVED_MAX_EFFECTS}")
+
+
+def test_neither_repriced_offering_dominates_the_others():
+    """The failure mode of the fix. Making a dead offering live must not make it the only
+    offering, which would just move the monoculture rather than end it."""
+    g = _game()
+    sac = g.system("sacrifice")
+    _with_slots(g, 1)
+    _with_effects(g, 1)
+    g.player.hp = g.player.max_hp
+    know = g.system("knowledge")
+    if know is not None:
+        know.known = {f"n{i}" for i in range(13)}      # the 12 to 13 agents actually carry
+    worths = {k: sac._worth(g, k) for k in KINDS}
+    assert worths["sigil"] < worths["rest"], f"a last sigil slot outranks resting: {worths}"
+    assert worths["effect"] < worths["rest"], f"an only effect outranks resting: {worths}"
+    assert worths["note"] > 0, "note stopped being live while the other two were fixed"
+
+
+def test_the_gain_scalar_still_moves_the_repriced_offerings():
+    """Costs are unscaled, so a reprice can accidentally put an offering out of the scalar's
+    reach entirely, which is how the first sweep came back flat."""
+    import runtime.sacrifice as S
+
+    g = _with_effects(_with_slots(_game(), 1), 1)
+    sac = g.system("sacrifice")
+    saved = S.GAIN_PCT
+    try:
+        S.GAIN_PCT = 30
+        low = {k: sac._worth(g, k) for k in ("sigil", "effect")}
+        S.GAIN_PCT = 200
+        high = {k: sac._worth(g, k) for k in ("sigil", "effect")}
+    finally:
+        S.GAIN_PCT = saved
+    for k in ("sigil", "effect"):
+        assert high[k] > low[k], f"{k} is unmoved by the gain scalar: {low[k]} to {high[k]}"
+
+
+def test_giving_up_your_last_one_is_never_free():
+    """A principle the dominance test does not cover, and a mutant proved it.
+
+    Setting the effect cost to zero leaves it worth +5, still under `rest` at +7, so nothing
+    complained: it dominated nothing and every other assertion held. But a renunciation that
+    takes your ONLY effect and charges nothing for it is not a trade, whatever it ranks
+    against. The cost curve must be strictly positive at the minimum holding for both, which
+    is the whole meaning of "renounce".
+    """
+    from runtime.sacrifice import (EFFECT_COST_BASE, EFFECT_COST_STEP,
+                                   SIGIL_COST_BASE, SIGIL_COST_STEP)
+    assert SIGIL_COST_BASE - SIGIL_COST_STEP * 1 > 0, (
+        "renouncing your only sigil slot costs nothing, so the reward is free")
+    assert EFFECT_COST_BASE - EFFECT_COST_STEP * 1 > 0, (
+        "renouncing your only effect costs nothing, so the reward is free")
+
+    # And the gain must still exceed that cost, or the offering is dead again. Both halves
+    # matter: this file has now seen the formula fail in each direction.
+    g = _with_effects(_with_slots(_game(), 1), 1)
+    sac = g.system("sacrifice")
+    assert sac._worth(g, "sigil") > 0 and sac._worth(g, "effect") > 0
