@@ -418,11 +418,15 @@ def test_the_cost_is_always_paid_now_that_the_offer_is_filtered():
     sac, sigs = g.system("sacrifice"), g.system("sigils")
     sigs.slots = [{"ability": "Ward", "base": "Ward", "durability": 3,
                    "note": "x", "role": "leaf"} for _ in range(3)]
-    before_slots, before_hp = len(sigs.slots), g.player.max_hp
+    from runtime.sacrifice import SIGIL_DEF_GAIN
+
+    before_slots, before_def = len(sigs.slots), g.player.defense
     assert sac.can_renounce(g, "sigil")
     sac.apply(g, "sigil")
     assert len(sigs.slots) == before_slots - 1, "the reward was granted and the cost was not"
-    assert g.player.max_hp == before_hp + 8
+    # Was +8 max HP, which measured at exactly zero effect over 24 paired runs and is now
+    # paid in DEF instead.
+    assert g.player.defense == before_def + SIGIL_DEF_GAIN
 
 
 def test_perception_scores_the_filtered_offers():
@@ -741,3 +745,98 @@ def test_the_note_cost_base_sits_inside_the_observed_span():
     assert NOTE_COST_BASE <= hi + 1, (
         f"base {NOTE_COST_BASE} is above the maximum holding {hi}, so every agent pays and "
         f"the top of the range never gets its discount")
+
+
+# --- the five rewards, measured on one instrument -----------------------------------------
+
+# Each granted from turn 0, 24 runs paired on (agent, seed), against a control that won 10 of
+# 24 at mean floor 19.4:
+#
+#     +8 max HP     10/24  +0   identical to control on every seed
+#     +0.2 speed    10/24  +0   byte-identical: player speed is never read
+#     +2 sight      14/24  +4
+#     +1 ATK        17/24  +7
+#     +3 DEF        19/24  +9
+INERT_REWARDS = ("max_hp", "speed")
+
+
+def test_no_reward_is_paid_in_a_currency_measured_at_zero():
+    """Two of the five paid in max HP or speed, both measured at exactly no effect. The agent
+    sits at 83% average HP, so a higher ceiling changes no outcome, and player speed is not
+    merely weak but unread: `enemies_act` spends an energy budget over `self.actors` and the
+    player is not in that list."""
+    import ast
+    import inspect
+
+    from runtime.sacrifice import SacrificeSystem
+    src = inspect.getsource(SacrificeSystem.apply)
+    tree = ast.parse(src.lstrip())
+    paid = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Attribute):
+            paid.add(node.target.attr)
+    for dead in INERT_REWARDS:
+        assert dead not in paid, (
+            f"a renunciation still pays in `{dead}`, which measured at +0 wins over 24 paired "
+            f"runs, so that offering is a cost with no reward")
+
+
+def test_player_speed_is_never_consumed():
+    """The premise of the test above, asserted rather than assumed. If a turn scheduler ever
+    starts reading player speed, the reward is live again and this should be revisited."""
+    import inspect
+
+    from runtime.game import Game
+    src = inspect.getsource(Game.enemies_act)
+    assert "self.actors" in src and "self.player" not in src, (
+        "enemies_act now touches the player, so player speed may be live and `rest` could pay "
+        "in it again")
+
+
+def test_every_reward_pays_in_a_measured_currency():
+    """ATK, DEF and sight are the three that moved the outcome. Everything else is decoration
+    until it has been measured the same way."""
+    import ast
+    import inspect
+
+    from runtime.sacrifice import SacrificeSystem
+    tree = ast.parse(inspect.getsource(SacrificeSystem.apply).lstrip())
+    paid = {n.target.attr for n in ast.walk(tree)
+            if isinstance(n, ast.AugAssign) and isinstance(n.target, ast.Attribute)}
+    assert paid, "apply grants nothing at all"
+    assert paid <= {"atk", "defense", "sight_bonus"}, (
+        f"apply pays in {sorted(paid - {'atk', 'defense', 'sight_bonus'})}, which has not been "
+        f"measured on the turn-0 instrument")
+
+
+def test_the_offering_texts_quote_the_constants_they_grant():
+    """They drifted apart once already: `effect` promised +2 sight and granted nothing at
+    all, and `rest` still advertised '+1 speed' while granting 0.2 of a stat nothing reads."""
+    from runtime.sacrifice import (REST_SIGHT_GAIN, SIGHT_PER_RENUNCIATION,
+                                   SIGIL_DEF_GAIN, _OFFERINGS)
+    text = {k: t for _n, k, t in _OFFERINGS}
+    assert f"+{SIGIL_DEF_GAIN} DEF" in text["sigil"], text["sigil"]
+    assert f"+{REST_SIGHT_GAIN} sight" in text["rest"], text["rest"]
+    assert f"+{SIGHT_PER_RENUNCIATION} sight" in text["effect"], text["effect"]
+    for kind, t in text.items():
+        assert "speed" not in t, f"{kind} still advertises speed, which is never read"
+        assert "max HP" not in t, f"{kind} still advertises max HP, measured at +0"
+
+
+def test_the_rewards_sit_in_one_band():
+    """Comparable means a band, not equality. Measured values were +0, +0, +4, +7, +9; the
+    repriced set should have no zeros and no outlier twice the size of the smallest."""
+    from runtime.sacrifice import (REST_SIGHT_GAIN, SIGHT_PER_RENUNCIATION,
+                                   SIGIL_DEF_GAIN)
+    # Value per unit, from the turn-0 measurements: DEF +9 for 3, sight +4 for 2, ATK +7 for 1.
+    est = {
+        "sigil": SIGIL_DEF_GAIN * 9 / 3,
+        "note": 1 * 7 / 1,
+        "matter": 3 * 9 / 3,
+        "rest": REST_SIGHT_GAIN * 4 / 2,
+        "effect": SIGHT_PER_RENUNCIATION * 4 / 2,
+    }
+    assert min(est.values()) > 0, f"a reward is still worth nothing: {est}"
+    assert max(est.values()) <= 3 * min(est.values()), (
+        f"the strongest reward is more than three times the weakest, which is the spread "
+        f"this reprice exists to close: {est}")

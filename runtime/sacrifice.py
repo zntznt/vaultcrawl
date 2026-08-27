@@ -13,16 +13,41 @@ import random
 
 from runtime.systems import System
 
+# The five rewards, measured on one instrument: each granted from turn 0, 24 runs paired on
+# (agent, seed), against a control that won 10 of 24 at mean floor 19.4.
+#
+#     +8 max HP     10/24   +0   floor 19.4   identical to control on every seed
+#     +0.2 speed    10/24   +0   floor 19.4   byte-identical: player speed is never read
+#     +2 sight      14/24   +4   floor 21.4
+#     +1 ATK        17/24   +7   floor 22.0
+#     +3 DEF        19/24   +9   floor 23.8
+#
+# TWO OF THE FIVE REWARDS WERE WORTH NOTHING. `sigil` paid +8 max HP and `rest` paid +5 max HP
+# plus +0.2 speed, and the agent sits at 83% average HP, so a slightly higher ceiling changes
+# no outcome; speed is worse than weak, it is inert, because `enemies_act` spends an energy
+# budget over `self.actors` and the player is not in that list. `weather.py` also resets
+# `player.speed` to 1.0 outright.
+#
+# The gains in SHRINE_GAIN were close to inversely ordered against this: `effect` was priced
+# lowest at 5 while being the third strongest, `sigil` at 8 while being worth zero.
+#
+# Repriced onto the three currencies that measurably work, into a +4 to +9 band. Magnitudes
+# marked INTERPOLATED were not measured at that exact value; the stat was measured at a
+# neighbouring magnitude and scaled linearly, which is an assumption the combined arm below
+# tests but does not isolate.
 _OFFERINGS = [
-    ("Renounce a Sigil Slot", "sigil", "Lose 1 max sigil capacity — gain +8 max HP"),
-    ("Renounce a Learned Note", "note", "Unlearn a note — gain permanent +1 ATK"),
-    ("Renounce Matter", "matter", "Lose all carried matter — gain permanent +3 DEF"),
-    ("Renounce Rest", "rest", "Can no longer camp — gain +5 HP and +1 speed"),
-    ("Renounce an Effect", "effect", "Lose one effect, gain permanent +2 sight radius"),
+    ("Renounce a Sigil Slot", "sigil", "Lose 1 max sigil capacity, gain permanent +2 DEF"),
+    ("Renounce a Learned Note", "note", "Unlearn a note, gain permanent +1 ATK"),
+    ("Renounce Matter", "matter", "Lose all carried matter, gain permanent +3 DEF"),
+    ("Renounce Rest", "rest", "Can no longer camp, gain permanent +2 sight radius"),
+    ("Renounce an Effect", "effect", "Lose one effect, gain permanent +3 sight radius"),
 ]
 
+SIGIL_DEF_GAIN = 2          # INTERPOLATED from +3 DEF at +9
+REST_SIGHT_GAIN = 2         # measured: +2 sight at +4
+
 # Named, because the offering text quotes it and the two drifted apart once already.
-SIGHT_PER_RENUNCIATION = 2
+SIGHT_PER_RENUNCIATION = 3  # INTERPOLATED from +2 sight at +4
 
 # What each renunciation is WORTH, before the cost of what it takes from you. These were five
 # literals inside `_worth` chosen to be state-driven rather than measured, which was said
@@ -378,8 +403,8 @@ class SacrificeSystem(System):
             sigs = game.system("sigils")
             if sigs and sigs.slots:
                 sigs.slots.pop()
-            game.player.max_hp += 8
-            game.player.hp += 8
+            # Was +8 max HP, measured at exactly zero effect over 24 paired runs.
+            game.player.defense += SIGIL_DEF_GAIN
         elif choice == "note":
             know = game.system("knowledge")
             if know and know.known:
@@ -397,14 +422,12 @@ class SacrificeSystem(System):
                     bag.comp = {}
             game.player.defense += 3
         elif choice == "rest":
-            from runtime.game import Game
             game._resting = False
             game._consecutive_rest = 0
             game._cant_camp = True
-            game.player.max_hp += 5
-            game.player.hp += 5
-            game.player.speed += 0.2
-            game.player._base_speed = game.player.speed
+            # Was +5 max HP and +0.2 speed. Max HP measured at zero effect; player speed is
+            # never read at all, and `weather.py` resets it to 1.0 regardless.
+            self.sight_bonus += REST_SIGHT_GAIN
         elif choice == "effect":
             eff = game.system("effects")
             if eff and eff.collected:
