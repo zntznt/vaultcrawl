@@ -4511,3 +4511,71 @@ same steps. That is the price of the shrine becoming a trade rather than a gift,
 not be reported as noise even though the aggregate cannot distinguish it from noise.
 
 **The remaining work is `note`, and it is a one-line analogue of what was just done twice.**
+
+### Pricing `note`: the concentration finally breaks
+
+`note` cost `max(0, 10 - known)` and agents carry **11 to 15** notes, so the cost was zero
+across the entire observed range and the offering a constant +6. Once `rest` left the pool that
+made it take 54% of all choices and win 85% of its dealings. Third constant cost curve in this
+one function.
+
+It is the third and it is **not the same fix**. `sigil` and `effect` were repriced by moving
+their zero point into a range the agent occupies; `known` has no such room, spanning only 11 to
+15 across 4,807 sampled states. Any curve over it is nearly flat, and repricing cannot
+manufacture discrimination the input does not have. The base is instead placed **inside** the
+span, turning the five values the game actually produces into five answers:
+
+| known | 11 | 12 | 13 | 14 | 15 |
+|---|---|---|---|---|---|
+| worth | +1 | +2 | +3 | +4 | +5 |
+
+The underlying asymmetry is recorded rather than fixed: the player's base attack is **4**, so
+`note`'s +1 ATK is a permanent **+25% damage** against a cost of one of thirteen interchangeable
+notes. That is by some distance the strongest reward for the cheapest price in the pool, against
++8 max HP on a base of 100, or +2 sight. Raising the cost brings the trade into line; making the
+five rewards comparable is a design pass this is not.
+
+### 138 runs on 23 shared seeds
+
+| offering, chosen/dealt | original | rest-priced | note-priced |
+|---|---|---|---|
+| `sigil` | 0/80 = 0% | 6/19 = 32% | 6/17 = 35% |
+| `note` | 13/62 = 21% | 63/74 = **85%** | 39/81 = 48% |
+| `matter` | 73/94 = 78% | 25/42 = 60% | 28/39 = 72% |
+| `rest` | 41/81 = 51% | 0/0 | 0/0 |
+| `effect` | 0/70 = 0% | 22/62 = 35% | 42/60 = 70% |
+| **top offering's share of takes** | **matter 57%** | **note 54%** | **effect 37%** |
+
+**No offering is above 37% of takes for the first time.** Four are live, win-when-dealt spans 35
+to 72%, and the `diplomacy` route reopened. Two offerings that were dead at 0 of 80 and 0 of 70
+dealings now take a third of their chances.
+
+Outcomes did not move at all: wins 77 against 77, **p = 1.000**, with 9 runs flipping each way,
+floor sd 8.6 in both arms, IQR identical. Across the whole shrine tranche wins drifted 84 to 77
+(p = 0.12), which is not significant but is a consistent direction with a plain cause: two free
+permanent rewards were removed, and deaths rose 49 to 55.
+
+**23 of 24 seeds.** Seed 7 holds two runs above 10,000 turns that land on one worker, so the
+chunk deterministically exceeds the harness window; every arm is restricted to the same 23 seeds
+so all comparisons stay paired.
+
+### What the four reprices amount to
+
+Every one of the five `_worth` cost curves was calibrated against a holdings range the agent
+does not occupy. `sigil` and `effect` zeroed above it and were dead. `rest` and `note` zeroed
+below it and were constants, one of them free outright. Only `matter` was priced in range, and
+it is the one that never needed touching.
+
+The general form is worth keeping: **a cost curve is only a curve where its input varies.**
+Everywhere else it is a constant wearing a formula, and the way to tell is to measure the input
+distribution before reading the formula, not after.
+
+### A measurement hazard that nearly produced a false result
+
+Four mutants of `NOTE_COST_BASE` (10, 14, 18, 22) are all two characters, the same length as
+16. `cp` restoring the file left byte-size unchanged and the mtime granularity collided, so
+Python reused the cached bytecode and one whole mutant round reported the previous arm's
+results. It surfaced only because a restored, verified-correct file still failed its tests.
+**Clear `__pycache__` between mutants when the mutation preserves file length.** No earlier
+result in this session is affected, since those mutations all changed line lengths, but the
+check is cheap and the failure is silent.
