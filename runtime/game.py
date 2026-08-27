@@ -227,6 +227,14 @@ class Game:
         self._aspect: str = ""              # region-granted temporary trait
         self._aspect_turns: int = 0         # turns spent in current region
         self._cant_camp: bool = False       # true if Renounce Rest was chosen
+        # HP recovered specifically through TOWN rest, cumulative for the run. This is the
+        # thing `Renounce Rest` actually takes away: `_cant_camp` gates the `on_town` branch
+        # only, so ordinary out-of-town resting survives the renunciation. Priced against
+        # this rather than against current HP, because how much a run has leaned on camping
+        # is what makes losing it expensive, and current HP says nothing about that.
+        self._town_rest_hp: int = 0
+        # All HP recovered by resting, town or not.
+        self._rest_hp: int = 0
         # True only when a human front end is driving and will answer a modal prompt.
         # `runtime/play.py` sets it. Systems that hand a choice to the player must
         # resolve that choice themselves when this is False, or the choice is
@@ -2565,6 +2573,8 @@ class Game:
                 heal = 3 if self._resting else 2
                 if self._aspect and "Hallowed" in self._aspect:
                     heal *= 2
+                self._town_rest_hp += max(0, heal)
+            self._rest_hp += max(0, heal)
             heal_body(self.player, heal)
             tag = f"+{heal} HP"
             self.log(f"You rest ({tag}).")

@@ -173,6 +173,15 @@ def test_each_offering_can_win_the_choice_from_some_state(kind):
     if eff is not None:
         eff.collected = {}
     g.player.hp = g.player.max_hp
+    g._town_rest_hp = 0
+    # Every offering now needs the agent to actually HOLD the thing before it is worth
+    # anything, so each case grants the minimum holding as well as the cheap state.
+    if kind == "matter" and salv is not None:
+        salv.inventory(g).add({"iron": 1})            # cheap when nearly broke, not when none
+    if kind == "rest":
+        g._town_rest_hp = 25
+    if kind == "effect" and eff is not None:
+        eff.collected = {"e0": "n"}
     if kind == "sigil" and sigs is not None:
         sigs.slots = [{"ability": "Ward", "base": "Ward", "durability": 3,
                        "note": "x", "role": "leaf"} for _ in range(6)]
@@ -200,6 +209,7 @@ def test_rejecting_stays_possible():
     if salv is not None:
         salv.inventory(g).add({"iron": 40})
     g.player.hp = 1
+    g._town_rest_hp = 0                       # camping has done nothing, so it is not on offer
     offers = [("Renounce a Sigil Slot", "sigil", ""), ("Renounce Matter", "matter", ""),
               ("Renounce Rest", "rest", "")]
     before = (g.player.max_hp, g.player.defense)
@@ -344,16 +354,20 @@ def _shrine_at_player(g, offers):
     return sac, pos
 
 
-def test_an_agent_holding_nothing_can_renounce_nothing_but_rest():
-    """`rest` is the odd one: it takes a capability rather than an object, so it stays
-    payable as long as the capability is still there."""
+def test_an_agent_holding_nothing_can_renounce_nothing_at_all():
+    """`rest` used to be the exception here, on the reasoning that it takes a capability
+    rather than an object and so stays payable while the capability exists. That reasoning
+    was right and the premise was wrong: in classic descent the capability does not exist,
+    because `_cant_camp` gates only the `on_town` branch and classic is never on the surface.
+    Town-rest healing is 0 in 100% of 4,710 sampled shrine states."""
     g = _strip(_game())
     sac = g.system("sacrifice")
-    for kind in ("sigil", "note", "matter", "effect"):
+    for kind in KINDS:
         assert not sac.can_renounce(g, kind), (
             f"the shrine would offer to take {kind} from an agent that has none, and `apply` "
             f"then skips the cost and grants the reward anyway")
-    assert sac.can_renounce(g, "rest")
+    g._town_rest_hp = 40
+    assert sac.can_renounce(g, "rest"), "reliance on camping must make it renounceable"
     g._cant_camp = True
     assert not sac.can_renounce(g, "rest"), "camping cannot be renounced twice"
 
@@ -361,6 +375,7 @@ def test_an_agent_holding_nothing_can_renounce_nothing_but_rest():
 def test_unpayable_offers_are_dropped_from_the_draw():
     g = _strip(_game())
     sac = g.system("sacrifice")
+    g._town_rest_hp = 40                      # camping has paid off, so it can be given up
     picks = [("s", "sigil", ""), ("r", "rest", ""), ("e", "effect", "")]
     live = sac.offers_for(g, picks)
     assert [o[1] for o in live] == ["rest"], (
@@ -519,6 +534,7 @@ def test_neither_repriced_offering_dominates_the_others():
     _with_slots(g, 1)
     _with_effects(g, 1)
     g.player.hp = g.player.max_hp
+    g._town_rest_hp = 25                              # camping has paid off a little
     know = g.system("knowledge")
     if know is not None:
         know.known = {f"n{i}" for i in range(13)}      # the 12 to 13 agents actually carry
@@ -568,3 +584,91 @@ def test_giving_up_your_last_one_is_never_free():
     g = _with_effects(_with_slots(_game(), 1), 1)
     sac = g.system("sacrifice")
     assert sac._worth(g, "sigil") > 0 and sac._worth(g, "effect") > 0
+
+
+# --- rest, which had no cost at all in the mode everything is measured in ----------------------
+
+def test_rest_cannot_be_renounced_when_camping_does_nothing():
+    """The finding, stated as a test. `_cant_camp` gates the `on_town` branch of `Game.rest`
+    and nothing else; `on_town` needs `_on_surface()`; and `_on_surface()` is
+    `self.sandbox and self._dungeon is None`. Classic descent is never on the surface, so
+    renouncing rest there took away exactly nothing and granted +5 max HP, +5 HP and +0.2
+    speed permanently.
+
+    Measured over 4,710 sampled shrine states: town-rest healing is 0 in **100%** of them,
+    while ordinary out-of-town resting had healed a median of 485 HP by the time a shrine was
+    reached. The renunciation protects none of that. It won 81% of the times it was dealt
+    because it genuinely was the best trade, being free.
+    """
+    g = _game()
+    assert not g.sandbox, "premise: this is classic descent"
+    assert getattr(g, "_town_rest_hp", 0) == 0
+    assert not g.system("sacrifice").can_renounce(g, "rest"), (
+        "rest is still offerable in a mode where camping does nothing, so the shrine is "
+        "handing out a free permanent buff")
+
+
+def test_rest_becomes_renounceable_once_camping_has_paid_off():
+    """The other half: this is a gate on reliance, not a ban."""
+    g = _game()
+    g._town_rest_hp = 40
+    assert g.system("sacrifice").can_renounce(g, "rest")
+
+
+def test_the_rest_cost_rises_with_how_much_camping_was_used():
+    """It was `0 if hp_pct >= 70 else 10`, and 99% of sampled shrine states are above 70%, so
+    the cost was a constant zero. Current HP says nothing about how much a run has leaned on
+    camping, which is the thing being given up."""
+    g = _game()
+    sac = g.system("sacrifice")
+    worth = []
+    for used in (25, 100, 300):
+        g._town_rest_hp = used
+        worth.append(sac._worth(g, "rest"))
+    assert worth[0] > worth[1] > worth[2], f"cost does not rise with reliance: {worth}"
+    assert worth[0] > 0, "a run that barely camped cannot trade it away at all"
+    assert worth[-1] < 0, "a run that camped heavily still finds it free"
+
+
+def test_the_rest_cost_does_not_read_current_hp():
+    """The inert term must be gone, not merely outweighed."""
+    g = _game()
+    sac = g.system("sacrifice")
+    g._town_rest_hp = 60
+    g.player.hp = g.player.max_hp
+    healthy = sac._worth(g, "rest")
+    g.player.hp = max(1, g.player.max_hp // 10)
+    hurt = sac._worth(g, "rest")
+    assert healthy == hurt, (
+        f"rest is worth {healthy} healthy and {hurt} hurt, so it is still priced on an "
+        f"instantaneous HP reading that is above 70% in 99% of shrine states")
+
+
+def test_the_rest_cost_is_capped():
+    """A cost that grows without bound turns a long run's shrine into a guaranteed refusal.
+
+    Asserted against an ABSOLUTE bound, not against `REST_COST_CAP`. The first version of
+    this compared the result to the constant, so raising the constant raised the bar with it
+    and the check passed on a build with no cap at all. A test whose expectation moves with
+    the thing it is testing is not a test, which is the second time that shape has appeared
+    in this file.
+    """
+    from runtime.sacrifice import SHRINE_GAIN
+
+    g = _game()
+    g._town_rest_hp = 10 ** 6
+    worst = g.system("sacrifice")._worth(g, "rest")
+    assert worst >= -2 * SHRINE_GAIN["rest"], (
+        f"a heavily-camped run prices rest at {worst}, which is unbounded in practice: no "
+        f"amount of reliance should make the offer worse than twice its own gain")
+
+
+def test_town_rest_healing_is_actually_counted():
+    """The whole reprice hangs on this counter, and nothing incremented it before."""
+    import inspect
+
+    from runtime.game import Game
+    src = inspect.getsource(Game.wait)      # the rest/camp branch lives in `wait`
+    assert "_town_rest_hp" in src, (
+        "Game.rest no longer records town-rest healing, so the rest cost reads a counter "
+        "that is always zero and the offering is a free buff again")

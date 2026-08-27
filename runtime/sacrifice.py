@@ -71,6 +71,34 @@ GAIN_PCT = int(os.environ.get("VC_SHRINE_GAIN_PCT", "100"))
 SIGIL_COST_BASE, SIGIL_COST_STEP = 8, 2
 EFFECT_COST_BASE, EFFECT_COST_STEP = 4, 2
 
+# `rest` had no holdings axis at all: its cost was `0 if hp_pct >= 70 else 10`, and the agent
+# is above 70% HP in 99% of sampled shrine states, so the cost was a constant zero and the
+# offering a constant +7. It won 81% of the times it was dealt and was dealt more than
+# anything else, which read as an imbalance to tune.
+#
+# It was not a tuning problem. `_cant_camp` gates the `on_town` branch of `Game.rest` and
+# nothing else, `on_town` requires `_on_surface()`, and `_on_surface()` is
+# `self.sandbox and self._dungeon is None`. **Classic descent is never on the surface**, so in
+# the mode every measurement here runs in, renouncing rest takes away exactly nothing and
+# grants +5 max HP, +5 HP and +0.2 speed permanently. A free buff, correctly identified as the
+# best trade on the table by a `_worth` that was reporting the truth.
+#
+# Measured over 4,710 sampled shrine states: town rest healing is **0 in 100% of them**, while
+# ordinary out-of-town resting has healed a median of 485 HP by the time a shrine is reached.
+# The renunciation protects none of that.
+#
+# So `rest` is priced the same way as the other four: you can only renounce camping if camping
+# has actually been doing something for you. In classic that is never, and the offering
+# correctly leaves the pool. Where it does occur, the cost rises with how much the run has
+# leaned on it.
+#
+# REST_COST_PER is UNMEASURED and deliberately flagged as such. Its SHAPE is evidenced, being
+# the same "more reliance costs more" principle as the other four, but its scale cannot be
+# calibrated from classic runs because the quantity is identically zero there. Sandbox has
+# never been instrumented for this. Do not quote a balance claim from it until it has been.
+REST_COST_PER = 25          # one point of cost per this much town-rest HP
+REST_COST_CAP = 14          # never worse than twice the gain
+
 
 def _gain(kind: str) -> int:
     return SHRINE_GAIN.get(kind, 0) * GAIN_PCT // 100
@@ -208,7 +236,11 @@ class SacrificeSystem(System):
             salv = game.system("salvage")
             return bool(salv) and salv.inventory(game).total() >= 1
         if kind == "rest":
-            return not getattr(game, "_cant_camp", False)
+            # Camping must have been worth something before it can be given up. In classic
+            # descent `on_town` is unreachable, so this is False on every floor and `rest`
+            # leaves the pool rather than acting as a free permanent buff.
+            return (not getattr(game, "_cant_camp", False)
+                    and getattr(game, "_town_rest_hp", 0) > 0)
         if kind == "effect":
             eff = game.system("effects")
             return len(getattr(eff, "collected", ()) or ()) >= 1
@@ -240,7 +272,15 @@ class SacrificeSystem(System):
 
         Returns gain minus cost. Non-positive means walk away, and walking away stays
         reachable: a shrine offering nothing this agent wants crumbles unspent.
+
+        A thing you do not hold is worth nothing to renounce, and that check lives HERE
+        rather than only in `offers_for`. Keeping them apart was a split brain: `resolve`
+        scores whatever list it is handed, so an offering that slipped past the presentation
+        filter was still priced as if the agent owned it, and `apply` grants its reward
+        whether or not the cost landed. One source of truth closes that for every caller.
         """
+        if not self.can_renounce(game, kind):
+            return 0
         if kind == "sigil":
             sigs = game.system("sigils")
             slots = len(getattr(sigs, "slots", []) or [])
@@ -256,9 +296,11 @@ class SacrificeSystem(System):
             held = salv.inventory(game).total() if salv else 0
             return _gain("matter") - min(9, held)               # free when broke, dear when rich
         if kind == "rest":
-            # Camping is worth most to an agent that is hurt and has been using it.
-            hp_pct = game.player.hp * 100 // max(1, getattr(game.player, "max_hp", 1))
-            return _gain("rest") - (0 if hp_pct >= 70 else 10)
+            # Priced on what the run has actually recovered by camping, not on current HP.
+            # The HP form was inert: 99% of sampled shrine states are above 70%, so it was a
+            # constant zero cost and `rest` a constant +7.
+            used = getattr(game, "_town_rest_hp", 0)
+            return _gain("rest") - min(REST_COST_CAP, used // REST_COST_PER)
         if kind == "effect":
             eff = game.system("effects")
             held = len(getattr(eff, "collected", ()) or ())
