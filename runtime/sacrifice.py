@@ -99,6 +99,28 @@ EFFECT_COST_BASE, EFFECT_COST_STEP = 4, 2
 REST_COST_PER = 25          # one point of cost per this much town-rest HP
 REST_COST_CAP = 14          # never worse than twice the gain
 
+# `note` cost `max(0, 10 - known)` and agents carry 11 to 15 notes, so the cost was zero
+# across the ENTIRE observed range and the offering a constant +6. That is the same shape as
+# `rest`'s HP term, and it made `note` take 57% of all choices and win 87% of its dealings
+# once `rest` left the pool: the third constant cost curve found in this one function.
+#
+# It is the third and it is not the same fix, because `known` barely varies. Measured over
+# 4,807 sampled shrine states the span is 11 to 15, median 13, so ANY curve over it is nearly
+# flat and repricing cannot manufacture discrimination the input does not have. The base is
+# instead placed INSIDE that span, which turns the five observed values into five different
+# answers, +5 down to +1, where before they were one answer.
+#
+#     known    11   12   13   14   15
+#     worth    +1   +2   +3   +4   +5
+#
+# The underlying asymmetry, stated because the number is compensating for it rather than
+# fixing it: the player's base attack is 4, so `note`'s +1 ATK is a permanent +25% damage, and
+# its cost is one of thirteen interchangeable notes. That is by some distance the strongest
+# reward for the cheapest price in the pool, against +8 max HP on a base of 100 or +2 sight.
+# Raising the cost brings the trade into line with the others; it does not make the five
+# rewards comparable, and doing that is a design pass this is not.
+NOTE_COST_BASE = 16
+
 
 def _gain(kind: str) -> int:
     return SHRINE_GAIN.get(kind, 0) * GAIN_PCT // 100
@@ -290,7 +312,9 @@ class SacrificeSystem(System):
         if kind == "note":
             know = game.system("knowledge")
             known = len(getattr(know, "known", ()) or ())
-            return _gain("note") - max(0, 10 - known)
+            # Base sits inside the observed 11-to-15 span, so the five values the game
+            # actually produces give five different answers instead of one.
+            return _gain("note") - max(0, NOTE_COST_BASE - known)
         if kind == "matter":
             salv = game.system("salvage")
             held = salv.inventory(game).total() if salv else 0

@@ -672,3 +672,72 @@ def test_town_rest_healing_is_actually_counted():
     assert "_town_rest_hp" in src, (
         "Game.rest no longer records town-rest healing, so the rest cost reads a counter "
         "that is always zero and the offering is a free buff again")
+
+
+# --- note, the third constant cost curve in this function -------------------------------------
+
+# Measured over 4,807 sampled shrine states: known notes span 11 to 15, median 13.
+OBSERVED_KNOWN = (11, 15)
+
+
+def _with_notes(g, n):
+    g.system("knowledge").known = {f"n{i}" for i in range(n)}
+    return g
+
+
+def test_note_is_not_a_constant_across_the_range_the_agent_occupies():
+    """It cost `max(0, 10 - known)` and agents carry 11 to 15, so the cost was zero across
+    the ENTIRE observed range and the offering a constant +6. Once `rest` left the pool that
+    made `note` take 57% of all choices and win 87% of its dealings."""
+    g = _game()
+    sac = g.system("sacrifice")
+    lo, hi = OBSERVED_KNOWN
+    worth = [sac._worth(_with_notes(g, n), "note") for n in range(lo, hi + 1)]
+    assert len(set(worth)) > 1, (
+        f"note is worth {worth[0]} at every holding the agent ever has, so the cost cannot "
+        f"discriminate and the offering is a constant")
+    assert worth == sorted(worth), f"a spare note should be cheaper, not dearer: {worth}"
+
+
+def test_note_stays_live_at_the_bottom_of_the_range():
+    """The failure this file has already seen twice: fixing a constant by pushing the
+    offering out of reach. `sigil` and `effect` were dead at 0 of 88 and 0 of 75 dealings
+    because their curves zeroed outside the occupied range, and overcorrecting `note` the
+    other way would repeat it."""
+    g = _game()
+    lo, _hi = OBSERVED_KNOWN
+    assert g.system("sacrifice")._worth(_with_notes(g, lo), "note") > 0, (
+        "an agent at the bottom of the observed range cannot trade a note at all")
+
+
+def test_note_no_longer_dominates_the_pool():
+    """At the median holding it should sit among the others, not above them."""
+    g = _game()
+    sac = g.system("sacrifice")
+    _with_notes(g, 13)                                   # the observed median
+    _with_effects(g, 1)
+    _with_slots(g, 1)
+    salv = g.system("salvage")
+    if salv is not None:
+        salv.inventory(g).comp.clear()
+        salv.inventory(g).add({"iron": 1})
+    worths = {k: sac._worth(g, k) for k in KINDS if sac.can_renounce(g, k)}
+    assert worths["note"] <= max(worths.values()), worths
+    assert worths["note"] > 0, "note has been priced out of the pool entirely"
+    assert worths["note"] < 6, (
+        f"note is still worth {worths['note']} at the median holding, which is the constant "
+        f"it used to be")
+
+
+def test_the_note_cost_base_sits_inside_the_observed_span():
+    """The whole point, and the reason this fix differs from the other three. `known` spans
+    only 11 to 15, so a base outside that range makes the curve flat again whichever side it
+    falls on: below it, the cost is always zero; above it, always positive and rising."""
+    from runtime.sacrifice import NOTE_COST_BASE
+    lo, hi = OBSERVED_KNOWN
+    assert lo < NOTE_COST_BASE, (
+        f"base {NOTE_COST_BASE} is at or below the minimum holding {lo}, so the cost is zero "
+        f"everywhere and note is a constant again")
+    assert NOTE_COST_BASE <= hi + 1, (
+        f"base {NOTE_COST_BASE} is above the maximum holding {hi}, so every agent pays and "
+        f"the top of the range never gets its discount")
