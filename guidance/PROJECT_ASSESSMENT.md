@@ -4579,3 +4579,61 @@ results. It surfaced only because a restored, verified-correct file still failed
 **Clear `__pycache__` between mutants when the mutation preserves file length.** No earlier
 result in this session is affected, since those mutations all changed line lengths, but the
 check is cheap and the failure is silent.
+
+## Making the five rewards comparable, and what that did not do
+
+Each reward granted from turn 0, 24 runs paired on `(agent, seed)`, against a control that won
+10 of 24 at mean floor 19.4:
+
+| reward | wins/24 | vs control | mean floor | per seed |
+|---|---|---|---|---|
+| control | 10 | +0 | 19.4 | [2, 3, 4, 1] |
+| **+8 max HP** | **10** | **+0** | 19.4 | [2, 3, 4, 1] |
+| **+0.2 speed** | **10** | **+0** | 19.4 | byte-identical |
+| +2 sight | 14 | +4 | 21.4 | [4, 4, 4, 2] |
+| +1 ATK | 17 | +7 | 22.0 | [4, 4, 3, 6] |
+| +3 DEF | 19 | +9 | 23.8 | [4, 6, 5, 4] |
+
+**Two of the five rewards were worth nothing.** `sigil` paid +8 max HP and `rest` paid +5 max HP
+plus +0.2 speed. The agent sits at 83% average HP, so a higher ceiling changes no outcome, and
++8 max HP scored identically to the control on every single seed. Speed is worse than weak, it
+is **unread**: `enemies_act` spends an energy budget over `self.actors` and the player is not in
+that list, so player speed is a stored attribute nothing consumes; `weather.py` also resets it
+to 1.0 outright. The offering text advertised "+1 speed" while `apply` granted 0.2 of it.
+
+The `SHRINE_GAIN` weights were close to **inversely ordered** against the measured value:
+`effect` priced lowest at 5 while being the third strongest, `sigil` at 8 while being worth
+zero. The costs had been carrying the whole balance.
+
+Repriced onto the three currencies that move the outcome, into a +4 to +9 band: `sigil` pays
++2 DEF, `rest` pays +2 sight, `effect` pays +3 sight, `note` and `matter` keep +1 ATK and +3 DEF.
+
+### The result: nothing, and the reason matters more than the result
+
+138 runs on the same 23 seeds: **77 wins, identical to the arm before it**, same floor sd 8.6,
+same IQR, same label count, and a choice mix that barely moves (`effect` 44 against 42, `note`
+39 against 39, `matter` 27 against 28, `sigil` 6 against 6).
+
+The choice mix was never going to move: the agent picks on `SHRINE_GAIN`, which this change did
+not touch. It changes what `apply` hands over, not what the agent wants. But the *outcome* was
+expected to move, and it did not.
+
+**The turn-0 instrument measures a reward's ceiling, not its in-situ value.** A shrine fires
+about **once per run** and only past half depth, so a grant has roughly half a run to act rather
+than all of it, and only two of the five offerings changed at all. +3 DEF from turn 0 is +9 wins
+in 24; the same currency handed over once at floor 13 or later is worth so much less that a
+138-run arm cannot see it. That is a caveat on the method, not a defect in it: granting from
+turn 0 is the right way to rank currencies against each other, and the wrong way to predict what
+one late grant will do.
+
+So the honest claim is narrow and worth making anyway: **no renunciation is now a cost with no
+reward**, which two of five were. Whether that is worth anything to a run is below the
+resolution of this instrument.
+
+### Where the shrine tranche ended up
+
+Across the whole sequence, 84 to 77 wins (p = 0.17), deaths 49 to 55, floor sd 8.8 to 8.6, and
+the top offering's share of takes from **57% to 38%** with all four classic-reachable offerings
+live. The win drift is not significant and has a plain cause: two free permanent rewards were
+removed and one dead-in-classic offering left the pool. The concentration result is the one that
+holds up.
