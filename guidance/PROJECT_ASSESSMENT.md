@@ -4454,3 +4454,60 @@ tension: a richer pool and a meaningful refusal pull opposite ways.
 anything else, because it is the only offering that requires no possessions: it takes a
 capability, so it is always payable, and it is worth +7 whenever the agent is above 70% HP,
 which is nearly always. That is the next thing to price, and it is not touched here.
+
+### Pricing `rest`: it had no cost at all, and fixing that moved the monoculture
+
+`rest` won 81% of the times it was dealt and was dealt more often than anything else. That
+read as an imbalance to tune. It was not one.
+
+`_cant_camp` gates the `on_town` branch of `Game.wait` and nothing else. `on_town` requires
+`_on_surface()`. `_on_surface()` is `self.sandbox and self._dungeon is None`. **Classic descent
+is never on the surface**, so in the mode every measurement in this project runs in, renouncing
+rest takes away exactly nothing and grants +5 max HP, +5 HP and +0.2 speed permanently. It won
+because it was free, and a `_worth` reporting +7 was telling the truth.
+
+Measured over 4,710 sampled shrine states: **town-rest healing is 0 in 100% of them**, while
+ordinary out-of-town resting had healed a median of **485 HP** by the time a shrine was reached.
+The renunciation protects none of that.
+
+So `rest` is gated like the other four, on camping having actually paid off, and its cost stops
+reading current HP (inert at 99% of shrine states above 70%) and reads reliance instead.
+`REST_COST_PER` is flagged UNMEASURED in the source: its shape is evidenced, its scale cannot
+be calibrated from classic runs because the quantity is identically zero there.
+
+### 144 runs paired on seed, and an honest problem with the result
+
+| | original | repriced (sigil/effect) | rest-priced |
+|---|---|---|---|
+| wins | 88/144 | 85/144 | 81/144 (p = 0.12) |
+| deaths | 51 | 55 | 58 |
+| floor sd | 8.7 | 8.5 | 8.5 |
+| uptake | 99% | 99% | 97% |
+| **top offering's share of takes** | matter 53% | rest 44% | **note 57%** |
+
+| offering | original | repriced | rest-priced |
+|---|---|---|---|
+| `note` | 13/73 | 45/77 | **73/84 = 87%** |
+| `matter` | 73/94 | 19/40 | 25/42 |
+| `effect` | 0/75 | 8/56 | 22/64 |
+| `sigil` | 0/88 | 3/25 | 7/21 |
+| `rest` | 53/93 | 58/72 | **0/0, never dealt** |
+
+The gate works exactly as intended: `rest` leaves the classic pool entirely, and the other four
+absorb its share. But **the concentration did not go away, it moved**: `note` now takes 57% of
+choices and wins 87% of its dealings, which is worse than the 44% and 81% that made `rest` worth
+investigating in the first place.
+
+`note` costs `max(0, 10 - known)` and agents carry 12 to 13 notes, so its cost is a constant
+zero and it is a constant +6. **That is the identical defect, for the third time in this one
+function**: `sigil` and `effect` were calibrated below the range the agent occupies, `rest` and
+`note` above it. Four of the five cost curves were priced for an agent that does not exist, and
+three are now fixed.
+
+The win rate drifted 88 to 85 to 81 over the two changes. No single step is significant
+(p = 0.12 for the pair together) and the intervals all overlap, but the direction is consistent
+and it has a plain cause: two free permanent rewards were removed. Deaths rose 51 to 58 over the
+same steps. That is the price of the shrine becoming a trade rather than a gift, and it should
+not be reported as noise even though the aggregate cannot distinguish it from noise.
+
+**The remaining work is `note`, and it is a one-line analogue of what was just done twice.**
