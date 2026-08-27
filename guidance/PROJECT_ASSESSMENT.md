@@ -4388,3 +4388,69 @@ One test also had to change, and the reason is the finding rather than an inconv
 `test_a_shrine_underfoot_outranks_the_weather` passed on a fresh game only because the shrine
 offered to take matter from an agent holding none and granted +3 DEF for it. The assertion was
 reading a free reward and calling it the shrine working.
+
+### Pricing `sigil` and `effect` for the agent that actually arrives
+
+Both were dead by arithmetic rather than preference. The gain sweep came back flat across a
+2.7x range for exactly this reason: scaling a gain cannot rescue a cost written to the wrong
+scale.
+
+Measured over **4,710 sampled shrine states**, the agent holds:
+
+| | 0 | 1 | 2 | 3 | 4 | more |
+|---|---|---|---|---|---|---|
+| sigil slots | 88% | 5.6% | 1.1% | 2.0% | 2.8% | never |
+| effects | 68% | 32% | **never** | never | never | never |
+
+The old formulas reached zero cost at **6 slots** and **3 effects**. The first is beyond
+anything observed; the second never happens at all. So `sigil` was worth -2 at the holding it
+commonly saw, and `effect` was worth exactly **0** at the only holding it ever sees, which is
+refused. Dead by one point, for the life of the project.
+
+The shape was always right and only the scale was wrong: giving up your last one is dear,
+giving up a spare is cheap. The zero point moves from six to four, the top of the observed
+range.
+
+| | 1 held | 2 | 3 | 4 |
+|---|---|---|---|---|
+| `sigil` | +2 | +4 | +6 | +8 |
+| `effect` | +3 | (never occurs) | | |
+
+Against `rest` at +7 while healthy and `note` at +6, a last sigil slot at +2 is a marginal call
+that usually loses and a spare fourth at +8 beats everything, which is what the fiction says it
+should do.
+
+### 144 runs paired on seed: all five offerings are live for the first time
+
+| offering | win rate when dealt, filtered | repriced |
+|---|---|---|
+| `rest` | 59/71 = 83% | 58/72 = 81% |
+| `note` | 50/78 = 64% | 45/77 = 58% |
+| `matter` | 18/40 = 45% | 19/40 = 48% |
+| **`effect`** | **0/60 = 0%** | **8/56 = 14%** |
+| **`sigil`** | **0/25 = 0%** | **3/25 = 12%** |
+
+Share of takes went from `matter` 53% (before the filter) to `rest` 44% (now), with all five
+represented. **No offering above 44%**, against 53% before.
+
+`sigil`'s low absolute count, 3 takes, is a dealing-frequency fact rather than a pricing one:
+it is only offerable when the agent holds a slot, which is 12% of states, so it is dealt 25
+times where `rest` is dealt 72. Its 12% win-when-dealt is in the same band as `matter`'s 48%
+being the third choice, and appropriate for the most severe trade in the pool.
+
+Outcomes did not move: wins 88 / 83 / 85 across before, filtered and repriced, all intervals
+overlapping, floor sd 8.7 / 8.5 / 8.5, floor IQR identical. **Fourth mechanism change this
+session that is invisible in the win column.**
+
+### Two things this cost, stated rather than buried
+
+**The expressible "no" mostly went away again.** Refusals were 2 before the filter, rose to 10
+with it, and are back to 2 now: uptake 99%, 93%, 99%. Making two dead offerings live means the
+agent nearly always finds something worth taking. Whether a shrine that is refused 1% of the
+time is healthy is a design question this does not answer, and the two effects are genuinely in
+tension: a richer pool and a meaningful refusal pull opposite ways.
+
+**`rest` is now the imbalance.** It wins 81% of the times it is dealt and is dealt more than
+anything else, because it is the only offering that requires no possessions: it takes a
+capability, so it is always payable, and it is worth +7 whenever the agent is above 70% HP,
+which is nearly always. That is the next thing to price, and it is not touched here.
