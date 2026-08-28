@@ -45,6 +45,26 @@ _OFFERINGS = [
 
 SIGIL_DEF_GAIN = 2          # INTERPOLATED from +3 DEF at +9
 REST_SIGHT_GAIN = 2         # measured: +2 sight at +4
+NOTE_ATK_GAIN = 1           # measured: +1 ATK at +7
+MATTER_DEF_GAIN = 3         # measured: +3 DEF at +9
+
+# Scales every reward at the moment it is granted, so an arm can ask what a shrine reward is
+# worth IN SITU rather than from turn 0.
+#
+# The distinction is the whole reason this exists. A turn-0 grant measures a currency's
+# ceiling: +3 DEF from turn 0 is +9 wins in 24. A shrine fires about once per run and only
+# past half depth, so the same currency handed over once, late, has a fraction of that to
+# work with, and the first 138-run arm that changed two rewards from worthless to working
+# moved the outcome by exactly zero. Suppressing and amplifying the reward around the
+# shipped value bounds what one late grant is actually worth.
+REWARD_PCT = int(os.environ.get("VC_SHRINE_REWARD_MULT", "100"))
+
+
+def _reward(n: int) -> int:
+    """Scale a reward, never rounding a live reward down to nothing by accident."""
+    if REWARD_PCT <= 0:
+        return 0
+    return max(1, n * REWARD_PCT // 100)
 
 # Named, because the offering text quotes it and the two drifted apart once already.
 SIGHT_PER_RENUNCIATION = 3  # INTERPOLATED from +2 sight at +4
@@ -404,7 +424,7 @@ class SacrificeSystem(System):
             if sigs and sigs.slots:
                 sigs.slots.pop()
             # Was +8 max HP, measured at exactly zero effect over 24 paired runs.
-            game.player.defense += SIGIL_DEF_GAIN
+            game.player.defense += _reward(SIGIL_DEF_GAIN)
         elif choice == "note":
             know = game.system("knowledge")
             if know and know.known:
@@ -413,21 +433,21 @@ class SacrificeSystem(System):
                 nid = next(iter(sorted(know.known)), None)
                 if nid:
                     know.known.discard(nid)
-            game.player.atk += 1
+            game.player.atk += _reward(NOTE_ATK_GAIN)
         elif choice == "matter":
             salv = game.system("salvage")
             if salv:
                 bag = salv.inventory(game)
                 if bag:
                     bag.comp = {}
-            game.player.defense += 3
+            game.player.defense += _reward(MATTER_DEF_GAIN)
         elif choice == "rest":
             game._resting = False
             game._consecutive_rest = 0
             game._cant_camp = True
             # Was +5 max HP and +0.2 speed. Max HP measured at zero effect; player speed is
             # never read at all, and `weather.py` resets it to 1.0 regardless.
-            self.sight_bonus += REST_SIGHT_GAIN
+            self.sight_bonus += _reward(REST_SIGHT_GAIN)
         elif choice == "effect":
             eff = game.system("effects")
             if eff and eff.collected:
@@ -443,7 +463,7 @@ class SacrificeSystem(System):
                     eff.collected.pop(nid, None)
                     if eff.worn == nid:
                         eff.worn = None
-            self.sight_bonus += SIGHT_PER_RENUNCIATION
+            self.sight_bonus += _reward(SIGHT_PER_RENUNCIATION)
         # `shrine_used` existed in MetricsTracker from the start and nothing ever
         # incremented it, so "did a shrine fire" was unanswerable from any run's output.
         self._record("shrine_used")

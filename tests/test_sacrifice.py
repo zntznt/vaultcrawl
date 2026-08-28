@@ -840,3 +840,50 @@ def test_the_rewards_sit_in_one_band():
     assert max(est.values()) <= 3 * min(est.values()), (
         f"the strongest reward is more than three times the weakest, which is the spread "
         f"this reprice exists to close: {est}")
+
+
+def test_the_reward_multiplier_scales_every_currency():
+    """The in-situ instrument. A turn-0 grant measures a currency's ceiling; a shrine hands
+    one over once, past half depth, so the two are different questions and the second needs
+    its own knob."""
+    import runtime.sacrifice as S
+
+    saved = S.REWARD_PCT
+    try:
+        S.REWARD_PCT = 0
+        assert all(S._reward(n) == 0 for n in (1, 2, 3, 12))
+        S.REWARD_PCT = 400
+        assert S._reward(3) == 12 and S._reward(1) == 4
+        S.REWARD_PCT = 100
+        assert S._reward(3) == 3 and S._reward(1) == 1
+    finally:
+        S.REWARD_PCT = saved
+
+
+def test_a_live_reward_never_rounds_away_to_nothing():
+    """Integer division at a small multiplier would silently zero the smallest reward, which
+    would make a suppression arm out of what was meant to be a reduction arm."""
+    import runtime.sacrifice as S
+
+    saved = S.REWARD_PCT
+    try:
+        S.REWARD_PCT = 10
+        assert S._reward(1) >= 1, "a 10% arm silently became a 0% arm for the smallest reward"
+    finally:
+        S.REWARD_PCT = saved
+
+
+def test_every_grant_goes_through_the_multiplier():
+    """An unscaled grant makes the suppression arm leak, and the leak is invisible: the arm
+    would simply measure less than it claims to."""
+    import ast
+    import inspect
+
+    from runtime.sacrifice import SacrificeSystem
+    tree = ast.parse(inspect.getsource(SacrificeSystem.apply).lstrip())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Attribute):
+            call = node.value
+            assert isinstance(call, ast.Call) and getattr(call.func, "id", "") == "_reward", (
+                f"`{node.target.attr}` is granted without going through `_reward`, so a "
+                f"suppression arm still hands it over")
