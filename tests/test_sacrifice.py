@@ -812,11 +812,11 @@ def test_every_reward_pays_in_a_measured_currency():
 def test_the_offering_texts_quote_the_constants_they_grant():
     """They drifted apart once already: `effect` promised +2 sight and granted nothing at
     all, and `rest` still advertised '+1 speed' while granting 0.2 of a stat nothing reads."""
-    from runtime.sacrifice import (MATTER_SIGHT_GAIN, REST_SIGHT_GAIN,
-                                   SIGHT_PER_RENUNCIATION, SIGIL_ATK_GAIN, _OFFERINGS)
+    from runtime.sacrifice import (REST_SIGHT_GAIN, SIGHT_PER_RENUNCIATION,
+                                   SIGIL_ATK_GAIN, _OFFERINGS)
     text = {k: t for _n, k, t in _OFFERINGS}
     assert f"+{SIGIL_ATK_GAIN} ATK" in text["sigil"], text["sigil"]
-    assert f"+{MATTER_SIGHT_GAIN} sight" in text["matter"], text["matter"]
+    assert "sigil slot" in text["matter"], text["matter"]
     assert f"+{REST_SIGHT_GAIN} sight" in text["rest"], text["rest"]
     assert f"+{SIGHT_PER_RENUNCIATION} sight" in text["effect"], text["effect"]
     for kind, t in text.items():
@@ -835,15 +835,17 @@ def test_the_rewards_sit_in_one_band():
     of them is worth in play. It is kept because that failure mode is real and cheap to
     catch, and it caught +2 ATK sitting at 3.5 times +2 sight.
     """
-    from runtime.sacrifice import (MATTER_SIGHT_GAIN, REST_SIGHT_GAIN,
-                                   SIGHT_PER_RENUNCIATION, SIGIL_ATK_GAIN, NOTE_ATK_GAIN)
+    from runtime.sacrifice import (REST_SIGHT_GAIN, SIGHT_PER_RENUNCIATION,
+                                   SIGIL_ATK_GAIN, NOTE_ATK_GAIN)
     # Value per unit from the turn-0 measurements: sight +4 for 2, ATK +7 for 1. DEF is not
     # in this table any more; it measured +9 for 3 from turn 0 and zero at shrine depth,
     # because `max(1, atk - defense)` is already pinned for 91% of late hits.
     est = {
         "sigil": SIGIL_ATK_GAIN * 7 / 1,
         "note": NOTE_ATK_GAIN * 7 / 1,
-        "matter": MATTER_SIGHT_GAIN * 4 / 2,
+        # `matter` is not in this band and cannot be: it grants a sigil SLOT, which is not
+        # a stat and has no turn-0 per-unit value. It was chosen on route composition, five
+        # win routes against three, not on the scale everything else here is measured in.
         "rest": REST_SIGHT_GAIN * 4 / 2,
         "effect": SIGHT_PER_RENUNCIATION * 4 / 2,
     }
@@ -898,3 +900,55 @@ def test_every_grant_goes_through_the_multiplier():
             assert isinstance(call, ast.Call) and getattr(call.func, "id", "") == "_reward", (
                 f"`{node.target.attr}` is granted without going through `_reward`, so a "
                 f"suppression arm still hands it over")
+
+
+def test_renouncing_matter_grants_a_usable_sigil_slot():
+    """The one reward chosen on route composition rather than win rate.
+
+    Granted at floor 13, the depth a shrine actually fires at: a sigil slot produced FIVE win
+    routes against the control's three, with `boss_killed` falling from 7 of 11 wins to 2 of
+    12 and `truths` and `diplomacy` appearing at all. No candidate moved the win rate, which
+    by now is the expected result for anything handed over once past half depth.
+
+    It is also the only candidate that compounds mechanically rather than numerically: a slot
+    holds a sigil, and a sigil can be cast, forged, upgraded, broken down, deployed and
+    recovered, so one slot opens a subsystem for the rest of the run where +4 sight opened
+    nothing.
+    """
+    from runtime.sacrifice import MATTER_SLOT_ABILITY, MATTER_SLOT_GAIN
+
+    g = _game()
+    sac, sigs, salv = g.system("sacrifice"), g.system("sigils"), g.system("salvage")
+    salv.inventory(g).add({"iron": 3})
+    before = len(sigs.slots)
+    assert sac.can_renounce(g, "matter")
+    sac.apply(g, "matter")
+    assert len(sigs.slots) == before + MATTER_SLOT_GAIN, "no slot was granted"
+    assert salv.inventory(g).total() == 0, "the cost was not paid"
+    got = sigs.slots[-1]
+    assert got["ability"] == MATTER_SLOT_ABILITY and got["durability"] > 0, got
+    assert got.get("base") == MATTER_SLOT_ABILITY, (
+        "the granted sigil has no `base`, which `sigils.base_ability` needs to resolve it")
+
+
+def test_the_slot_grant_scales_with_the_reward_multiplier():
+    """It has to, or the suppression arm silently keeps handing out slots and the in-situ
+    measurement is measuring the wrong build."""
+    import runtime.sacrifice as S
+
+    g = _game()
+    sac, sigs, salv = g.system("sacrifice"), g.system("sigils"), g.system("salvage")
+    saved = S.REWARD_PCT
+    try:
+        S.REWARD_PCT = 0
+        salv.inventory(g).add({"iron": 3})
+        n = len(sigs.slots)
+        sac.apply(g, "matter")
+        assert len(sigs.slots) == n, "a 0x arm still granted a slot"
+        S.REWARD_PCT = 400
+        salv.inventory(g).add({"iron": 3})
+        n = len(sigs.slots)
+        sac.apply(g, "matter")
+        assert len(sigs.slots) == n + 4, "a 4x arm did not grant four slots"
+    finally:
+        S.REWARD_PCT = saved

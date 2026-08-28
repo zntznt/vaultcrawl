@@ -167,18 +167,23 @@ def test_a_shrine_underfoot_outranks_the_weather():
     weather = g.system("weather")
     if weather is not None:
         weather.weather = "acrid haze"      # the branch that used to swallow the interact
-    # Every currency a renunciation can pay in, so this survives the next reprice. It has
-    # already been broken twice by one: once when `sigil` moved off max HP, and once when
-    # `matter` moved off DEF onto sight, both times reporting a working shrine as broken.
+    # This has now been broken THREE times by a reprice, every time reporting a working
+    # shrine as broken because the assertion enumerated stats: `sigil` moved off max HP,
+    # `matter` moved off DEF onto sight, then `matter` moved onto a sigil SLOT, which is not
+    # a stat at all. Enumerating is the mistake. The question this test asks is "did the
+    # renunciation land", so it asks that directly, and the fingerprint is a backstop.
     def _stats():
+        sigs = g.system("sigils")
         return (g.player.max_hp, g.player.atk, g.player.defense,
-                getattr(sac, "sight_bonus", 0))
+                getattr(sac, "sight_bonus", 0), len(getattr(sigs, "slots", []) or []))
 
     before = _stats()
     assert g.interact() is True
     assert pos not in sac.shrines, (
         "the shrine was not consumed, so `interact` went to the weather branch and the "
         "shrine is unreachable whenever weather is live")
+    accepted = any("renunciation" in m for m in (getattr(g, "messages", []) or [])[-6:])
+    assert accepted, "the shrine was consumed without a renunciation being applied"
     assert _stats() != before, "the shrine fired and granted nothing in any currency"
 
 

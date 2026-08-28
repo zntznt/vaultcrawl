@@ -38,7 +38,7 @@ from runtime.systems import System
 _OFFERINGS = [
     ("Renounce a Sigil Slot", "sigil", "Lose 1 max sigil capacity, gain permanent +2 ATK"),
     ("Renounce a Learned Note", "note", "Unlearn a note, gain permanent +1 ATK"),
-    ("Renounce Matter", "matter", "Lose all carried matter, gain permanent +4 sight radius"),
+    ("Renounce Matter", "matter", "Lose all carried matter, gain a sigil slot bearing Ward"),
     ("Renounce Rest", "rest", "Can no longer camp, gain permanent +3 sight radius"),
     ("Renounce an Effect", "effect", "Lose one effect, gain permanent +4 sight radius"),
 ]
@@ -66,7 +66,33 @@ _OFFERINGS = [
 # whole; they do not isolate sight.
 SIGIL_ATK_GAIN = 2          # ATK verified non-saturating at shrine depth
 NOTE_ATK_GAIN = 1           # measured: +1 ATK at +7 from turn 0
-MATTER_SIGHT_GAIN = 4       # UNVERIFIED at depth
+# `matter` pays in a SIGIL SLOT rather than a number, and this is the one reward chosen on
+# route variety instead of on win rate.
+#
+# Granted at floor 13, the depth a shrine actually fires at, over 24 runs paired on
+# (agent, seed) against a control that won 11 of 24:
+#
+#     nothing            11/24   standing 3, boss 7, commune 1                  3 routes
+#     +2 standing (all)  12/24   standing 6, boss 4, commune 2                  3 routes
+#     +3 known notes      9/24   standing 2, boss 7                             2 routes
+#     +1 SIGIL SLOT      12/24   standing 5, commune 2, boss 2, truths 2,
+#                                diplomacy 1                                    5 ROUTES
+#
+# **No candidate moves the win rate**, which by now is the expected result for anything handed
+# over once past half depth. The slot is the only one that changed HOW the game was won: five
+# routes against three, with `boss_killed` falling from 7 of 11 wins to 2 of 12 and `truths`
+# and `diplomacy` appearing at all. That is the stated criterion for this project, winnable by
+# using the systems with variance in how, and it is not the win column.
+#
+# It is also the only candidate that compounds mechanically rather than numerically: a slot
+# holds a sigil, and a sigil can be cast, forged, upgraded, broken down, deployed and
+# recovered, so one slot opens a subsystem for the rest of the run where +4 sight opens
+# nothing.
+#
+# The honest caveat: 24 runs and 12 wins split across five routes is a thin basis for a
+# composition claim, and the +1 win is noise. The 138-run arm below is the real test.
+MATTER_SLOT_GAIN = 1
+MATTER_SLOT_ABILITY = "Ward"
 REST_SIGHT_GAIN = 3         # UNVERIFIED at depth
 
 # Scales every reward at the moment it is granted, so an arm can ask what a shrine reward is
@@ -461,8 +487,14 @@ class SacrificeSystem(System):
                 bag = salv.inventory(game)
                 if bag:
                     bag.comp = {}
-            # Was +3 DEF, which by shrine depth feeds a term already at its floor.
-            self.sight_bonus += _reward(MATTER_SIGHT_GAIN)
+            # Was +3 DEF, then +4 sight, both measured at nothing. A slot is the only
+            # grant that moved route composition at this depth.
+            sigs = game.system("sigils")
+            if sigs is not None:
+                for _ in range(_reward(MATTER_SLOT_GAIN)):
+                    sigs.slots.append({"ability": MATTER_SLOT_ABILITY,
+                                       "base": MATTER_SLOT_ABILITY, "durability": 3,
+                                       "note": "shrine-forged", "role": "hub"})
         elif choice == "rest":
             game._resting = False
             game._consecutive_rest = 0
