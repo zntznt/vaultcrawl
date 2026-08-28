@@ -241,7 +241,19 @@ class SacrificeSystem(System):
 
     # Fraction of the descent below which no shrine appears. "Deep levels (rare)" needs a
     # depth axis, and the two modes do not share one.
-    DEPTH_FRACTION = 0.5
+    # How deep before shrines appear, as a fraction of the descent, and how likely one is on
+    # a qualifying floor. Both are env-overridable because they are the two things the reward
+    # sequence proved actually matter, and neither had ever been varied.
+    #
+    # Every reward experiment came back flat: magnitude 0x / 1x / 4x gave 76 / 77 / 78 wins,
+    # a saturating currency against a non-saturating one gave 76-78 against 74-78, and a flat
+    # stat against a compounding sigil slot gave 78 against 75. The same currencies measured
+    # from turn 0 are worth a great deal, +1 ATK being +7 wins in 24. The difference is
+    # entirely POSITION and FREQUENCY: at 0.5 and 0.30 a shrine fires about 0.84 times per
+    # run and never before half depth, into a run whose trajectory is already set.
+    DEPTH_FRACTION = float(os.environ.get("VC_SHRINE_DEPTH_FRACTION", "0.5"))
+    PLACE_CHANCE = float(os.environ.get("VC_SHRINE_PLACE_CHANCE", "0.30"))
+    MIN_FLOOR = int(os.environ.get("VC_SHRINE_MIN_FLOOR", "1"))
     SANDBOX_MIN_DEPTH = 2
 
     def _is_deep(self, game) -> bool:
@@ -261,21 +273,29 @@ class SacrificeSystem(System):
         bottom = getattr(game, "max_floor", 0) or 0
         if bottom <= 0:
             return False
-        return floor >= max(2, int(bottom * self.DEPTH_FRACTION))
+        # MIN_FLOOR was a bare `max(2, ...)`, which meant a depth fraction of 0 still could
+        # not put a shrine on floor 1: the knob could be turned all the way down and the
+        # thing it controls would not follow. Named, so "from floor 1" is expressible.
+        return floor >= max(self.MIN_FLOOR, int(bottom * self.DEPTH_FRACTION))
 
     def on_floor_enter(self, game):
         self.shrines = {}
         if not self._is_deep(game):
             return
         rng = random.Random(f"{game.seed}:{game.floor}:sacrifice")
-        if rng.random() > 0.30:
+        if rng.random() > self.PLACE_CHANCE:
             return
         from runtime.dungeon import free_floor_tiles
         free = free_floor_tiles(game.level, {(game.player.x, game.player.y)})
         if not free:
             return
         pos = rng.choice(free)
-        if pos in self._done:
+        # Keyed on the FLOOR as well as the position. `_done` held bare (x, y), so a shrine
+        # spent at (10, 10) on floor 3 silently blocked one at (10, 10) on floor 7. That was
+        # nearly harmless while shrines only appeared past half depth on 30% of floors; with
+        # them placeable from floor 1 it would suppress a real share of them, and the loss
+        # would look like bad luck rather than a bug.
+        if (game.floor, pos) in self._done:
             return
         # pick 3 distinct offerings
         picks = rng.sample(_OFFERINGS, min(3, len(_OFFERINGS)))
@@ -302,7 +322,7 @@ class SacrificeSystem(System):
         offers = self.shrines.pop(pos, None)
         if offers is None:
             return False
-        self._done.add(pos)
+        self._done.add((game.floor, pos))
         game._overlay.pop(pos, None)
         # Filtered HERE rather than at placement, because placement happens on floor entry
         # and the agent reaches the shrine hundreds of turns later carrying something else

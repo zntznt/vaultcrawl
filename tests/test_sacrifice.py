@@ -952,3 +952,81 @@ def test_the_slot_grant_scales_with_the_reward_multiplier():
         assert len(sigs.slots) == n + 4, "a 4x arm did not grant four slots"
     finally:
         S.REWARD_PCT = saved
+
+
+# --- position and frequency, the two things that were never varied ---------------------------
+
+def test_shrines_can_be_placed_from_the_first_floor():
+    """`DEPTH_FRACTION` was a hardcoded 0.5, so no shrine ever appeared before half depth in
+    any measurement this project has taken."""
+    g = _game()
+    sac = g.system("sacrifice")
+    saved = type(sac).DEPTH_FRACTION
+    try:
+        type(sac).DEPTH_FRACTION = 0.0
+        assert sac._is_deep(_at(g, 1)), "floor 1 is still gated out at a depth fraction of 0"
+    finally:
+        type(sac).DEPTH_FRACTION = saved
+
+
+def test_the_placement_rate_is_adjustable():
+    """It was a bare 0.30 inside `on_floor_enter`. Frequency is half of the finding that
+    every reward experiment came back flat, and it could not be varied."""
+    g = _game()
+    sac = g.system("sacrifice")
+    saved_d, saved_p = type(sac).DEPTH_FRACTION, type(sac).PLACE_CHANCE
+    try:
+        type(sac).DEPTH_FRACTION = 0.0
+        counts = {}
+        for chance in (0.0, 1.0):
+            type(sac).PLACE_CHANCE = chance
+            n = 0
+            for f in range(1, g.max_floor + 1):
+                g.floor = f
+                sac.on_floor_enter(g)
+                n += bool(sac.shrines)
+            counts[chance] = n
+        assert counts[0.0] == 0, "a placement chance of zero still placed shrines"
+        assert counts[1.0] > counts[0.0], "the placement chance does not control placement"
+    finally:
+        type(sac).DEPTH_FRACTION, type(sac).PLACE_CHANCE = saved_d, saved_p
+
+
+def test_a_spent_shrine_only_blocks_its_own_floor():
+    """`_done` held a bare (x, y), so a shrine spent at (10, 10) on floor 3 silently blocked
+    one at (10, 10) on floor 7.
+
+    Nearly harmless while shrines appeared past half depth on 30% of floors. With them
+    placeable from floor 1 it would suppress a real share of them, and the loss would look
+    like bad luck rather than a bug.
+    """
+    g = _game()
+    sac = g.system("sacrifice")
+    salv = g.system("salvage")
+    if salv is not None:
+        salv.inventory(g).add({"iron": 3})
+
+    # Spend a shrine for real, on floor 3, so the code under test is what writes `_done`.
+    # The first version of this inserted the key by hand, which verified the tuple the test
+    # itself had built and passed on a build keyed the old way.
+    g.floor = 3
+    pos = (g.player.x, g.player.y)
+    sac.shrines = {pos: [("m", "matter", "")]}
+    assert sac.on_interact(g) is True
+    assert (3, pos) in sac._done, "consuming a shrine did not record it against its floor"
+    assert pos not in sac._done, (
+        "`_done` holds a bare position, so one spent shrine blocks that tile on every other "
+        "floor for the rest of the run")
+    assert (7, pos) not in sac._done
+
+
+def test_the_shipped_defaults_are_unchanged_by_the_knobs_existing():
+    """Adding a knob must not move the shipped value: every earlier measurement in this file
+    was taken at 0.5 and 0.30, and they stay comparable only if those are still the default."""
+    from runtime.sacrifice import SacrificeSystem
+    import os
+
+    assert not os.environ.get("VC_SHRINE_DEPTH_FRACTION")
+    assert not os.environ.get("VC_SHRINE_PLACE_CHANCE")
+    assert SacrificeSystem.DEPTH_FRACTION == 0.5
+    assert SacrificeSystem.PLACE_CHANCE == 0.30
