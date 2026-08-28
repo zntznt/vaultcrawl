@@ -4690,3 +4690,63 @@ arithmetically either, though its value falls as the map becomes known.
 **The shrine's rewards are late-game grants of early-game currencies.** Repricing them into ATK
 and sight is the indicated next step; it is a design change, it is not taken here, and it should
 be measured with `VC_SHRINE_REWARD_MULT` rather than from turn 0.
+
+### Repricing into ATK and sight: the currency was not the constraint either
+
+DEF was removed from the reward table because it is arithmetically dead at shrine depth. ATK
+was verified non-saturating **at the depth that matters**: past floor 13, mean foe DEF is 0.09
+and **0% of player hits sit at the damage floor**, so every +1 ATK is a full +1 damage against a
+mean of 4.56. Early floors are 6% floored, so ATK is if anything better late than early.
+
+Repriced: `sigil` +2 ATK, `note` +1 ATK, `matter` +4 sight, `rest` +3 sight, `effect` +4 sight.
+Then the same suppression and amplification arms, 138 runs each on the same 23 seeds:
+
+| arm | wins | deaths | floor mean | floor sd |
+|---|---|---|---|---|
+| DEF 0x | 76 | 58 | 20.2 | 8.6 |
+| DEF 4x | 78 | 53 | 20.3 | 8.8 |
+| **ATK+sight 0x** | **74** | 60 | 20.2 | 8.5 |
+| **ATK+sight 4x** | **78** | 55 | 20.2 | 8.8 |
+
+**The reprice did not rescue it.** The dose-response is +4 wins across a fourfold range against
+DEF's +2, on 14 discordant pairs split 5 to 9, and neither is remotely significant. Removing a
+provably-dead currency was worth doing, and it bought almost nothing.
+
+### The constraint is the position, not the currency
+
+Put the two instruments side by side:
+
+| | grant | exposure | effect |
+|---|---|---|---|
+| turn 0 | +1 ATK | the whole run | **+7 wins in 24**, +29 points |
+| shrine at 4x | +8 ATK, 0.84 times per run | past floor 13, so about half a run | **+4 wins in 138**, +3 points |
+
+**Eight times the magnitude, delivered late, is worth a tenth as much per run.** That is not a
+currency problem and no reward table fixes it. A shrine fires about once, past half depth, into
+a run whose trajectory is largely settled: the floors where a buff compounds into more kills,
+more matter, more knowledge and a deeper descent are already behind it.
+
+So the design constraint, stated plainly and not acted on here: **a once-per-run grant of a flat
+stat, delivered past half depth, cannot matter whatever it pays.** For the shrine to be worth
+its place it would have to fire earlier, fire more often, or grant something that compounds, a
+sigil slot, knowledge, standing, rather than a number added to a stat line. That is a change to
+what the shrine IS, not to what it pays, and it should be measured with
+`VC_SHRINE_REWARD_MULT` at the new position rather than from turn 0.
+
+The reprice is kept. It is not better in any significant sense, but it removes a currency
+measured at exactly zero and the direction of the dose-response is marginally larger, so
+reverting would restore a known-dead reward for no gain.
+
+### Three instruments, three different answers, all correct
+
+Worth recording as a method note, since this sequence produced it three times.
+
+1. **Turn-0 grant** ranks currencies against each other. It said DEF +9, ATK +7, sight +4, max
+   HP and speed 0. Every one of those rankings held up.
+2. **Shrine-position multiplier** says what a grant is worth where it is actually handed over.
+   It said all of them are worth about nothing.
+3. **The damage formula** says why DEF specifically is dead late, which neither aggregate could.
+
+Each answered the question it was built for and none of them answered the others'. The failure
+mode this sequence kept hitting was using answer 1 to predict answer 2, which overstated by more
+than an order of magnitude every time.
