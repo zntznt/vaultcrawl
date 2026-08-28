@@ -4750,3 +4750,66 @@ Worth recording as a method note, since this sequence produced it three times.
 Each answered the question it was built for and none of them answered the others'. The failure
 mode this sequence kept hitting was using answer 1 to predict answer 2, which overstated by more
 than an order of magnitude every time.
+
+### Something that compounds: the slot, and a claim of mine that did not replicate
+
+Four candidates granted at **floor 13**, the depth a shrine actually fires at, 24 runs each
+paired on `(agent, seed)` against a control that won 11 of 24:
+
+| granted at floor 13 | wins/24 | win paths | routes |
+|---|---|---|---|
+| nothing | 11 | standing 3, boss 7, commune 1 | 3 |
+| +2 standing, all houses | 12 | standing 6, boss 4, commune 2 | 3 |
+| +3 known notes | 9 | standing 2, boss 7 | 2 |
+| **+1 sigil slot** | 12 | standing 5, commune 2, boss 2, truths 2, diplomacy 1 | **5** |
+
+No candidate moved the win rate. The slot appeared to double route diversity, which is the
+stated criterion moving where the win column did not, so `matter` was repriced to grant a sigil
+slot bearing Ward instead of +4 sight.
+
+**At 138 runs that did not replicate.** With 28 slots actually granted:
+
+| arm | wins | routes | top route's share of wins |
+|---|---|---|---|
+| no reward at all | 74 | 5 | **38%** |
+| ATK + sight, 4x | 78 | 4 | 41% |
+| DEF, 1x | 77 | 5 | 42% |
+| **sigil slot, 1x** | **75** | **5** | **43%** |
+
+The baseline already has five routes at this sample size; the slot arm has five as well and its
+top route is marginally more concentrated, not less. The caveat recorded with the original
+claim, that 24 runs and 12 wins across five routes is a thin basis for a composition result, was
+the correct read, and the replication is what settled it. **The source comment and the test
+docstring that cited the 24-run result have been corrected in place rather than left to age.**
+
+The slot is kept, and the reason is now a design one rather than a measured one. It is not
+better and not worse, 75 wins against 74 with no reward at all, and it is the only reward in the
+pool that compounds mechanically rather than numerically: a slot holds a sigil, and a sigil can
+be cast, forged, upgraded, broken down, deployed and recovered. That is a reason to prefer it
+between two options measured as equal. It is not evidence, and it is labelled as not evidence.
+
+### The shrine, finally
+
+Everything that could be varied about the reward has been:
+
+| varied | result |
+|---|---|
+| magnitude, 0x against 1x against 4x | 76 / 77 / 78 |
+| currency, saturating DEF against non-saturating ATK and sight | 76 to 78 against 74 to 78 |
+| kind, a flat stat against a compounding mechanic | 78 against 75 |
+
+**None of it matters.** A reward handed over once, past half depth, into a run whose trajectory
+is already set, is worth nothing this instrument can see, whatever it is or however large. The
+binding constraint is the position and the frequency, and both are properties of what the shrine
+IS rather than of what it pays.
+
+What would actually test that: place shrines from floor 1, or allow more than one per run, and
+measure the same three arms again. That is a change to the system, not to a table, and it is not
+taken here.
+
+The work was not wasted, and it is worth being precise about what it bought. Two rewards that
+were literally inert are gone, one currency that is arithmetically dead at depth is gone, an
+offering that was a free permanent buff is gone, two offerings that could never be chosen are
+live, and the top offering's share of takes fell from 57% to 38%. Every one of those is a real
+defect closed. **None of them shows up in the win column, and that is the honest summary of the
+entire shrine sequence.**

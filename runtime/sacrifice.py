@@ -78,19 +78,23 @@ NOTE_ATK_GAIN = 1           # measured: +1 ATK at +7 from turn 0
 #     +1 SIGIL SLOT      12/24   standing 5, commune 2, boss 2, truths 2,
 #                                diplomacy 1                                    5 ROUTES
 #
-# **No candidate moves the win rate**, which by now is the expected result for anything handed
-# over once past half depth. The slot is the only one that changed HOW the game was won: five
-# routes against three, with `boss_killed` falling from 7 of 11 wins to 2 of 12 and `truths`
-# and `diplomacy` appearing at all. That is the stated criterion for this project, winnable by
-# using the systems with variance in how, and it is not the win column.
+# No candidate moves the win rate, which by now is the expected result for anything handed
+# over once past half depth.
 #
-# It is also the only candidate that compounds mechanically rather than numerically: a slot
-# holds a sigil, and a sigil can be cast, forged, upgraded, broken down, deployed and
-# recovered, so one slot opens a subsystem for the rest of the run where +4 sight opens
-# nothing.
+# **The route-diversity result above DID NOT REPLICATE and this comment is the correction.**
+# At 24 runs the slot showed five win routes against the control's three, which looked like
+# the stated criterion moving where the win column did not. At 138 runs, with 28 slots
+# actually granted, the picture is flat: five routes in both arms, and the top route's share
+# of wins is 43% with the slot against 38% without it, so if anything marginally LESS varied.
+# The caveat attached to the original claim, that 24 runs and 12 wins across five routes is
+# thin, was the correct read and the replication is what settled it.
 #
-# The honest caveat: 24 runs and 12 wins split across five routes is a thin basis for a
-# composition claim, and the +1 win is noise. The 138-run arm below is the real test.
+# The slot is kept anyway, on design grounds rather than measured ones, and the distinction
+# matters: it is not better, it is not worse (75 wins against 74 with no reward at all), and
+# it is the only reward in the pool that compounds mechanically rather than numerically. A
+# slot holds a sigil, and a sigil can be cast, forged, upgraded, broken down, deployed and
+# recovered, so it opens a subsystem for the rest of the run where +4 sight opened nothing.
+# That is a reason to prefer it between two options measured as equal. It is not evidence.
 MATTER_SLOT_GAIN = 1
 MATTER_SLOT_ABILITY = "Ward"
 REST_SIGHT_GAIN = 3         # UNVERIFIED at depth

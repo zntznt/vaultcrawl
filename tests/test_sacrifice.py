@@ -905,15 +905,15 @@ def test_every_grant_goes_through_the_multiplier():
 def test_renouncing_matter_grants_a_usable_sigil_slot():
     """The one reward chosen on route composition rather than win rate.
 
-    Granted at floor 13, the depth a shrine actually fires at: a sigil slot produced FIVE win
-    routes against the control's three, with `boss_killed` falling from 7 of 11 wins to 2 of
-    12 and `truths` and `diplomacy` appearing at all. No candidate moved the win rate, which
-    by now is the expected result for anything handed over once past half depth.
+    At 24 runs a slot granted at floor 13 produced five win routes against the control's
+    three, which read as the stated criterion moving where the win column did not. **At 138
+    runs it did not replicate**: five routes in both arms, and the top route's share of wins
+    43% with the slot against 38% without. No candidate moved the win rate either.
 
-    It is also the only candidate that compounds mechanically rather than numerically: a slot
-    holds a sigil, and a sigil can be cast, forged, upgraded, broken down, deployed and
-    recovered, so one slot opens a subsystem for the rest of the run where +4 sight opened
-    nothing.
+    The slot is kept on design grounds, not measured ones. It is the only reward in the pool
+    that compounds mechanically rather than numerically, since a slot holds a sigil and a
+    sigil can be cast, forged, upgraded, broken down, deployed and recovered. That is a
+    reason to prefer it between two options measured as equal, and it is not evidence.
     """
     from runtime.sacrifice import MATTER_SLOT_ABILITY, MATTER_SLOT_GAIN
 
