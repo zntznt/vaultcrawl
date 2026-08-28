@@ -4637,3 +4637,56 @@ the top offering's share of takes from **57% to 38%** with all four classic-reac
 live. The win drift is not significant and has a plain cause: two free permanent rewards were
 removed and one dead-in-classic offering left the pool. The concentration result is the one that
 holds up.
+
+## Measuring the shrine reward in situ: it is worth nothing, and the reason is the damage floor
+
+The turn-0 instrument ranks currencies against each other; it cannot say what one late grant is
+worth. `VC_SHRINE_REWARD_MULT` scales every reward at the moment it is handed over, so the
+question can be asked directly. Three arms, 138 runs each on the same 23 seeds:
+
+| arm | wins | deaths | floor mean | floor sd | shrines taken |
+|---|---|---|---|---|---|
+| **reward 0x** | **76** | 58 | 20.2 | 8.6 | 115 |
+| shipped 1x | 77 | 55 | 20.3 | 8.6 | 116 |
+| **reward 4x** | **78** | 53 | 20.3 | 8.8 | 111 |
+
+**Removing the shrine reward entirely costs one win in 138. Quadrupling it gains one.** 0x
+against 1x is p = 1.000; 0x against 4x is 18 discordant pairs split 8 to 10. Wins and deaths are
+both monotone across the three arms, which is weak corroboration that the effect is real rather
+than absent, but the magnitude is roughly a quarter of a win per 138 runs per unit of multiplier.
+
+### Why, and it is not "the sample is too small"
+
+`dmg = max(1, att.atk - dfn.defense)`. Measured over live runs:
+
+| | mean player DEF | incoming hits **already at the damage floor** |
+|---|---|---|
+| all floors | 3.1 | **86%** |
+| floor 13+, where shrines are | 3.3 | **91%** |
+
+Mean foe attack is 3.08 and the player's DEF is already 3 by the time a shrine appears, so
+**nine incoming hits in ten are already reduced to the minimum of 1 and additional DEF is
+arithmetically inert.** +3 DEF from turn 0 is +9 wins in 24 because the player starts near DEF 0
+and the subtraction still has room; the identical +3 DEF at floor 13 changes almost nothing,
+because the term it feeds is pinned at its floor.
+
+That is the whole discrepancy. A naive extrapolation from the turn-0 numbers predicts about +22
+wins for the shrine's exposure (0.84 grants per run over roughly half a run); the observed value
+is +1 at four times the magnitude, an overestimate of more than an order of magnitude.
+
+### What this means for the design, stated as a constraint rather than a fix
+
+**A late reward must be paid in a currency that does not saturate.** DEF saturates against the
+damage floor and is effectively capped at the average foe's attack; by mid-run the player is
+already there. Two of the five renunciations now pay in DEF, which the previous section chose
+precisely because DEF measured strongest from turn 0. That choice was correct on its instrument
+and wrong for the position the reward is granted in, and this is the second time in this
+sequence that a defensible measurement produced a number that did not mean what it appeared to.
+
+ATK does not saturate the same way: player damage per hit is 3.93 against a base attack of 4, so
+foe DEF is near zero and every +1 ATK is +1 damage on every swing. Sight does not saturate
+arithmetically either, though its value falls as the map becomes known.
+
+**The shrine's rewards are late-game grants of early-game currencies.** Repricing them into ATK
+and sight is the indicated next step; it is a design change, it is not taken here, and it should
+be measured with `VC_SHRINE_REWARD_MULT` rather than from turn 0.
