@@ -418,15 +418,15 @@ def test_the_cost_is_always_paid_now_that_the_offer_is_filtered():
     sac, sigs = g.system("sacrifice"), g.system("sigils")
     sigs.slots = [{"ability": "Ward", "base": "Ward", "durability": 3,
                    "note": "x", "role": "leaf"} for _ in range(3)]
-    from runtime.sacrifice import SIGIL_DEF_GAIN
+    from runtime.sacrifice import SIGIL_ATK_GAIN
 
-    before_slots, before_def = len(sigs.slots), g.player.defense
+    before_slots, before_atk = len(sigs.slots), g.player.atk
     assert sac.can_renounce(g, "sigil")
     sac.apply(g, "sigil")
     assert len(sigs.slots) == before_slots - 1, "the reward was granted and the cost was not"
-    # Was +8 max HP, which measured at exactly zero effect over 24 paired runs and is now
-    # paid in DEF instead.
-    assert g.player.defense == before_def + SIGIL_DEF_GAIN
+    # Was +8 max HP (zero effect from turn 0), then +2 DEF (zero at shrine depth, the damage
+    # floor), now ATK, which is the one currency verified not to saturate late.
+    assert g.player.atk == before_atk + SIGIL_ATK_GAIN
 
 
 def test_perception_scores_the_filtered_offers():
@@ -804,18 +804,19 @@ def test_every_reward_pays_in_a_measured_currency():
     paid = {n.target.attr for n in ast.walk(tree)
             if isinstance(n, ast.AugAssign) and isinstance(n.target, ast.Attribute)}
     assert paid, "apply grants nothing at all"
-    assert paid <= {"atk", "defense", "sight_bonus"}, (
-        f"apply pays in {sorted(paid - {'atk', 'defense', 'sight_bonus'})}, which has not been "
-        f"measured on the turn-0 instrument")
+    assert paid <= {"atk", "sight_bonus"}, (
+        f"apply pays in {sorted(paid - {'atk', 'sight_bonus'})}, which either has not been "
+        f"measured or is known to saturate at the depth a shrine grants in")
 
 
 def test_the_offering_texts_quote_the_constants_they_grant():
     """They drifted apart once already: `effect` promised +2 sight and granted nothing at
     all, and `rest` still advertised '+1 speed' while granting 0.2 of a stat nothing reads."""
-    from runtime.sacrifice import (REST_SIGHT_GAIN, SIGHT_PER_RENUNCIATION,
-                                   SIGIL_DEF_GAIN, _OFFERINGS)
+    from runtime.sacrifice import (MATTER_SIGHT_GAIN, REST_SIGHT_GAIN,
+                                   SIGHT_PER_RENUNCIATION, SIGIL_ATK_GAIN, _OFFERINGS)
     text = {k: t for _n, k, t in _OFFERINGS}
-    assert f"+{SIGIL_DEF_GAIN} DEF" in text["sigil"], text["sigil"]
+    assert f"+{SIGIL_ATK_GAIN} ATK" in text["sigil"], text["sigil"]
+    assert f"+{MATTER_SIGHT_GAIN} sight" in text["matter"], text["matter"]
     assert f"+{REST_SIGHT_GAIN} sight" in text["rest"], text["rest"]
     assert f"+{SIGHT_PER_RENUNCIATION} sight" in text["effect"], text["effect"]
     for kind, t in text.items():
@@ -824,15 +825,25 @@ def test_the_offering_texts_quote_the_constants_they_grant():
 
 
 def test_the_rewards_sit_in_one_band():
-    """Comparable means a band, not equality. Measured values were +0, +0, +4, +7, +9; the
-    repriced set should have no zeros and no outlier twice the size of the smallest."""
-    from runtime.sacrifice import (REST_SIGHT_GAIN, SIGHT_PER_RENUNCIATION,
-                                   SIGIL_DEF_GAIN)
-    # Value per unit, from the turn-0 measurements: DEF +9 for 3, sight +4 for 2, ATK +7 for 1.
+    """Comparable means a band, not equality: no zeros, and no reward more than three times
+    another.
+
+    The ratios below come from the TURN-0 instrument, which is known to overstate what a
+    shrine grant is worth: suppressing the shrine reward entirely cost 1 win in 138 and
+    quadrupling it gained 1, because the reward lands once, past half depth. So this is a
+    coarse guard against one offering being several times another, not a claim about what any
+    of them is worth in play. It is kept because that failure mode is real and cheap to
+    catch, and it caught +2 ATK sitting at 3.5 times +2 sight.
+    """
+    from runtime.sacrifice import (MATTER_SIGHT_GAIN, REST_SIGHT_GAIN,
+                                   SIGHT_PER_RENUNCIATION, SIGIL_ATK_GAIN, NOTE_ATK_GAIN)
+    # Value per unit from the turn-0 measurements: sight +4 for 2, ATK +7 for 1. DEF is not
+    # in this table any more; it measured +9 for 3 from turn 0 and zero at shrine depth,
+    # because `max(1, atk - defense)` is already pinned for 91% of late hits.
     est = {
-        "sigil": SIGIL_DEF_GAIN * 9 / 3,
-        "note": 1 * 7 / 1,
-        "matter": 3 * 9 / 3,
+        "sigil": SIGIL_ATK_GAIN * 7 / 1,
+        "note": NOTE_ATK_GAIN * 7 / 1,
+        "matter": MATTER_SIGHT_GAIN * 4 / 2,
         "rest": REST_SIGHT_GAIN * 4 / 2,
         "effect": SIGHT_PER_RENUNCIATION * 4 / 2,
     }

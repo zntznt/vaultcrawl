@@ -36,17 +36,38 @@ from runtime.systems import System
 # neighbouring magnitude and scaled linearly, which is an assumption the combined arm below
 # tests but does not isolate.
 _OFFERINGS = [
-    ("Renounce a Sigil Slot", "sigil", "Lose 1 max sigil capacity, gain permanent +2 DEF"),
+    ("Renounce a Sigil Slot", "sigil", "Lose 1 max sigil capacity, gain permanent +2 ATK"),
     ("Renounce a Learned Note", "note", "Unlearn a note, gain permanent +1 ATK"),
-    ("Renounce Matter", "matter", "Lose all carried matter, gain permanent +3 DEF"),
-    ("Renounce Rest", "rest", "Can no longer camp, gain permanent +2 sight radius"),
-    ("Renounce an Effect", "effect", "Lose one effect, gain permanent +3 sight radius"),
+    ("Renounce Matter", "matter", "Lose all carried matter, gain permanent +4 sight radius"),
+    ("Renounce Rest", "rest", "Can no longer camp, gain permanent +3 sight radius"),
+    ("Renounce an Effect", "effect", "Lose one effect, gain permanent +4 sight radius"),
 ]
 
-SIGIL_DEF_GAIN = 2          # INTERPOLATED from +3 DEF at +9
-REST_SIGHT_GAIN = 2         # measured: +2 sight at +4
-NOTE_ATK_GAIN = 1           # measured: +1 ATK at +7
-MATTER_DEF_GAIN = 3         # measured: +3 DEF at +9
+# DEF is gone from this table, and the reason is arithmetic rather than taste.
+#
+# `dmg = max(1, att.atk - dfn.defense)`. Mean foe attack is 3.08 and the player already holds
+# DEF 3 by the depth shrines appear at, so **91% of incoming hits at floor 13+ are already
+# pinned at the minimum of 1** and further DEF changes nothing. That is why suppressing the
+# shrine reward entirely cost 1 win in 138 and quadrupling it gained 1: two of the five
+# renunciations were paying into a term that had already bottomed out.
+#
+# The previous pass chose DEF precisely because it measured strongest FROM TURN 0, where the
+# player starts near DEF 0 and the subtraction still has room. Correct on that instrument,
+# wrong for the position a shrine grants in. A late reward has to be paid in a currency that
+# does not saturate.
+#
+# ATK does not. Measured at floor 13 and below: mean foe DEF **0.09**, and **0%** of player
+# hits sit at the damage floor, so every +1 ATK is a full +1 damage on every swing, against a
+# mean of 4.56. Early floors are 6% floored, so ATK is if anything better late than early.
+#
+# SIGHT is unverified at depth and is marked so. It cannot saturate arithmetically the way a
+# subtraction does, but its value plainly falls once a room is already mapped, and no
+# instrument here has separated those. The 0x / 1x / 4x arms below test the repriced set as a
+# whole; they do not isolate sight.
+SIGIL_ATK_GAIN = 2          # ATK verified non-saturating at shrine depth
+NOTE_ATK_GAIN = 1           # measured: +1 ATK at +7 from turn 0
+MATTER_SIGHT_GAIN = 4       # UNVERIFIED at depth
+REST_SIGHT_GAIN = 3         # UNVERIFIED at depth
 
 # Scales every reward at the moment it is granted, so an arm can ask what a shrine reward is
 # worth IN SITU rather than from turn 0.
@@ -67,7 +88,7 @@ def _reward(n: int) -> int:
     return max(1, n * REWARD_PCT // 100)
 
 # Named, because the offering text quotes it and the two drifted apart once already.
-SIGHT_PER_RENUNCIATION = 3  # INTERPOLATED from +2 sight at +4
+SIGHT_PER_RENUNCIATION = 4  # UNVERIFIED at depth
 
 # What each renunciation is WORTH, before the cost of what it takes from you. These were five
 # literals inside `_worth` chosen to be state-driven rather than measured, which was said
@@ -423,8 +444,8 @@ class SacrificeSystem(System):
             sigs = game.system("sigils")
             if sigs and sigs.slots:
                 sigs.slots.pop()
-            # Was +8 max HP, measured at exactly zero effect over 24 paired runs.
-            game.player.defense += _reward(SIGIL_DEF_GAIN)
+            # Was +8 max HP (zero effect), then +2 DEF (also zero, the damage floor).
+            game.player.atk += _reward(SIGIL_ATK_GAIN)
         elif choice == "note":
             know = game.system("knowledge")
             if know and know.known:
@@ -440,7 +461,8 @@ class SacrificeSystem(System):
                 bag = salv.inventory(game)
                 if bag:
                     bag.comp = {}
-            game.player.defense += _reward(MATTER_DEF_GAIN)
+            # Was +3 DEF, which by shrine depth feeds a term already at its floor.
+            self.sight_bonus += _reward(MATTER_SIGHT_GAIN)
         elif choice == "rest":
             game._resting = False
             game._consecutive_rest = 0

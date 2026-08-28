@@ -167,12 +167,19 @@ def test_a_shrine_underfoot_outranks_the_weather():
     weather = g.system("weather")
     if weather is not None:
         weather.weather = "acrid haze"      # the branch that used to swallow the interact
-    before = (g.player.max_hp, g.player.atk, g.player.defense)
+    # Every currency a renunciation can pay in, so this survives the next reprice. It has
+    # already been broken twice by one: once when `sigil` moved off max HP, and once when
+    # `matter` moved off DEF onto sight, both times reporting a working shrine as broken.
+    def _stats():
+        return (g.player.max_hp, g.player.atk, g.player.defense,
+                getattr(sac, "sight_bonus", 0))
+
+    before = _stats()
     assert g.interact() is True
     assert pos not in sac.shrines, (
         "the shrine was not consumed, so `interact` went to the weather branch and the "
         "shrine is unreachable whenever weather is live")
-    assert (g.player.max_hp, g.player.atk, g.player.defense) != before
+    assert _stats() != before, "the shrine fired and granted nothing in any currency"
 
 
 def test_the_exception_is_the_exact_tile_and_not_a_radius():
