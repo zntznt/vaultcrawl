@@ -4813,3 +4813,58 @@ offering that was a free permanent buff is gone, two offerings that could never 
 live, and the top offering's share of takes fell from 57% to 38%. Every one of those is a real
 defect closed. **None of them shows up in the win column, and that is the honest summary of the
 entire shrine sequence.**
+
+## Shrines from floor 1: the position was the answer
+
+Every reward experiment came back flat. Magnitude 0x / 1x / 4x gave 76 / 77 / 78 wins; a
+saturating currency against a non-saturating one gave 76-78 against 74-78; a flat stat against a
+compounding sigil slot gave 78 against 75. The same currencies measured from turn 0 are worth a
+great deal. The conclusion drawn from those nulls, that **the position and frequency are the
+binding constraint and both are properties of what the shrine IS**, is now tested rather than
+inferred. 138 runs per arm, paired on `(agent, seed)`:
+
+| depth | chance | taken/run | wins | deaths | floor | floor sd | floor IQR | labels |
+|---|---|---|---|---|---|---|---|---|
+| (no reward at all) | | 0.84 | 74 | 60 | 20.2 | 8.5 | [11, 26] | 31.3 |
+| 0.5 | 0.30 | 0.79 | 75 | 57 | 20.0 | 8.7 | [10, 27] | 31.0 |
+| **0.0** | **0.30** | **2.38** | **88** | 46 | 21.7 | 7.8 | [18, 27] | 31.8 |
+| 0.0 | 0.60 | 4.45 | **92** | 42 | 21.7 | 8.1 | [18, 27] | 31.7 |
+
+Both position arms move: 88 against 75 at **p = 0.0725** and 92 against 75 at **p = 0.0300**,
+both surviving BH at FDR 10%. **This is the first change in the entire shrine sequence to move
+the win column**, and it confirms what four null results implied rather than merely restating
+them.
+
+### Position, not frequency
+
+The two are easy to conflate and the arms separate them. Doubling the placement rate **on top
+of** the depth change is 88 to 92 at **p = 0.6835**: not distinguishable. Going from 2.38 to
+4.45 renunciations per run buys nothing measurable, so the shipped rate stays at 0.30 and only
+the depth gate moves. Past a couple of shrines per run, more shrines cost the fiction and return
+nothing.
+
+### Both halves of the criterion, honestly
+
+Systems-in-use improved unambiguously: shrines taken per run 0.79 to **2.38**, distinct labels
+31.0 to 31.8, and every win route present with `commune` 6 to 13 and `truths` 8 to 12.
+
+Variance is the mixed part and needs stating carefully. Floor **sd falls 8.7 to 7.8**, which is
+the flattening signal this project watches for. But the shape of the narrowing is not the
+degenerate kind: the IQR goes [10, 27] to [18, 27], which is the 25th percentile rising while
+the top holds, so **fewer runs die shallow and the spread is still nine floors wide**. Compare
+creature quality base 5, which was rejected for an IQR of [26, 27], every run ending in the same
+place. This is a different thing and should not be filed with it. At the higher rate sd recovers
+to 8.1 with the same IQR, which suggests the dip at 0.30 is not a trend.
+
+### What the whole shrine sequence adds up to
+
+Ten changes, one number moved.
+
+Nothing about the reward mattered: not its magnitude, not its currency, not whether it was a
+flat stat or a compounding mechanic. What mattered was letting it arrive early enough to
+compound. That is a general shape worth carrying: **when every variation of a thing measures at
+nothing, stop varying the thing and vary where it sits.** Four arms of reward tuning were the
+cost of learning that, and the tuning was not wasted, it just was not the answer: two inert
+rewards, one arithmetically dead currency, a free permanent buff and two never-choosable
+offerings were all removed on the way, and the top offering's share of takes fell from 57% to
+38%. None of those showed in the win column either.

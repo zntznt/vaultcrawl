@@ -58,15 +58,26 @@ def test_shrines_appear_in_classic_descent_at_all():
 
 
 def test_the_gate_does_not_depend_on_current_z_in_classic():
-    """The exact regression: a guard reading only `current_z` cannot see classic depth."""
+    """The original regression: a guard reading only `current_z` cannot see classic depth.
+
+    The shipped depth fraction is now 0.0, so every floor qualifies and "some floors pass,
+    some fail" is no longer a usable check: it would fail on a correct build. The fraction is
+    raised for the duration instead, which asks the real question, does the gate read the
+    FLOOR at all, without depending on where the shipped default happens to sit.
+    """
     g = _game()
     sac = g.system("sacrifice")
     assert getattr(g, "current_z", 0) == 0, "premise: classic leaves current_z at 0"
-    shallow = [f for f in range(1, g.max_floor + 1) if not sac._is_deep(_at(g, f))]
-    deep = [f for f in range(1, g.max_floor + 1) if sac._is_deep(_at(g, f))]
+    saved = type(sac).DEPTH_FRACTION
+    try:
+        type(sac).DEPTH_FRACTION = 0.5
+        shallow = [f for f in range(1, g.max_floor + 1) if not sac._is_deep(_at(g, f))]
+        deep = [f for f in range(1, g.max_floor + 1) if sac._is_deep(_at(g, f))]
+    finally:
+        type(sac).DEPTH_FRACTION = saved
     assert shallow and deep, (
-        "the depth gate is constant across every classic floor, so it is reading an axis "
-        "classic does not move")
+        "the depth gate is constant across every classic floor even at a fraction of 0.5, "
+        "so it is reading an axis classic does not move")
 
 
 def _at(g, floor):
@@ -74,12 +85,24 @@ def _at(g, floor):
     return g
 
 
-def test_early_floors_stay_shrineless_and_deep_ones_qualify():
+def test_floor_one_qualifies_and_the_fraction_can_still_gate_it():
+    """This used to assert the opposite, that early floors stay shrineless, and it was right
+    for the build it was written against. Shrines from floor 1 is the change that finally
+    moved the win column, 88 against 75 at p = 0.0725, so the assertion inverts with it.
+
+    Both directions are pinned: the shipped 0.0 admits floor 1, and a raised fraction still
+    gates it, so the knob has not been reduced to decoration.
+    """
     g = _game()
     sac = g.system("sacrifice")
-    assert not sac._is_deep(_at(g, 1))
-    assert not sac._is_deep(_at(g, g.max_floor // 4))
+    assert sac._is_deep(_at(g, 1)), "floor 1 is gated out at the shipped depth fraction of 0"
     assert sac._is_deep(_at(g, g.max_floor))
+    saved = type(sac).DEPTH_FRACTION
+    try:
+        type(sac).DEPTH_FRACTION = 0.5
+        assert not sac._is_deep(_at(g, 1)), "the depth fraction no longer gates anything"
+    finally:
+        type(sac).DEPTH_FRACTION = saved
 
 
 def test_sandbox_still_gates_on_z():
@@ -93,8 +116,15 @@ def test_sandbox_still_gates_on_z():
 
 
 def test_shrines_stay_rare():
-    """A permanent buff on every deep floor is a different game. Placement is a 30% roll on
-    a qualifying floor; this pins that the result is a handful, not a fixture."""
+    """A permanent buff on every floor is a different game. Placement is a 30% roll on a
+    qualifying floor, and since the depth gate opened to floor 1 every floor qualifies, so
+    the count roughly quadrupled: about 8 across a descent where it was 2.
+
+    That was the point and it is measured, 88 wins against 75 at p = 0.0725. The bound is
+    loosened rather than removed, because doubling the rate again to 0.60 gives about 14 and
+    is not distinguishable from 8 (p = 0.6835): past this, more shrines buy nothing and only
+    cost the fiction.
+    """
     g = _game()
     sac = g.system("sacrifice")
     placed = 0
@@ -102,7 +132,7 @@ def test_shrines_stay_rare():
         g.floor = f
         sac.on_floor_enter(g)
         placed += bool(sac.shrines)
-    assert 1 <= placed <= 6, f"{placed} shrines across a full descent is not rare"
+    assert 2 <= placed <= 11, f"{placed} shrines across a full descent is out of range"
 
 
 # --- 2. reachability, which is a Berlin question ------------------------------------------
@@ -1020,13 +1050,20 @@ def test_a_spent_shrine_only_blocks_its_own_floor():
     assert (7, pos) not in sac._done
 
 
-def test_the_shipped_defaults_are_unchanged_by_the_knobs_existing():
-    """Adding a knob must not move the shipped value: every earlier measurement in this file
-    was taken at 0.5 and 0.30, and they stay comparable only if those are still the default."""
+def test_the_shipped_position_is_the_one_that_was_measured():
+    """`DEPTH_FRACTION` is 0.0, shrines from floor 1, and that is the only change in the whole
+    shrine sequence to move the win column: 88 against 75, p = 0.0725, after magnitude,
+    currency and kind all came back flat.
+
+    `PLACE_CHANCE` stays at 0.30. Doubling it on top of the depth change is 88 to 92 at
+    p = 0.6835, so it buys nothing measurable. Position is the lever and frequency is not,
+    which is worth pinning because the two are easy to conflate.
+    """
     from runtime.sacrifice import SacrificeSystem
     import os
 
     assert not os.environ.get("VC_SHRINE_DEPTH_FRACTION")
     assert not os.environ.get("VC_SHRINE_PLACE_CHANCE")
-    assert SacrificeSystem.DEPTH_FRACTION == 0.5
+    assert SacrificeSystem.DEPTH_FRACTION == 0.0
     assert SacrificeSystem.PLACE_CHANCE == 0.30
+    assert SacrificeSystem.MIN_FLOOR == 1

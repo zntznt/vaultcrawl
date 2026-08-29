@@ -251,7 +251,21 @@ class SacrificeSystem(System):
     # from turn 0 are worth a great deal, +1 ATK being +7 wins in 24. The difference is
     # entirely POSITION and FREQUENCY: at 0.5 and 0.30 a shrine fires about 0.84 times per
     # run and never before half depth, into a run whose trajectory is already set.
-    DEPTH_FRACTION = float(os.environ.get("VC_SHRINE_DEPTH_FRACTION", "0.5"))
+    # 0.0, so shrines appear from floor 1. Measured, 138 runs paired on (agent, seed):
+    #
+    #     depth  chance   taken/run   wins   deaths   floor   sd    vs shipped
+    #     0.5    0.30       0.79       75      57      20.0   8.7   (shipped)
+    #     0.0    0.30       2.38       88      46      21.7   7.8   p = 0.0725 MOVED
+    #     0.0    0.60       4.45       92      42      21.7   8.1   p = 0.0300 MOVED
+    #
+    # This is the FIRST change in the whole shrine sequence to move the win column, after
+    # magnitude, currency and kind all came back flat. It confirms what those null results
+    # implied: the reward was never the problem, its position was.
+    #
+    # The rate stays at 0.30. Doubling it on top of the depth change is not distinguishable,
+    # 88 to 92 at p = 0.6835, so it buys nothing measurable and would turn a rare event into
+    # a commonplace one. Position is the lever; frequency, on this evidence, is not.
+    DEPTH_FRACTION = float(os.environ.get("VC_SHRINE_DEPTH_FRACTION", "0.0"))
     PLACE_CHANCE = float(os.environ.get("VC_SHRINE_PLACE_CHANCE", "0.30"))
     MIN_FLOOR = int(os.environ.get("VC_SHRINE_MIN_FLOOR", "1"))
     SANDBOX_MIN_DEPTH = 2
