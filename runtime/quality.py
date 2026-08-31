@@ -56,6 +56,23 @@ from runtime.systems import System
 # here; a route that stays open and an ending that stays uncertain are.
 #
 CREATURE_QUALITY_BASE = int(os.environ.get("VC_CREATURE_QUALITY_BASE", "11"))
+# The item default is 15 and it has been swept once, at 5 / 15 / 30, 138 runs per arm paired
+# on (agent, seed). A 6x range moved seven wins and neither contrast is distinguishable:
+#
+#     base   wins      deaths  floor mean  floor sd  floor IQR   labels   p vs 15
+#      5     84/138    53      20.9        8.1       [12, 26]    31.9     0.5847
+#     15     88/138    46      21.7        7.8       [18, 27]    31.8     control
+#     30     91/138    43      21.7        8.0       [19, 26]    31.6     0.7660
+#
+# The direction is monotone and the shape is mildly better at the top (fewer shallow deaths,
+# the 25th percentile floor rising 12 to 19), but none of it clears noise, so 15 ships.
+#
+# The reason the knob is weak is upstream of it. `Inventory.qual` is a high-water mark that is
+# never decremented on spend, so the best material ever banked sets that material's forge floor
+# for the rest of the run, and salvage banks the dead creature's tier. Forged output at or above
+# its ingredients then feeds the next floor. Over the real call mix that leaves 51% of rolls
+# delivering a tier the floor already guaranteed and 19% clamped at Legendary whatever the base
+# is. **If the item side needs to move, the floor is the lever and this number is not.**
 ITEM_QUALITY_BASE = int(os.environ.get("VC_ITEM_QUALITY_BASE", "15"))
 
 NORMAL, UNCOMMON, RARE, EPIC, LEGENDARY = 0, 1, 2, 3, 4
@@ -76,11 +93,17 @@ def roll(rng: random.Random, floor: int = 0, bias: float = 0.0,
     """Binomial quality distribution. `floor` guarantees a minimum tier, `bias` (>=0) shifts
     upward, and `base` picks which side's per-trial odds to use, defaulting to the item side.
 
-    Each tier above 0 is a success on a binomial trial and successes reduce the odds. The
-    docstring used to claim "most items Normal, Legendary is rare". On the item side, at 15,
-    that is true by 2.3 points: four trials give Normal 52.3%, Uncommon 39.4%, Rare 7.8%,
-    Epic 0.4%, Legendary 0.0%. Nearly half of everything is graded. Stated rather than
-    fixed, because the item side has never been swept and changing it is an experiment.
+    Each tier above 0 is a success on a binomial trial and successes reduce the odds. On its
+    own, at base 15 with no floor and no bias, that gives Normal 52.3%, Uncommon 39.4%,
+    Rare 7.8%, Epic 0.4%, Legendary 0.0%.
+
+    **That distribution describes almost none of the rolls the game makes.** `forge.py`
+    passes a floor pinned to the lowest-quality banked ingredient and `bias = 0.15 * floor +
+    0.05 * len(additives)`, and the last line here adds the floor and clamps. Measured over
+    2603 real rolls from 18 runs, the delivered grades are Normal 15.5%, Uncommon 18.1%,
+    Rare 19.6%, Epic 20.4%, **Legendary 26.4%**: the top tier is the most common outcome and
+    the mean floor, 1.65, is 74% of the mean delivered tier of 2.24. Read the in-situ numbers
+    with `python3 -m runtime.quality_leverage`, not the closed form above.
     """
     max_tier = LEGENDARY
     base_prob = (ITEM_QUALITY_BASE if base is None else base) + int(bias * 20)

@@ -145,5 +145,62 @@ def main():
     print("OK")
 
 
+
+
+# --------------------------------------------------------------------------- #
+# The leverage instrument models `roll()` analytically, so it can price a base without
+# spending an evaluation on it. A model that drifts from the code it models is worse than
+# no model, so pin them together and pin the two facts the item-base sweep turned on.
+# --------------------------------------------------------------------------- #
+
+def test_exact_matches_roll_over_the_shapes_the_forge_actually_passes():
+    """`quality_leverage.exact` must reproduce `roll` to sampling error at every (floor,
+    bias) the forge emits. Empirically the forge passes floor 0..4 and bias 0.15*floor
+    upward, so walk that grid rather than only the unbiased case."""
+    from runtime.quality_leverage import exact
+
+    for floor in range(0, Q.LEGENDARY + 1):
+        for bias in (0.0, 0.15 * floor, 0.15 * floor + 0.1):
+            for base in (5, 15, 30):
+                predicted = exact(base, floor, bias)
+                rng = random.Random(f"{floor}:{bias}:{base}")
+                n = 20000
+                seen = [0] * (Q.LEGENDARY + 1)
+                for _ in range(n):
+                    seen[Q.roll(rng, floor=floor, bias=bias, base=base)] += 1
+                for tier in range(Q.LEGENDARY + 1):
+                    assert abs(seen[tier] / n - predicted.get(tier, 0.0)) < 0.02, (
+                        f"exact() disagrees with roll() at floor={floor} bias={bias} "
+                        f"base={base} tier={tier}")
+
+
+def test_the_floor_is_additive_and_clamped_so_a_high_floor_ignores_the_base():
+    """`roll` ends `max(0, min(LEGENDARY, floor + successes))`. At floor 4 that pins the
+    result to Legendary whatever the base is, which is why 19% of real rolls cannot be moved
+    by `ITEM_QUALITY_BASE` at all. If the floor ever stops being additive this fails."""
+    for base in (4, 15, 90):
+        rng = random.Random(f"clamp:{base}")
+        assert {Q.roll(rng, floor=Q.LEGENDARY, base=base) for _ in range(200)} == {Q.LEGENDARY}
+    # and one tier down, the base is still only able to push upward from the floor
+    rng = random.Random("floor3")
+    assert min(Q.roll(rng, floor=Q.EPIC, base=4) for _ in range(200)) == Q.EPIC
+
+
+def test_banked_material_quality_is_a_high_water_mark_that_survives_spending():
+    """`Inventory.qual` is never decremented, so one Legendary scrap sets that material's
+    forge floor to Legendary for the rest of the run even after it has been spent and
+    replaced with Normal stock. This is the ratchet that makes the item base hard to move,
+    and it is deliberate; the test is here so a change to it is a decision, not a surprise."""
+    from runtime.components import Inventory
+
+    inv = Inventory()
+    inv.add({"scrap": 1}, quality=Q.LEGENDARY)
+    assert inv.min_quality(["scrap"]) == Q.LEGENDARY
+    assert inv.pay({"scrap": 1})
+    assert inv.comp.get("scrap", 0) == 0
+    inv.add({"scrap": 40}, quality=Q.NORMAL)
+    assert inv.min_quality(["scrap"]) == Q.LEGENDARY
+
+
 if __name__ == "__main__":
     main()

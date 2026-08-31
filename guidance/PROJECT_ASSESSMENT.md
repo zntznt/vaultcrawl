@@ -4868,3 +4868,87 @@ cost of learning that, and the tuning was not wasted, it just was not the answer
 rewards, one arithmetically dead currency, a free permanent buff and two never-choosable
 offerings were all removed on the way, and the top offering's share of takes fell from 57% to
 38%. None of those showed in the win column either.
+
+## Sweeping the item quality base: the number is weak because something upstream is strong
+
+`ITEM_QUALITY_BASE` was the one parameter held fixed through the whole creature-quality sweep,
+and `roll()`'s own docstring said so: "the item side has never been swept and changing it is an
+experiment." This is that experiment. 138 runs per arm, 23 shared seeds, paired on
+`(agent, seed)`, control at the shipped 15.
+
+| base | wins | 95% CI | deaths | floor mean | floor sd | floor IQR | labels | p vs 15 |
+|---|---|---|---|---|---|---|---|---|
+| 5 | 84/138 | [53%, 69%] | 53 | 20.9 | 8.1 | [12, 26] | 31.9 | 0.5847 |
+| **15** | **88/138** | [55%, 71%] | 46 | 21.7 | 7.8 | [18, 27] | 31.8 | control |
+| 30 | 91/138 | [58%, 73%] | 43 | 21.7 | 8.0 | [19, 26] | 31.6 | 0.7660 |
+
+A **6x range of item quality moves seven wins and neither contrast survives**. The control
+lands between the extremes, which is what a real but tiny monotone effect looks like, and the
+per-1000-turn event rates are flat to two significant figures across all three arms:
+`forge_used` 18.2 / 18.7 / 18.8, `enemy_killed` 20.1 / 19.3 / 19.4. Distinct labels move by
+0.3. 15 ships unchanged.
+
+### The interesting half is why
+
+The obvious reading, "quality does not matter", is wrong, and the analytic instrument
+(`runtime/quality_leverage.py`) says so before any runs are spent. Over the 2603 rolls the game
+actually made across 18 runs, the base still has real leverage on the distribution:
+
+```
+     base     Normal Uncommon     Rare     EpicLegendary   mean tier
+ observed      15.5%    18.1%    19.6%    20.4%    26.4%        2.24
+        5      27.0%    12.3%    24.0%    14.1%    22.6%        1.93
+       15*     17.3%    17.2%    19.7%    18.8%    27.1%        2.21
+       30       7.9%    18.0%    17.8%    20.6%    35.7%        2.58
+```
+
+Base 5 to 30 cuts Normal items from 27% to 8% and lifts Legendary from 23% to 36%. That is a
+large change in what the player is holding, and it buys three wins.
+
+The reason is that **the base is not what sets an item's grade.** `roll()` ends
+`max(0, min(LEGENDARY, floor + successes))`, so the floor is additive and clamped, and
+`forge.py` passes `floor = player_inv.min_quality(...)` with `bias = 0.15 * floor + 0.05 *
+len(additives)`, so a high floor raises the odds *as well as* the result. Over the real call
+mix the mean floor is **1.65 of a mean delivered tier of 2.24, which is 74% of the grade**,
+**51% of rolls deliver a tier the floor already guaranteed** (the roll contributed nothing),
+and **19% are clamped at Legendary whatever the base is**.
+
+### The ratchet, which is deliberate and worth knowing about
+
+`Inventory.qual` is documented as "best quality tier banked" and is never decremented when the
+material is spent. Salvage banks the dead creature's tier into it. So:
+
+```
+one Legendary scrap banked  -> min_quality 4
+spend it, inventory empty   -> min_quality 4
+add forty Normal scrap      -> min_quality 4
+```
+
+One good kill sets that material's forge floor to Legendary for the rest of the run, and every
+sigil forged from it comes out at or above its ingredients, ready to be salvaged back. The
+distribution is a ratchet with a floor that only goes up, and `ITEM_QUALITY_BASE` is the term
+that decides what happens *above* the ratchet, which by then is most of the way to the cap.
+
+This also means the creature base and the item base are not independent axes: creature tier
+feeds the salvage that sets the item floor. The 15 / 11 / 7 creature sweep was moving item
+quality too, through this path, which is worth remembering before reading either sweep as
+isolated.
+
+`tests/test_quality.py` pins all three facts: that the analytic model reproduces `roll()` across
+the floor and bias grid the forge emits, that the floor is additive and clamped, and that the
+high-water mark survives spending. The last one is a decision-recorder rather than a bug-catcher.
+
+### What this says about picking a knob
+
+This is the seventh instance of the shape that has cost the most time in this project: **a
+parameter with real leverage on its own output, sitting downstream of something that has
+already decided the answer.** The recall weight was one (3 to 6, 84 calls, 0 binds). The shrine
+`_worth` gains were another. The diagnostic that would have caught it in five minutes rather
+than four hours of evaluation is the same each time and is now an instrument: **measure the
+distribution of arguments the parameter is actually read with before sweeping its value.** If
+half the calls are pinned by another term, the sweep has already failed and no number of seeds
+will show it.
+
+If the item side needs to move, the lever is the floor: whether `min_quality` should reflect
+what is being spent rather than the best thing ever banked. That is a design change, not a
+tuning one, and it is not made here.
