@@ -229,7 +229,7 @@ def sp4_crafting_floor():
     inv(g.player).add({"lamplight": 20}, quality=Q.RARE)   # seed Rare matter
 
     cost = forge.cost(g)
-    floor = inv(g.player).min_quality(list(cost))
+    floor = inv(g.player).min_quality(cost)
     print(f"   Inventory seeded: lamplight x20 @ quality {Q.RARE} (Rare).")
     print(f"   forge.cost = {cost}; floor = inv.min_quality(cost) = {floor} "
           f"({Q.name(floor)}).")
@@ -331,7 +331,7 @@ def sp6_salvage_carries_quality():
     sal.on_player_act(g)                                # real collect into Inventory
     i = inv(g.player)
     print(f"   After actor_died + collect: matter {dict(i.comp)}, "
-          f"banked-quality {dict(i.qual)}")
+          f"graded stock {dict(i.tiers)}")
 
     via_real = any(i.quality_of(m) > 0 for m in mats)
     if via_real:
@@ -350,7 +350,7 @@ def sp6_salvage_carries_quality():
     banked = {m: i.quality_of(m) for m in mats}
     forge = g.system("forge")
     new_cost = forge.cost(g)
-    new_floor = inv(g.player).min_quality(list(new_cost))
+    new_floor = inv(g.player).min_quality(new_cost)
     print(f"   Banked quality: {banked}")
     print(f"   Next forge.cost = {new_cost}; its floor = min_quality(cost) = {new_floor} "
           f"(was 0 on an empty inventory).")

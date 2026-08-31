@@ -524,7 +524,7 @@ class SacrificeSystem(System):
             if salv:
                 bag = salv.inventory(game)
                 if bag:
-                    bag.comp = {}
+                    bag.reset()   # grades go with the matter, not just the count
             # Was +3 DEF, then +4 sight, both measured at nothing. A slot is the only
             # grant that moved route composition at this depth.
             sigs = game.system("sigils")

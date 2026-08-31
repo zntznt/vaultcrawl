@@ -48,19 +48,45 @@ def components_of(game, kind="thing", source="", tier=1, name="") -> dict:
 
 
 class Inventory:
-    """A pool of materials banked from salvage."""
+    """A pool of materials banked from salvage, graded per unit.
+
+    Matter carries the grade of whatever it was salvaged from, and the forge reads that
+    grade as its quality floor. `tiers` is the ledger that makes the floor honest: it
+    splits each material's stock by tier, so a single Legendary scrap is one Legendary
+    scrap rather than a permanent property of the word "scrap".
+
+    This used to be a scalar high-water mark per material, `qual[m] = best ever banked`,
+    which was never decremented when the matter was spent. One good kill set that
+    material's forge floor for the rest of the run: bank a Legendary scrap, spend it,
+    refill with forty Normal, and the floor was still Legendary. Because `roll()` adds the
+    floor and clamps, that made the floor, not the odds, the thing that decided an item's
+    grade, and `ITEM_QUALITY_BASE` measured as inert across a 6x sweep. See
+    `guidance/PROJECT_ASSESSMENT.md` and `runtime/quality_leverage.py`.
+
+    Grades are spent best-first. The alternative, spending the junk and hoarding the good
+    matter, would leave the floor pinned at the worst thing you own and make banked grade
+    unspendable, which is a bigger change than making it finite.
+    """
 
     def __init__(self):
         self.comp: dict = {}     # material -> count
-        self.qual: dict = {}     # material -> best quality tier banked (for the forge floor)
+        self.tiers: dict = {}    # material -> {tier: count}, summing to comp[material]
+
+    def reset(self):
+        """Empty the pool. Use this rather than assigning `comp`, which desyncs `tiers`."""
+        self.comp = {}
+        self.tiers = {}
 
     def add(self, comps: dict, quality: int = 0):
         gained = 0
+        tier = max(0, int(quality or 0))
         for m, q in (comps or {}).items():
+            if q <= 0:
+                continue
             self.comp[m] = self.comp.get(m, 0) + q
+            bucket = self.tiers.setdefault(m, {})
+            bucket[tier] = bucket.get(tier, 0) + q
             gained += q
-            if quality > self.qual.get(m, 0):
-                self.qual[m] = quality
         if gained:
             # The `industrial` attractor scores forged-over-collected. It was reading
             # `inventory.total()` at the end of the run, which is the RESIDUAL, so
@@ -73,12 +99,53 @@ class Inventory:
             except Exception:
                 pass
 
-    def quality_of(self, material) -> int:
-        return self.qual.get(material, 0)
+    # ---- grades -------------------------------------------------------------
+    @staticmethod
+    def _as_cost(cost) -> dict:
+        """Accept either a cost dict (material -> qty) or a bare iterable of material
+        names, which is read as one unit of each."""
+        if isinstance(cost, dict):
+            return {m: q for m, q in cost.items() if q > 0}
+        return {m: 1 for m in (cost or [])}
 
-    def min_quality(self, materials) -> int:
-        mats = list(materials or [])
-        return min((self.qual.get(m, 0) for m in mats), default=0)
+    def spend_plan(self, cost) -> list:
+        """The exact units paying `cost` would consume, as `(material, tier, qty)`,
+        best-grade first. `min_quality` and `pay` both read this, so the floor a craft is
+        quoted can never disagree with the matter it actually burns."""
+        plan: list = []
+        for m, need in sorted(self._as_cost(cost).items()):
+            for tier in sorted(self.tiers.get(m, {}), reverse=True):
+                if need <= 0:
+                    break
+                take = min(self.tiers[m][tier], need)
+                if take > 0:
+                    plan.append((m, tier, take))
+                    need -= take
+        return plan
+
+    def quality_of(self, material) -> int:
+        """The best grade still held of a material. Falls when that stock is spent."""
+        held = self.tiers.get(material) or {}
+        return max((t for t, q in held.items() if q > 0), default=0)
+
+    def min_quality(self, cost) -> int:
+        """The forge floor: the worst grade among the units `cost` would actually spend.
+
+        Quantity matters. One Legendary scrap and twenty Normal buys a Legendary floor for
+        a one-unit recipe and a Normal floor for a two-unit one, because the second unit
+        comes off the Normal pile.
+        """
+        wanted = self._as_cost(cost)
+        if not wanted:
+            return 0
+        plan = self.spend_plan(wanted)
+        covered: dict = {}
+        for m, _tier, qty in plan:
+            covered[m] = covered.get(m, 0) + qty
+        # an unaffordable recipe has no grade to quote
+        if any(covered.get(m, 0) < need for m, need in wanted.items()):
+            return 0
+        return min(tier for _m, tier, _q in plan)
 
     def total(self) -> int:
         return sum(self.comp.values())
@@ -89,6 +156,13 @@ class Inventory:
     def pay(self, cost: dict) -> bool:
         if not self.can_pay(cost):
             return False
+        for m, tier, qty in self.spend_plan(cost):
+            bucket = self.tiers.get(m, {})
+            bucket[tier] = bucket.get(tier, 0) - qty
+            if bucket[tier] <= 0:
+                del bucket[tier]
+            if not bucket:
+                self.tiers.pop(m, None)
         for m, q in cost.items():
             self.comp[m] -= q
             if self.comp[m] <= 0:

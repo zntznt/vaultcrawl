@@ -32,7 +32,7 @@ def _seed_matter(game, qty=20):
     """Give the player ample matter from the world's own material vocabulary."""
     mats = world_materials(game)
     assert mats, "world must define a material vocabulary"
-    inv(game.player).comp = {}
+    inv(game.player).reset()
     inv(game.player).add({mats[0]: qty})
     return mats
 

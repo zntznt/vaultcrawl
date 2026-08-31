@@ -67,12 +67,17 @@ CREATURE_QUALITY_BASE = int(os.environ.get("VC_CREATURE_QUALITY_BASE", "11"))
 # The direction is monotone and the shape is mildly better at the top (fewer shallow deaths,
 # the 25th percentile floor rising 12 to 19), but none of it clears noise, so 15 ships.
 #
-# The reason the knob is weak is upstream of it. `Inventory.qual` is a high-water mark that is
-# never decremented on spend, so the best material ever banked sets that material's forge floor
-# for the rest of the run, and salvage banks the dead creature's tier. Forged output at or above
-# its ingredients then feeds the next floor. Over the real call mix that leaves 51% of rolls
-# delivering a tier the floor already guaranteed and 19% clamped at Legendary whatever the base
-# is. **If the item side needs to move, the floor is the lever and this number is not.**
+# The reason the knob measured weak was upstream of it. `Inventory` banked a scalar high-water
+# mark per material, never decremented on spend, so the best thing ever salvaged set that
+# material's forge floor for the rest of the run. Because `roll()` adds the floor and clamps,
+# that left 51% of rolls delivering a tier the floor already guaranteed and 19% pinned at
+# Legendary whatever this number was. **The floor was the lever and this number was not.**
+#
+# That has since been fixed: grades live on the units and are spent with them
+# (`runtime/components.py`). The arms above were measured before the fix, so they price this
+# number under the old ratchet. They are kept because they are what motivated finding it, not
+# because they describe the current build. Re-sweeping the item base on the fixed floor is
+# open work.
 ITEM_QUALITY_BASE = int(os.environ.get("VC_ITEM_QUALITY_BASE", "15"))
 
 NORMAL, UNCOMMON, RARE, EPIC, LEGENDARY = 0, 1, 2, 3, 4

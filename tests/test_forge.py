@@ -38,8 +38,7 @@ def _seed_quality(game, qual=2, qty=12):
     mats = world_materials(game)
     assert len(mats) >= 2, "world must define >= 2 materials"
     pinv = inv(game.player)
-    pinv.comp = {}
-    pinv.qual = {}
+    pinv.reset()
     pinv.add({mats[0]: qty, mats[1]: qty}, quality=qual)
     return mats
 
@@ -48,7 +47,7 @@ def _seed(game, qty=12):
     """Seed the player's inventory with ample matter from the world's real materials."""
     mats = world_materials(game)
     assert mats, "world must define a material vocabulary"
-    inv(game.player).comp = {}           # start from a clean, deterministic pool
+    inv(game.player).reset()             # start from a clean, deterministic pool
     # uneven amounts so 'most-abundant-first' cost selection is exercised
     inv(game.player).add({mats[0]: qty, mats[1 % len(mats)]: max(1, qty // 2)})
     return mats
@@ -99,7 +98,7 @@ def test_forge_slots_full_noop():
 
 def test_forge_no_matter_noop():
     g, sig, forge = _fresh()
-    inv(g.player).comp = {}              # drain all matter
+    inv(g.player).reset()                # drain all matter
     sig.slots = []                       # free slot available
 
     assert inv(g.player).total() == 0

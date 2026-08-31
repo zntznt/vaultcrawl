@@ -186,20 +186,67 @@ def test_the_floor_is_additive_and_clamped_so_a_high_floor_ignores_the_base():
     assert min(Q.roll(rng, floor=Q.EPIC, base=4) for _ in range(200)) == Q.EPIC
 
 
-def test_banked_material_quality_is_a_high_water_mark_that_survives_spending():
-    """`Inventory.qual` is never decremented, so one Legendary scrap sets that material's
-    forge floor to Legendary for the rest of the run even after it has been spent and
-    replaced with Normal stock. This is the ratchet that makes the item base hard to move,
-    and it is deliberate; the test is here so a change to it is a decision, not a surprise."""
+def test_banked_grade_is_spent_with_the_matter_it_came_on():
+    """The forge floor used to be a high-water mark: one Legendary scrap set that
+    material's floor for the rest of the run, even after the scrap was spent and replaced
+    with Normal stock. Grades now live on the units, so they deplete."""
     from runtime.components import Inventory
 
-    inv = Inventory()
-    inv.add({"scrap": 1}, quality=Q.LEGENDARY)
-    assert inv.min_quality(["scrap"]) == Q.LEGENDARY
-    assert inv.pay({"scrap": 1})
-    assert inv.comp.get("scrap", 0) == 0
-    inv.add({"scrap": 40}, quality=Q.NORMAL)
-    assert inv.min_quality(["scrap"]) == Q.LEGENDARY
+    bag = Inventory()
+    bag.add({"scrap": 1}, quality=Q.LEGENDARY)
+    assert bag.min_quality({"scrap": 1}) == Q.LEGENDARY
+    assert bag.pay({"scrap": 1})
+    assert bag.quality_of("scrap") == Q.NORMAL, "spent grade must not linger"
+    bag.add({"scrap": 40}, quality=Q.NORMAL)
+    assert bag.min_quality({"scrap": 1}) == Q.NORMAL, "forty Normal scrap is Normal scrap"
+
+
+def test_the_floor_counts_units_not_just_materials():
+    """A recipe wanting two units of a material it holds one graded unit of pays for the
+    second out of the Normal pile, so the floor is Normal. This is the difference between
+    "I own something good" and "this craft is made of something good"."""
+    from runtime.components import Inventory
+
+    bag = Inventory()
+    bag.add({"scrap": 1}, quality=Q.LEGENDARY)
+    bag.add({"scrap": 20}, quality=Q.NORMAL)
+    assert bag.min_quality({"scrap": 1}) == Q.LEGENDARY
+    assert bag.min_quality({"scrap": 2}) == Q.NORMAL
+    # and the floor is the worst material in the recipe, not the worst overall
+    bag.add({"ash": 5}, quality=Q.RARE)
+    assert bag.min_quality({"ash": 3}) == Q.RARE
+    assert bag.min_quality({"ash": 3, "scrap": 2}) == Q.NORMAL
+
+
+def test_the_quoted_floor_and_the_matter_burned_cannot_disagree():
+    """`min_quality` and `pay` both read `spend_plan`, so a craft can never be quoted a
+    grade it does not then consume. Spend best-first until the graded stock is gone."""
+    from runtime.components import Inventory
+
+    bag = Inventory()
+    bag.add({"scrap": 2}, quality=Q.EPIC)
+    bag.add({"scrap": 2}, quality=Q.NORMAL)
+    quoted = []
+    for _ in range(2):
+        quoted.append(bag.min_quality({"scrap": 2}))
+        assert bag.pay({"scrap": 2})
+    assert quoted == [Q.EPIC, Q.NORMAL], quoted
+    assert bag.total() == 0 and not bag.tiers
+
+
+def test_the_graded_ledger_stays_in_step_with_the_count():
+    """`tiers` must sum to `comp` for every material after any sequence of adds and pays,
+    or the floor and the affordability check are reading different inventories."""
+    from runtime.components import Inventory
+
+    bag = Inventory()
+    for tier, qty in ((0, 7), (2, 3), (4, 1), (1, 5)):
+        bag.add({"scrap": qty, "ash": qty}, quality=tier)
+    bag.pay({"scrap": 9, "ash": 2})
+    assert not bag.pay({"scrap": 99}), "an unaffordable cost must not disturb the ledger"
+    for mat, count in bag.comp.items():
+        assert sum(bag.tiers.get(mat, {}).values()) == count, mat
+    assert bag.min_quality({"scrap": 99}) == 0, "an unaffordable recipe quotes no grade"
 
 
 if __name__ == "__main__":

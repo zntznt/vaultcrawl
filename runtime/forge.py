@@ -179,7 +179,9 @@ class ForgeSystem(System):
         tier = 0
         if q is not None:
             # output never below the lowest-quality ingredient; odds rise with inputs + additives
-            floor = player_inv.min_quality(list(cost))
+            # the floor is the worst grade among the units this recipe will actually
+            # burn, so pass the cost with its quantities rather than just its material names
+            floor = player_inv.min_quality(cost)
             additive_mats = self._pick_additives(game, cost, additives)
             bias = 0.15 * floor + 0.05 * len(additive_mats)
             self._register_world_affinities(game)
