@@ -18,6 +18,7 @@ class RunChronicle:
 
     def __init__(self):
         self.lore_read_notes: set = set()        # note ids read this run
+        self.run_seed: str = ""                   # salts the ghost roll; see to_upheaval_events
         self.note_defeats: dict = {}              # note id -> creatures of it the player felled
         self.forge_regions: dict = {}             # region_id -> forge count
         self.faction_endings: dict = {}           # faction_id -> final standing
@@ -137,10 +138,19 @@ class RunChronicle:
         """Convert chronicle to Upheaval-compatible event list."""
         events = []
 
-        # Lore → lost notes (ghosts). Each read note has a chance to become a ghost.
+        # Lore -> lost notes (ghosts). A note read closely enough to be remembered can
+        # fade out of the world and haunt it instead.
+        #
+        # The roll is salted with the run seed. It used to be `droll(note_id, 3)`, which is
+        # a pure function of the note's NAME: whether a note could ever become a ghost was
+        # fixed for all time by its id, not by anything the player did. On the sample vault
+        # that left exactly two eligible notes, `discipline` and `second brain`, while the
+        # agent only ever reads `stoicism`, `roguelike project` and `grocery list`. The two
+        # sets are disjoint, so `haunted` scored 0.000 across 288 runs and the whole ghost
+        # mechanic was unreachable rather than merely rare. Salting makes each read note a
+        # real one-in-three per run, which is what the original comment claimed.
         for note_id in self.lore_read_notes:
-            # Only some notes become ghosts (deterministic by note id hash)
-            if droll(note_id, 3) == 0:  # ~33% chance
+            if droll(f"{note_id}:{self.run_seed}", 3) == 0:  # ~33% per run
                 events.append({
                     "kind": "note_lost",
                     "note": note_id,

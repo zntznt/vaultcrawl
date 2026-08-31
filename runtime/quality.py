@@ -20,9 +20,43 @@ actions, additive affinities); built-in defaults keep this module working on its
 """
 from __future__ import annotations
 
+import os
 import random
 
 from runtime.systems import System
+
+# Per-trial tier odds, split by side so creature difficulty and player equipment move
+# independently.
+#
+# These shared ONE literal until the sweep that set them apart, and the sharing made a
+# creature-difficulty measurement impossible to interpret: `roll()` is read by
+# `_qualify_actor` for every monster, by `sigils.py` for every sigil found on the ground and
+# by `forge.py` for every sigil the player makes. One number moved enemy strength and player
+# equipment on the same curve, pushing the outcome in opposite directions, so a null result
+# would have been unattributable to either side.
+#
+# The creature default is 11, and it has been re-derived once. The original 432-run sweep of
+# 15 / 7 / 5 picked 7, on the reasoning that it opened the `truths` route while keeping floor
+# spread, where 5 bought wins by flattening every run to the same ending. That sweep was
+# measured on a build where five of seven locus activations raised NameError before their
+# heal, so all three arms were harder than the game they described. Fixing that (see
+# runtime/loci.py) lowered the difficulty underneath the number and 7 became the flat arm:
+# floor sd 6.9, IQR [26, 27], 79.9% of runs reaching the bottom.
+#
+# Re-swept on the fixed build at 15 / 11 / 7, 144 runs per arm, paired on (agent, seed):
+#
+#     base   wins      deaths  floor sd  floor IQR   truths wins   floor 26+
+#     15     84/144    60      8.6       [11, 26]    3             60.4%
+#     11     82/144    60      8.1       [15, 26]    9             62.5%
+#      7    108/144    31      6.9       [26, 27]    14            79.9%
+#
+# 11 is indistinguishable from 15 on wins (p = 0.90) and keeps its spread, while carrying
+# three times as many `truths` wins. 7 wins more than either (p = 0.0007 against 11) and is
+# the one arm where the middle half of runs all end the same way. Wins are not the target
+# here; a route that stays open and an ending that stays uncertain are.
+#
+CREATURE_QUALITY_BASE = int(os.environ.get("VC_CREATURE_QUALITY_BASE", "11"))
+ITEM_QUALITY_BASE = int(os.environ.get("VC_ITEM_QUALITY_BASE", "15"))
 
 NORMAL, UNCOMMON, RARE, EPIC, LEGENDARY = 0, 1, 2, 3, 4
 NAMES = ["Normal", "Uncommon", "Rare", "Epic", "Legendary"]
@@ -37,12 +71,19 @@ def mark(tier: int) -> str:
     return MARK[max(0, min(LEGENDARY, int(tier)))]
 
 
-def roll(rng: random.Random, floor: int = 0, bias: float = 0.0) -> int:
-    """Binomial quality distribution — most items Normal, Legendary is rare.
-    `floor` guarantees minimum tier. `bias` (>=0) shifts the distribution upward.
-    Each tier above 0 is a success on a binomial trial; successes reduce odds."""
+def roll(rng: random.Random, floor: int = 0, bias: float = 0.0,
+         base: int | None = None) -> int:
+    """Binomial quality distribution. `floor` guarantees a minimum tier, `bias` (>=0) shifts
+    upward, and `base` picks which side's per-trial odds to use, defaulting to the item side.
+
+    Each tier above 0 is a success on a binomial trial and successes reduce the odds. The
+    docstring used to claim "most items Normal, Legendary is rare". On the item side, at 15,
+    that is true by 2.3 points: four trials give Normal 52.3%, Uncommon 39.4%, Rare 7.8%,
+    Epic 0.4%, Legendary 0.0%. Nearly half of everything is graded. Stated rather than
+    fixed, because the item side has never been swept and changing it is an experiment.
+    """
     max_tier = LEGENDARY
-    base_prob = 15 + int(bias * 20)   # default 15/100 per trial, bias raises it
+    base_prob = (ITEM_QUALITY_BASE if base is None else base) + int(bias * 20)
     base_prob = min(90, max(4, base_prob))
     successes = 0
     prob = base_prob
@@ -63,8 +104,8 @@ def scale_creature(actor, tier: int):
         return
     actor.max_hp = int(actor.max_hp * (1.0 + 0.5 * tier))
     actor.hp = actor.max_hp
-    from .body_parts import init_body
-    init_body(actor)   # recompute body parts from scaled HP
+    from .body_parts import rebuild_body
+    rebuild_body(actor)   # re-derive parts from the scaled HP, discarding the old ones
     actor.atk += tier
     actor.defense = getattr(actor, "defense", 0) + tier // 2
     base = getattr(actor, "name", "creature")
@@ -182,7 +223,7 @@ class QualitySystem(System):
             return
         actor._qualified = True
         r = random.Random(f"{game.seed}:{game.floor}:{actor.x}:{actor.y}:{getattr(actor,'source','')}")
-        tier = roll(r, 0, 0.0)
+        tier = roll(r, 0, 0.0, base=CREATURE_QUALITY_BASE)
         actor.quality = tier
         if tier <= 0:
             actor._special_actions = []

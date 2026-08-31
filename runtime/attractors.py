@@ -70,6 +70,30 @@ class AttractorTracker:
         self.total_kills = kills
         self.total_turns = turns
 
+    def raw(self) -> dict:
+        """The unclamped quantities behind the scores, for calibration.
+
+        `_industrial_score` is `max(0, (ratio - 0.5) * 2)`, so every ratio at or below 0.5
+        reports exactly 0.000 and the clamp throws away how far below. Measured over 288
+        runs, every profile read between 0.000 and 0.016, which says only "at or under 0.5"
+        and cannot distinguish 0.49 from 0.05. An attractor that cannot be calibrated from
+        its own output is the same failure as `event_kinds` pinned at 12.3 of 13: a
+        statistic against a wall, reporting a constant, read as a fact about the game.
+
+        These are diagnostics, not scores. Nothing should threshold on them without saying
+        so, and they are deliberately outside `scores()` so the attractor vector keeps its
+        shape.
+        """
+        return {
+            "matter_collected": self.matter_collected,
+            "matter_forged": self.matter_forged,
+            "forge_ratio": (self.matter_forged / self.matter_collected
+                            if self.matter_collected else 0.0),
+            "ghosts_seen": self.ghosts_seen,
+            "notes_learned": self.notes_learned,
+            "echo_fires": self.echo_fires,
+        }
+
     def scores(self) -> dict:
         """Return attractor scores 0.0-1.0."""
         return {

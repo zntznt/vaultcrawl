@@ -62,6 +62,86 @@ def main():
     assert len(mon._special_actions) == mon.quality, "one special action per tier"
     assert all(a in Q.SPECIAL_ACTIONS for a in mon._special_actions), "actions must be registered"
 
+    # --- the two bases are separate knobs, and the creature side is actually wired ---
+    #
+    # This exists because a 432-run sweep lives on one keyword argument. `roll()` was a single
+    # literal read by monsters, by ground sigils and by the forge; the split gave creatures
+    # their own base and set it to 7. Delete `base=CREATURE_QUALITY_BASE` from `_qualify_actor`
+    # and nothing raises, no test above fails, and the game silently reverts to the arm the
+    # sweep rejected. So the check is behavioural: move the creature constant and the creature
+    # distribution must move with it, while the item side must not.
+    assert Q.CREATURE_QUALITY_BASE != Q.ITEM_QUALITY_BASE, \
+        "the split has collapsed back to one value; the sweep chose 7 against 15"
+
+    g3 = Game(load_manifest("examples/world.json"), systems=[Q.QualitySystem()])
+    qs3 = g3.system("quality")
+
+    def graded_share(base):
+        """Fraction of 120 distinct spawn positions that come out above Normal."""
+        saved, Q.CREATURE_QUALITY_BASE = Q.CREATURE_QUALITY_BASE, base
+        try:
+            n = 0
+            for i in range(120):
+                a = make_enemy({"tier": 1, "archetype": "shade", "name": "Shade",
+                                "sourceNoteId": "stoicism"}, 3 + i % 30, 3 + i // 30)
+                qs3._qualify_actor(g3, a)
+                n += a.quality > 0
+            return n / 120.0
+        finally:
+            Q.CREATURE_QUALITY_BASE = saved
+
+    hot, cold = graded_share(90), graded_share(4)
+    assert hot > cold + 0.5, (
+        f"creature base 90 graded {hot:.0%} and base 4 graded {cold:.0%}, which are too close "
+        f"to be two different settings: `_qualify_actor` is ignoring CREATURE_QUALITY_BASE and "
+        f"still rolling on the item default")
+
+    # And the item side must not follow it. Same extreme creature base, sigils unmoved.
+    def sigil_tiers():
+        return [qs3.qualify_sigil(g3, {"note": f"n{i}", "role": "leaf", "ability": "Ward",
+                                       "durability": 2})
+                for i in range(60)]
+
+    before = sigil_tiers()
+    saved, Q.CREATURE_QUALITY_BASE = Q.CREATURE_QUALITY_BASE, 90
+    try:
+        after = sigil_tiers()
+    finally:
+        Q.CREATURE_QUALITY_BASE = saved
+    assert before == after, \
+        "the creature base moved sigil grading, so the two sides are still coupled"
+
+    # `roll()` with no `base=` is the item side. A caller that forgets the kwarg must land on
+    # items, never on creatures, or the default silently becomes the creature setting.
+    assert Q.roll(random.Random(7)) == Q.roll(random.Random(7), base=Q.ITEM_QUALITY_BASE)
+
+    # --- scale_creature's HP boost must survive the body system ---
+    #
+    # It did not, for the life of the project. `BodySystem` is stack index 21 and
+    # `QualitySystem` is 22, so by the time a creature is graded its body is already built
+    # from the UNSCALED hp. `scale_creature` raised `max_hp`, called `init_body`, which
+    # returns immediately when `actor.body` exists, and the first `sync_hp` reset `max_hp` to
+    # the sum of the unscaled parts. Measured on a tier-2 warden at Rare: 10 -> 20 -> 10.
+    #
+    # The test above (`quality must raise stats`) passed throughout, because it never built a
+    # body first, so it exercised the one arrangement that does not happen in a real game.
+    # Every quality sweep this project has run therefore moved attack, defence and
+    # special-action count and NOT durability, while being read as difficulty as a whole.
+    from runtime.body_parts import init_body as _init, sync_hp as _sync
+    for t in (Q.UNCOMMON, Q.RARE, Q.EPIC, Q.LEGENDARY):
+        a = make_enemy({"tier": 2, "archetype": "warden", "name": "W",
+                        "sourceNoteId": "stoicism"}, 1, 1)
+        start = a.max_hp
+        _init(a)                 # BodySystem, index 21, from unscaled hp
+        Q.scale_creature(a, t)   # QualitySystem, index 22
+        _sync(a)                 # any hit or heal
+        want = int(start * (1.0 + 0.5 * t))
+        assert a.max_hp == want, (
+            f"tier {t}: max_hp {start} -> {a.max_hp}, wanted {want}. The body was rebuilt "
+            f"from the unscaled hp, so the quality HP boost is being reverted")
+        assert sum(p["max"] for p in a.body.values()) == a.max_hp, \
+            "parts and max_hp disagree, so the next sync_hp will revert the scaling again"
+
     print("OK")
 
 

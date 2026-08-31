@@ -174,6 +174,8 @@ MSG_LINES = 5
 
 
 def interactive(game: Game) -> int:
+    # A modal prompt has someone to answer it here, and nowhere else.
+    game.has_ui = True
     import curses
 
     forge = game.system("forge")

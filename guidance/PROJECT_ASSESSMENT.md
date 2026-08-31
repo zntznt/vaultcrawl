@@ -3502,3 +3502,1369 @@ honest claim is that memory is now free rather than that it is a gain.
 - The divergence floor is 0.059 cold and 0.078 warm, both under the 0.10 line, so health
   condition 7 still fails. Warm is above cold again, which is the third n=144 measurement
   pointing that way and the opposite of what the n=48 samples said.
+
+## Ghosts: the first thing only a remembered world can do
+
+288 runs, 144 per arm, identical seeds, at `3fd0e2a`.
+
+| | cold | warm |
+|---|---|---|
+| `haunted` | 0.000 | **0.704** |
+| runs with any haunting | 0/144 | **136/144** |
+| wins | 57/144 | 56/144 |
+| mean floor | 18.4 | 18.4 |
+
+Paired: 34 cold-losses became warm-wins, 35 the other way, **p = 1.000**. The registered
+prediction was that warm would show `haunted > 0` where cold structurally cannot, and it
+held. The three notes that became ghosts are exactly the three the agent actually reads.
+
+Memory now produces a phenomenon the memoryless world cannot, at no cost to the run. That is
+what this whole line of work was for.
+
+### Two problems, both worth fixing before this is called done
+
+**The ghost roll overshot, by the same mechanism as the old ratchet.** Only **3** `note_lost`
+events were generated in the entire chain. They then persist in the chronicle forever, so
+every later run inherits all three and 94% of runs are haunted. A one-in-three-per-run roll
+became a permanent property of the world after the first handful of runs. This is precisely
+the failure the wane path fixed for ascendancies: events accumulate, nothing expires. The
+chronicle has no notion of an event ageing out, and now three separate mechanics depend on
+one that does not exist.
+
+Candidate fixes, in rough order of how well they fit what is already here:
+
+- give chronicle events a time-to-live in runs, which fixes ghosts, ascendancies and
+  contested borders in one place
+- let a ghost be laid to rest by defeating it, the same shape as the wane path
+- cap the simultaneous ghost count rather than the rate
+
+**A new stall, plausibly caused by ghosts and not yet confirmed.** One warm run (artisan,
+seed 20) spent **74.2% of its decisions on `interact` at 3.75 decisions per turn**, against a
+cold maximum of 1.13. It reached floor 26 and won, so it recovered rather than locking, but
+that is the signature. `interact` at a ghost is an obvious suspect, and ghosts are new actors
+that no candidate in the cascade was written with in mind. Fourth instance of the shape if it
+holds: a verb offered against a target it cannot resolve.
+
+The instrument that found it is the per-run label histogram plus decisions-per-turn, the same
+pair that found the other three. It is worth saying plainly that the win rate saw none of
+these: this run reads as clean parity.
+
+## Sandbox mode, measured for the first time, and the livelock that was waiting there
+
+`agent_eval` hardcodes `sandbox=False`. Every number in this document, every baseline, every
+health condition, every sweep, describes **classic descent**. Sandbox is the Alexander compiler
+in `runtime/arch/`, it is LIVE, and it is **the default interactive mode**: it is what a person
+gets from `python3 -m runtime.play world.json`. The mode nobody plays had 288-run baselines. The
+mode everybody plays had never been run with an agent at all.
+
+`runtime/sandbox_eval.py` closes that. It reuses `agent_eval.run_agent` and patches only the
+Game constructor, and `--classic` runs classic descent through the identical instrumentation,
+so the contrast below is a difference in the mode and not in two reporting paths.
+
+### The first two runs found the worst livelock this project has recorded
+
+**533.32 decisions per game turn** on cartographer/sbx-1, against 11.38 for the commune loop
+and 3.75 for interact. Three defects stacked, each sufficient on its own:
+
+1. **A door drawn on nothing.** `generate_level` writes a `>` at `level.stairs` for classic
+   descent. The sandbox surface builds its own district doors and never cleared that one, so the
+   map carried a `>` with no gate behind it. `on_stairs` reads the glyph, `descend` reads
+   `_gates`, they disagreed, and the forced `panic_descend` override rode the disagreement for
+   **49,437 consecutive decisions**.
+2. **A verb with no verdict.** `Game.descend` returned None on every path and `dispatch`
+   answered True regardless, so `note_result` was never told and `FATIGUE_FAILED` never applied.
+   Fifth instance of one shape, after commune range, commune price, the egress stair, interact.
+3. **A free action.** Sandbox traversal moved the player between z-levels without touching the
+   clock, and the arrival tile is the matching stair, so descend-ascend was a zero-cost cycle:
+   98 of 194 decisions and **0** game turns.
+
+A fourth surfaced on the way out: `panic_flee` forced a `(0, 0)` move when there was nowhere to
+run, and `_forced` returns before the candidate list exists, so nothing could break it.
+
+| run | before | after defect 1 | after defect 3 |
+|---|---|---|---|
+| cartographer/sbx-1 | 533.32 | 2.02 | **0.79, and it wins** |
+| artisan/sbx-1 | 324.18 | | **1.03** |
+| exploiter/sbx-0 | 14.03 | | **1.03** |
+
+A fifth, found by the same seam pointing the other way: `PortalSystem` registers a gate with no
+glyph under it, `dispatch` gates descend on `on_stairs`, and `on_stairs` tested the glyph, so
+**no agent could ever take a portal a human walks through freely** while sandbox perception
+steered it to go stand on one. `on_stairs` now asks the question `descend` actually asks. That
+is a Berlin gap, not a balance one, and it landed after the batch below.
+
+### 48 runs per arm, same seeds, at `2847924`
+
+| | sandbox | classic |
+|---|---|---|
+| wins | **10/48, 20.8%** | 25/48, 52.1% |
+| mean floor | **1.6** | 20.1 |
+| mean turns | **35,218** | 6,231 |
+| deaths | **2** | 22 |
+| decisions/turn | 1.016 | 1.016 |
+| labels used per run | **17.4** | 30.6 |
+| coupling pairs | 28.3 | 84.3 |
+| coupling density | **0.749** | 0.678 |
+| max top-label share | **87.1%** | 44.7% |
+| profiles that win | 5/6 | 6/6 |
+| win paths | boss_killed 8, diplomacy 2 | boss_killed 11, commune 7, standing 7 |
+
+Paired: both 5, sandbox-only 5, classic-only 20, neither 18. **McNemar exact p = 0.004.** The
+gap is real and it is not noise.
+
+### What the aggregate hides, again
+
+**33 of 48 sandbox runs burned the harness's entire 49,599-decision budget, and every one of
+them lost.** All 10 wins came from the 15 runs that resolved. So sandbox is not a mode the agent
+plays badly. It is a mode the agent mostly **never finishes**: 2 deaths in 48, `pacifist` at
+0.819, wandering safely forever. Mean floor 1.6 says most runs never enter any district's depths
+at all.
+
+Part of this is the harness. `run_agent` caps at `max_floor=99` times `max_turns_per_floor=500`,
+and sandbox `descend` does not move `floor`, so `floors_cleared` counts 99 phantom floors and an
+unresolved run runs to 49,599 decisions. But the budget is not why the runs do not finish, only
+why they take so long to say so.
+
+**A new stall shape, and decisions-per-turn is blind to it.** seeker/sbx-0 spent **87.1% of
+49,599 decisions on `keeper`** at exactly 1.00 d/t, and `workspace_camp` took ~48% in four more
+runs. The five livelocks before this one all failed to spend a turn, which is precisely what
+made `d/t` the instrument that caught them. These spend a turn every time and loop anyway. Only
+the per-run label histogram sees them. **The tripwire in `CLAUDE.md` (d/t above 1.05) would have
+passed this batch.**
+
+### The one number that favours sandbox
+
+**Coupling density is higher in sandbox, 0.749 against 0.678**, on a quarter of the coupling
+pairs. And the verb space is not narrower: sandbox reaches 36 of the 37 distinct labels classic
+reaches across the batch, missing only `panic_phase`. What is narrower is per-run breadth, 17.4
+against 30.6. Sandbox runs are individually more repetitive and collectively just as wide.
+
+`companion_flux` 0.096 against 0.475 and `standing_range` 0.250 against 0.651 say what the mode
+is missing concretely: companions and faction standing, the two things that make a classic run
+feel populated, barely move in sandbox.
+
+### What this changes
+
+The obvious reading, that sandbox needs balancing to 45%, is the wrong one and this project has
+made that mistake before. There is no target win rate. What the numbers say is narrower:
+
+- Sandbox has **no analogue of the descent gradient**. Classic has a stair that pulls, an egress
+  gate that gives the pull a condition, and 14 of 25 classic wins come by routes (`commune`,
+  `standing`) that sandbox produced zero of. That is not a tuning gap, it is a missing structure.
+- `artisan` won 0 of 8 in sandbox and wins in classic, so the health condition that all six
+  profiles must be able to win is failing in the mode a human actually plays.
+- The stall tripwire needs a second term. `d/t > 1.05` is necessary and is not sufficient; a
+  per-run top-label share above roughly 60% belongs beside it.
+
+## Every system fires. The failures are all downstream
+
+Ablation says roughly twenty of twenty-seven systems change no outcome. That one result has
+causes with opposite fixes, and an ablation table cannot separate them, so
+`runtime/system_activity.py` measures the difference directly: hook calls, own-state changes,
+events emitted, lines logged, over one instrumented run per mode.
+
+One winning run each (classic floor 27 in 6,235 turns, sandbox floor 3 in 1,900):
+
+**No system is ever unreached.** Every one is called about 18,000 times in classic and 5,100
+in sandbox. The cheap hypothesis, that a dead system is simply one the brain never engages,
+is false for all of them. Whatever is wrong is downstream of the call.
+
+| verdict | classic | what it means |
+|---|---|---|
+| active | 23 | acts and speaks, and the outcome still may not move |
+| silent | 3 | `body`, `effects`, `sacrifice`: called constantly, never act, say nothing |
+| busy and mute | 2 | `scent`, `senses` |
+| stateless | 1 | `forge`: acts on the game, keeps nothing of its own |
+
+`portals` joins the silent group in sandbox only; in classic it acts 14 times.
+
+### Two corrections this measurement forced on itself
+
+**`acted` watches a system's own `__dict__`, so a stateless system reads as zero.** The first
+version required only `acted == 0` and called `forge` dead by design, on a run where it emitted
+123 events, and ablation independently shows `forge` opening the `truths` route. Silence now
+requires acted, emitted and logged all empty.
+
+**`busy and mute` sees only the event bus, so a system read directly off its attributes looks
+identical to one nobody reads.** `senses` acts on 46.7% of its calls, emits nothing, and is
+consumed by every perception call the agent makes. The column is a question; ablation answers
+it. Mute plus an unmoved ablation is genuinely unconsumed, which is `scent`. Mute plus a moved
+ablation is direct-read, which is `senses`. Quoting one without the other invites someone to
+delete `senses`.
+
+### `scent` is the clean case, from both instruments at once
+
+It acts on **11.1%** of its classic calls, 2,021 times, more than all but three systems, and
+emits and logs **nothing**. Dropping it left all 24 ablation runs **byte-identical**: same
+wins, deaths, floors, turns and routes, run for run. A system working hard that nothing reads
+is a different defect from a system that does nothing, and it wants a consumer rather than a
+rewrite or a deletion.
+
+### What this changes about the plan
+
+The prescription splits three ways rather than one:
+
+- `body`, `effects`, `sacrifice` are called and do nothing. They need a reason to act, or
+  cutting.
+- `scent` needs a reader.
+- The other twenty are active and still move no outcome. That is the balance question, and it
+  is the only group where "the design is wrong" is the right conclusion.
+
+### Why the three silent systems are silent, and one of them cannot ever fire
+
+Reading the code behind the activity table turns "does nothing" into three different faults.
+
+**`sacrifice` is structurally dead in classic descent, and always has been.**
+`SacrificeSystem.on_floor_enter` opens with `z = game.current_z; if z > -2: return`. Negative
+z is a sandbox depths concept; classic descent calls `_set_level(lvl, z=0)` on every floor and
+`current_z` is 0 for the entire run. The guard therefore fires on every floor of every classic
+run this project has ever measured, so no shrine has ever been placed in the mode that
+produced the 130-of-288 baseline and every sweep in this document.
+
+It has a second lock behind the first. `on_interact` sets `game._pending_sacrifice` and logs
+"choose, or reject", leaving the choice to a front-end popup. There is no agent path to that
+popup, so even where a shrine can appear, **no agent can complete a sacrifice.** Same shape as
+the portal gap: a mechanic a human can use and no agent can reach.
+
+**`effects` is reachable and starved.** The only way in is `EffectSystem.acquire`, called from
+one place, `Game.commune_landmark`, which needs a wild landmark adjacent. Landmarks are placed
+under `if not self.sandbox and self.floor % 3 == 0`, drawn from notes of degree 0. So in
+sandbox the pool is never populated at all and effects is unreachable by construction; in
+classic `examples/world.json` offers exactly **one** orphan note, `grocery list`, up to twice
+every third floor. Every power the system defines (lantern, eyeless, drift, small, hush, echo)
+hangs off that single note.
+
+**`body` is a false positive of the instrument, not a dead system.** `on_floor_enter` calls
+`init_body` on the player and every actor, and `_slowed` is set by leg damage at 25% on hits of
+4 or more. It reads silent because the hook fires inside `Game.__init__` before there is a
+player to watch, and later calls rewrite `player.body` to a dict of the same shape. Recorded
+here rather than fixed: deepening the snapshot enough to catch it costs more than the answer is
+worth, and the `touched` column added for it does earn its place elsewhere (decay 106,
+reactions 2,091, weather 1,911 player-touching calls that were previously invisible).
+
+The pattern across all three is worth naming. None of them is dead because the design is
+uninteresting. One is behind a mode check that never passes, one is behind a content
+requirement the vault barely satisfies, and one was never dead at all. **Three systems, three
+faults, and none of them is the fault an ablation table alone would have suggested.**
+
+### Why `quality` is a lid: the ledger is one-sided, and the roll contradicts its own docstring
+
+Removing `quality` took wins from 12 to 22 of 24, deaths from 11 to 2, mean floor from 18.8 to
+24.8, and opened `truths` from 0 wins to 9. It is the largest single lever measured in this
+codebase and it points the wrong way. Reading it explains why in two parts.
+
+**Part one: the roll is not rare.** `roll()` runs four trials at 15%, halving only on a
+success, and its own docstring says "most items Normal, Legendary is rare". Over 200,000
+samples of the exact call `_qualify_actor` makes, `roll(floor=0, bias=0)`:
+
+| tier | share | effect on a creature |
+|---|---|---|
+| Normal | 52.3% | none |
+| Uncommon | 39.4% | HP x1.5, atk +1 |
+| Rare | 7.8% | HP x2.0, atk +2, def +1 |
+| Epic | 0.4% | HP x2.5, atk +3, def +1 |
+| Legendary | 0.0% | HP x3.0, atk +4, def +2 |
+
+**47.7% of every creature in the world is at least Uncommon**, and the mean HP multiplier
+applied across all enemies is **1.28x**. "Most items Normal" is true by 2.3 points. Whatever
+distribution the author had in mind, a coin flip is unlikely to have been it.
+
+**Part two: the two sides of the ledger are not the same size.** `_qualify_actor` fires on
+`on_floor_enter` for every non-player actor, so the enemy side is the whole population of every
+floor, and a tier also grants that many **special actions** drawn from a nine-item pool that
+includes `split` and `summon`, which multiply enemies outright. The player side is
+`qualify_sigil`, which grants perks from a seven-item pool to a **sigil**, at forge time, for
+the handful of sigils a run carries.
+
+So the system reads as symmetric and is not: dozens of buffed creatures per floor against a few
+graded sigils. That is a difficulty multiplier wearing the name of a loot system, and it
+matches the ablation exactly, including the `truths` route opening, since a run that stops
+dying has time to read.
+
+**What this does not settle.** Quality also produces named Legendary beings, elite variety and
+the forge's grade ladder, and none of that is captured by a win rate. The measurement says what
+it costs, not whether it is worth it. The candidate arm is the base probability: 15 gives 47.7%
+at least Uncommon, 7 would give about 25%, 5 about 19%. That is one number, it is measurable
+with the harness already built, and it should be swept rather than argued.
+
+## The quality sweep: creature base 15 / 7 / 5, 144 runs per arm
+
+`quality` was the largest lever the ablation found and it pointed the wrong way. This sweeps
+the one number behind it. **The creature side only**: `roll()` was a single literal read by
+monsters, by every ground sigil and by every forge, so sweeping it as found would have moved
+enemy strength and player equipment on the same curve in opposite directions and produced a
+result attributable to neither. It is now split into `CREATURE_QUALITY_BASE` and
+`ITEM_QUALITY_BASE`, and the item side is pinned at 15 in all three arms.
+
+| | base 15 (control) | base 7 | base 5 |
+|---|---|---|---|
+| creatures graded | 47.5% | 25.0% | 18.4% |
+| wins | 63/144 [36, 52] | **100/144** [61, 76] | **111/144** [70, 83] |
+| deaths | 76 | 41 | 29 |
+| mean floor | 18.4 | 21.7 | 23.5 |
+| floor median [IQR] | 26 [9, 26] | 26 [18, 26] | 26 [**26, 27**] |
+| floor sd | 9.0 | 8.0 | **6.7** |
+| labels used | 30.1 | 30.1 | 30.5 |
+
+Paired on seed, exact McNemar, both surviving BH at FDR 10%: 7 against 15 is -20/+57,
+p < 0.0001; 5 against 15 is -9/+57, p < 0.0001. Two identical-config arms measured 26 and 25
+wins of 48 earlier, so the noise floor is about 2 wins per 48; these are 37 and 48 wins on 144
+and are far above it.
+
+### The route that quality was sitting on
+
+| route | 15 | 7 | 5 |
+|---|---|---|---|
+| boss_killed | 30 | 54 | 50 |
+| standing | 20 | 20 | 30 |
+| commune | 11 | 10 | 9 |
+| **truths** | **1** | **13** | **20** |
+| diplomacy | 1 | 3 | 2 |
+
+`truths` goes 1, 13, 20 as creature grading falls, monotonically. That is the same route the
+ablation saw open from 0 wins to 9 when `quality` was removed entirely, now reproduced as a
+dose-response rather than an on-off. Reading the vault is the route quality was suppressing,
+and it was suppressing it by killing runs before they could accumulate truths: deaths fall
+76, 41, 29 across the same arms.
+
+### Why the lowest arm is not simply the best
+
+Arm 5 wins most and is the worst on the second half of the criterion. Its floor IQR is
+**[26, 27]**, meaning the middle half of all runs reach the bottom, and its floor sd falls to
+6.7 from the control's 9.0. Its win interval reaches **83%**, and this project's own standard
+says an arm whose interval approaches 80% is broken rather than tuned. Buying wins by making
+every run end the same way is exactly the failure the spread column exists to catch.
+
+Arm 7 keeps the spread (sd 8.0, IQR [18, 26]) while unlocking the route. On the stated
+criterion, that the game be winnable by using the systems AND that their use introduce
+variance, 7 is the only arm that improves both terms at once.
+
+### What this does not settle
+
+The item side is pinned, so this measures creature difficulty and says nothing about whether
+graded player equipment is priced correctly. **The HP half of `scale_creature` is dead**:
+`BodySystem` builds body parts from unscaled HP before `QualitySystem` runs, `init_body`
+early-returns because `actor.body` already exists, and the first `sync_hp` resets `max_hp` to
+the sum of the unscaled parts. So every arm here moves attack, defence and special-action
+count, and not durability. Fixing that bug would change what this sweep measured, and it
+should be measured again afterwards rather than assumed to hold.
+
+One run in the base 7 arm hit the harness wall-clock ceiling and is recorded as timed out.
+
+### Confirmation on the shipped build
+
+The sweep ran from an isolated copy of the tree. The default landed in `runtime/quality.py` as
+`CREATURE_QUALITY_BASE = 7`, and the same 144 runs were then re-run against the real repo to
+check that the port carried the arm rather than something adjacent to it. It does:
+
+| | sweep arm 7 (isolated) | shipped |
+|---|---|---|
+| wins | 100/144 | 100/144 |
+| deaths | 41 | 41 |
+| mean floor | 21.7 | 21.7 |
+| floor med [IQR] | 26 [18, 26] | 26 [18, 26] |
+| floor sd | 8.0 | 8.0 |
+| win paths | boss 54, standing 20, truths 13, commune 10, diplomacy 3 | identical |
+
+Three runs of 144 differ at all. Two swap `commune` for `diplomacy` in opposite directions and
+cancel; one artisan run ends two floors shorter. That difference is the `_spend_matter` fix,
+and it is the interesting part of this table.
+
+### The bug the change surfaced, and what it is worth
+
+`encounter_resolve`'s flee branch said `self._spend_matter` where `_spend_matter` is a
+module-level function, so it raised `AttributeError` the moment an agent met an elite carrying
+two matter. `dispatch` wraps its body in `except Exception: return False`, so the crash became
+a silently failed verb rather than a traceback: **nothing in 288 classic runs, three ablation
+sweeps or the whole quality sweep ever reported it.** It surfaced only when the creature base
+dropped, because fewer graded foes means longer runs and longer runs mean fuller bags, and
+even then only in a full-suite run where cross-test state pushed one narrator test into the
+branch.
+
+Two things follow, and they point in opposite directions.
+
+The fix is correct and it is nearly worthless as balance: 3 runs in 144 move, the aggregate is
+unchanged to the last digit, and the win-path composition is identical. Flee is the
+fourth-choice option behind coerce, parley and appease, so agents almost never take it.
+
+The bug is a class, and the class is not nearly worthless. A broad `except Exception` in the
+verb dispatcher converts every crash below it into a verb that merely returned False, which is
+indistinguishable from a verb the game legitimately refused. `broken_verbs` counts refusals; it
+cannot tell these apart. That is the sixth instance in this project of a defect that was
+invisible because the instrument reported its symptom as normal behaviour.
+
+Sitting next to it, unfixed and now pinned by a test: flee is **offered** at `matter >= 1` and
+its body **charges** 2. With exactly one matter the agent picks flee, pays nothing, the elite
+does not move, and the encounter resolves into a no-op. Closing that in either direction is a
+balance change and belongs in a measured sweep, not in a bug-fix commit.
+
+## Counting what `dispatch` swallows, and what that immediately found
+
+`agent_action.dispatch` wraps its body in `except Exception: return False`. The runner reads
+False as "the game declined" and files it through `observe_verb(kind, ok=False)` into
+`verb_fail`, alongside every legitimate refusal. `broken_verbs()` then names only a verb that
+**never** succeeds, so a verb that works most of the time and crashes on one branch leaves no
+trace in any report this project produces.
+
+Three handlers swallow. All three now record the exception into the per-run `MetricsTracker`
+as `verb:ExceptionType` with one `file:line`, and **behaviour is deliberately unchanged**:
+dispatch still returns False. The counter is an instrument, not a fix.
+
+One seed of six classic runs reported **160 swallowed crashes across two kinds**. Both were
+real bugs of long standing, and neither had ever appeared in 288 classic runs, three ablation
+sweeps, or 432 runs of the quality sweep.
+
+| crashes | site | what was dead |
+|---|---|---|
+| 157 | `loci.py` | `heal_body` was imported inside `_activate_becalm` and nowhere else. `forge`, `parley`, `explore`, `shield` and `commune` each raised NameError after their effect and before their heal, losing 5, 5, 3, 3 and 10 HP per activation. |
+| 3 | `game.py` | `structures.crystals.discard(pos)` on a dict. The crystal route exists so an agent with **no matter** can still clear weather, so the route reserved for the poorest agent was the only one that never worked. |
+
+A third surfaced from writing the test rather than from a run: `_consume` added a tuple **of**
+keys to `depleted`, documented as a set of `(x, y)`, so every membership test against it was
+false, and the no-match path raised TypeError on an unhashable list.
+
+There was **no test file for `runtime/loci.py` at all**, which is the single best predictor
+here of where the next one is.
+
+### What fixing them did, 144 runs paired on seed
+
+| | before | after |
+|---|---|---|
+| wins | 100/144 [61, 76] | 108/144 [67, 81] |
+| **deaths** | **41** | **31** |
+| runs ending below floor 20 | 37 | 24 |
+| mean floor | 21.7 | 23.2 |
+| floor med [IQR] | 26 [18, 26] | 26 [**26, 27**] |
+| **floor sd** | **8.0** | **6.9** |
+| distinct labels | 30.0 | 31.1 |
+| `forge_used` per 1k turns | 14.8 | 17.3 |
+| `broke` per 1k turns | 2.0 | 3.1 |
+
+**The win rate did not move**: -17/+25 discordant, exact McNemar p = 0.28, nowhere near
+significance. Anyone quoting 100 to 108 as the result of this change would be quoting noise.
+What moved is deaths, down 10, which is exactly the mechanism a restored heal predicts in a
+game whose losses are attrition. No route opened and none closed.
+
+### The uncomfortable part: this partly invalidates the base-7 choice
+
+Floor spread fell from sd 8.0 to **6.9** and the floor IQR collapsed to **[26, 27]**. That is
+the same pattern that disqualified creature base 5 one section above: the middle half of all
+runs now reach the bottom. The shipped default of 7 was selected over 5 precisely because 7
+kept the spread, and it was measured on a build where **five of seven locus heals were dead**.
+
+So the sweep's three arms are still internally valid, since all three carried the same dead
+heals, but **the point chosen from them is no longer the point it was chosen to be.** Restoring
+roughly 26 lost heals per run lowered the effective difficulty underneath the number, and 7 on
+a working build now sits about where 5 sat on a broken one.
+
+The two halves of the stated criterion moved in opposite directions here, which is worth saying
+plainly rather than averaging away. Systems-in-use improved: distinct labels 30.0 to 31.1,
+`forge_used` +17%, `broke` +55%, all of it the salvage and forge loop running more because
+agents live to reach it. Variance got worse. **The creature base should be re-swept on the
+fixed build before 7 is trusted**, and the arm to test first is a value above 7, not below it.
+
+### The re-sweep, and why the creature base is now 11
+
+The previous section predicted this and it held. Re-swept on the fixed build at 15 / 11 / 7,
+144 runs per arm, paired on `(agent, seed)`, item side pinned at 15 throughout:
+
+| | base 15 | base 11 | base 7 (was shipped) |
+|---|---|---|---|
+| wins | 84/144 [50, 66] | 82/144 [49, 65] | 108/144 [67, 81] |
+| deaths | 60 | 60 | 31 |
+| floor sd | 8.6 | 8.1 | **6.9** |
+| floor med [IQR] | 26 [11, 26] | 26 [15, 26] | 26 [**26, 27**] |
+| floor p10 / p90 | 5 / 27 | 7 / 27 | 10 / 27 |
+| share reaching floor 26+ | 60.4% | 62.5% | **79.9%** |
+| **`truths` wins** | **3** | **9** | 14 |
+| distinct labels | 31.3 | 31.1 | 31.1 |
+
+Paired contrasts: 11 against 15 is p = 0.90, indistinguishable. 7 against 15 is p = 0.0027 and
+7 against 11 is p = 0.0007, both MOVED.
+
+**The default is now 11.** The argument is the same one that picked 7 over 5 on the broken
+build, applied to a build where the heals work. 11 costs nothing measurable in wins against 15
+while carrying **three times as many `truths` wins**, and it keeps the spread that 7 gives up:
+IQR [15, 26] against [26, 27], and 62.5% of runs reaching the bottom against 79.9%. An arm
+where four runs in five end on the same floor is not a game with a varied ending, whatever its
+win column says.
+
+### The lesson worth keeping, which is not about quality at all
+
+A balance constant was swept three ways at 144 runs an arm, chosen on a stated and defensible
+argument, shipped, and then invalidated within the day by a one-line import bug in a different
+file. Nothing about the sweep was wrong. The measurement was clean, the reasoning held, the
+number was right for the build it was taken on, **and the build was lying.**
+
+This is the same shape as the `recall` finding recorded earlier: each fix promotes the next
+bottleneck from negligible to dominant. The operational rule that follows is narrower and more
+useful than "re-measure after every change". It is: **a tuning sweep is only as valid as the
+correctness of the systems underneath it, and this project has no instrument that reports
+system correctness.** It had one for reachability (`broken_verbs`), one for coupling
+(`coupling_density`), one for decision quality (`pressure`), and none at all for "a system ran
+and threw". That gap is what `verb_crashes` now fills, and the first six runs through it found
+three bugs, one of which had been silently deleting most of the game's healing.
+
+Before the next sweep of anything, run `verb_crashes` over a handful of seeds and confirm it is
+empty. It costs six runs and it is the difference between a measurement and a rumour.
+
+## The shrine and the dead HP half: two asks, five defects, one chain
+
+### `scale_creature`'s HP boost was never applied
+
+`BodySystem` is stack index 21 and `QualitySystem` is 22, so a creature's body parts are
+already built from its **unscaled** hp by the time it is graded. `scale_creature` raised
+`max_hp`, called `init_body`, which returns immediately when `actor.body` exists, and the first
+`sync_hp` reset `max_hp` to the sum of the unscaled parts. A tier-2 warden at Rare measured
+**10, then 20, then 10 again**. New `body_parts.rebuild_body` re-derives parts from the current
+`max_hp`; all four tiers now land exactly on 1.5x, 2.0x, 2.5x and 3.0x.
+
+The existing test passed throughout, because it never built a body first. It exercised the one
+arrangement a real game never produces. **Every quality sweep this project has run moved attack,
+defence and special-action count and not durability**, while being read as difficulty as a
+whole.
+
+### The renunciation shrine, and why "unreachable" had four separate causes
+
+| # | defect | effect |
+|---|---|---|
+| 1 | `on_floor_enter` gated on `current_z > -2` | `current_z` is non-zero only in sandbox, so classic never placed one. Every baseline, ablation and quality sweep ran in a mode where this system did not exist. `ablate` called dropping it inert, which was true and meaningless. |
+| 2 | `on_interact` set `_pending_sacrifice`, read only by `play.py` | An agent that reached a shrine had it consumed and got nothing. The verb was **strictly worse than not pressing it**, and a choice a human walks through was closed to every agent. |
+| 3 | "Renounce an Effect" promised "+2 sight radius" | `apply` carried a comment saying the bonus was handled in `knowledge._sight`. It was not. The offering was pure loss. |
+| 4 | no `points_of_interest`, and `shrine_used` never incremented | Placed but unadvertised, and unobservable either way. |
+
+Fixed in order: `_is_deep` reads the axis each mode actually moves (z for sandbox, floor against
+`max_floor` for classic); `Game.has_ui`, set by `play.interactive`, tells a system whether anyone
+will answer a modal prompt, and without one the shrine resolves through `_worth`, which scores
+from game state and never from profile; `SIGHT_PER_RENUNCIATION` is named, applied and read.
+
+**Defect 1 could not be fixed alone.** With 1 fixed and 2 left, shrines would have begun
+appearing and begun costing agents outright. That is worth stating as a rule: a reachability fix
+to a system with an unfinished consumer is a regression, not a partial improvement.
+
+### The fifth defect, which was not in this system at all
+
+Shrines still never fired. `sense.points_of_interest` concatenates each system's list in **stack
+order** and the brain takes `pois[0]`, so which point an agent crossed a floor for was decided by
+where its provider sits in the system list. Measured over 400 sampled decisions with more than
+one candidate: **the chosen point was the nearest zero times**, median distance 9 against a
+nearest of 2, with a median of 23 on offer. The cache list ten lines above already sorts by
+exactly this distance.
+
+So the agent walked past closer things on nearly every decision it made, and any system appended
+late was unreachable in practice however correctly it placed.
+
+### What all of it measured, 144 runs per arm paired on seed
+
+| | baseline | + HP and shrine | + nearest POI |
+|---|---|---|---|
+| wins | 82/144 | 86/144 | 79/144 |
+| deaths | 60 | 55 | 62 |
+| floor sd | 8.1 | 8.4 | 8.2 |
+| **kills per run** | **16.3** | **15.2** | **14.6** |
+| distinct labels | 31.1 | 31.0 | 30.8 |
+
+Both contrasts against baseline are noise: p = 0.71 and p = 0.80. **These are correctness fixes
+with no detectable effect on the aggregate, and that is the finding, not a disappointment.** The
+one number that moves monotonically is kills per run, down 10% across the tranche, which is the
+HP scaling doing exactly and only what it says: graded creatures are now genuinely harder to
+kill.
+
+### The shrine is still not finished, and the remaining step is a design decision
+
+With nearest-first sorting the shrine is placed, advertised and outcompeted: one or two per
+descent against dozens of closer loci, caches and ground sigils. A seeker's closest approach
+across a full run is **6 tiles**. Giving it its own brain candidate, the way `cache`, `salvage`
+and `workspace` have, would finish it, and that is a change to the agent's candidate set rather
+than a bug fix. It is not taken here.
+
+The general shape is worth naming, because this is the sixth instance of it: **placement is not
+reachability**. A system can be revived into being exactly as dead as before, and the only way to
+tell is to instrument uptake rather than existence. `runtime/availability.py` already reports
+conditional uptake for verbs; nothing does it for world content.
+
+## The shrine's own candidate: five more links, and the first result that moved
+
+Uptake was still zero after the depth gate, the agent-side resolution, the sight bonus and the
+`points_of_interest` were all fixed. Five more things had to be true, each found by measuring
+rather than by reading:
+
+1. **Perception must price the trip.** `nearest_shrine` reports `(x, y, distance, best offer
+   worth)`, the worth coming from `SacrificeSystem._worth`, so the agent is told what a trip is
+   worth before taking it rather than on arrival.
+2. **Its own weight, not a borrowed one.** Scored on a new `shrine` key present in all six
+   profiles. Borrowing `explore` is what made `deploy` and `recover` misbehave for the life of
+   the project.
+3. **Arriving must act.** The navigation branch returns `None` on a zero step, so without an
+   arrival case the agent reaches the tile and stalls on top of it forever. `recover` carries
+   the identical special case for the identical reason.
+4. **The pull must steepen.** On a flat ramp the shrine scored a median **17.9** inside 3 to 5
+   tiles against a best rival of exactly **17.9**: a dead tie on 134 decisions that
+   `deesc_stairs` won 61 times. The agent walked to within three tiles of every shrine on its
+   route and oscillated away.
+5. **`interact` is one overloaded verb with a fixed precedence**, and the shrine sat behind
+   weather. Both of the two times an agent ever stood on a shrine, weather was live and
+   `interact` returned into `clear_weather`.
+
+Attribution at 6 runs, shrines actually spent: full build **6**, flat ramp **4**, no weather
+exception **2**.
+
+### The instrument that hid it, which cost the most time of anything here
+
+`_get_metrics` reset the tracker on its way out, though `Game.__init__` already resets it via
+`reset_run_state`. So **anything reading `metrics()` after a run saw zeros**. Shrine uptake was
+diagnosed as zero three separate times, and three fixes were aimed at that phantom, on a counter
+the harness had already wiped. The reset is gone; `RunResult.metrics` carries the snapshot.
+
+Two of those three fixes turned out to be independently justified, because the evidence for them
+came from other probes (the score-tie table and the weather trace) that did not touch the broken
+counter, and the attribution run above confirms both. That is luck, not method. **A measurement
+that reads zero should be checked against a second instrument before it is treated as a
+finding.**
+
+### What it measured, 144 runs paired on seed
+
+| | no candidate | with candidate |
+|---|---|---|
+| wins | 79/144 [47, 63] | **94/144** [57, 73] |
+| deaths | 62 | 47 |
+| **floor sd** | 8.2 | **8.4** |
+| floor med [IQR] | 26 [15, 26] | 26 [15, 27] |
+| share reaching floor 26+ | 61.1% | 68.1% |
+| distinct labels | 30.8 | **31.5** |
+| win paths | boss 39, standing 19, commune 11, truths 9 | boss 33, standing 28, **commune 22**, truths 9 |
+
+Exact McNemar, -6/+21 discordant, **p = 0.0059, MOVED**. This is the first change in this whole
+sequence that the aggregate can actually see.
+
+**And it is the first that improves both halves of the criterion at once.** Every earlier win
+gain in this project came with the floor spread collapsing: base 5 bought 111 wins at sd 6.7 and
+IQR [26, 27], base 7 bought 108 at sd 6.9. This one takes wins 79 to 94 while spread goes **up**,
+8.2 to 8.4, the low quartile does not move, distinct labels rise, and `commune` doubles as a way
+of winning. It is not flattening the outcome, it is adding a decision.
+
+The likely reason is worth stating because it generalises: a shrine is a **choice**, not a
+buff. `_worth` prices five permanent trades against what the run is actually carrying, so two
+agents at the same shrine take different deals and diverge afterwards. Content that opens a
+decision widens the outcome distribution; content that hands out a number narrows it.
+
+The re-measured baseline reproduced the previous one exactly, 79/144, 62 deaths, sd 8.2, labels
+30.8, across a container restart and a fresh worktree, which is a determinism check worth having
+had.
+
+### The flee mismatch, closed and measured at nil
+
+`flee` was offered at `matter >= 1` and its branch charged 2, so an agent holding exactly one
+matter picked flee, paid nothing, watched the elite not move, and the encounter resolved into
+nothing. Two more defects sat in the same seven lines: the matter was spent **before** a
+walkable tile was found, so an elite boxed into a corner took the payment and stayed put, and
+neither failure logged anything at all.
+
+Closed toward the **gate**, not the body, and the mercy clause decides that. Ten lines above the
+branch sits `# Mercy: desperate agents always get a way out`, offering flee at `matter >= 1`.
+Raising the gate to 2 would have broken that guarantee for exactly the agent it exists for.
+
+144 runs paired on seed: wins 94 to 93, **-1/+0 discordant, p = 1.000**, and **4 runs of 144
+differ at all**. Deaths unchanged at 47, win paths unchanged but for one `standing`. This is a
+null result and it is the expected one: `flee` is the fourth-choice option behind coerce, parley
+and appease, so agents almost never reach it. The value of the fix is that the game no longer
+offers a move that does nothing, not that it plays differently.
+
+**A test that scans source for a constant's name is not a test that the constant is used.** The
+first version of the gate check asserted `"FLEE_MIN" in source`, and it passed on a file where
+the constant was defined and both gates were still bare literals, which is precisely the state
+it existed to catch. The working version moves `FLEE_MIN` at runtime and asserts on which option
+the encounter resolved to. Prefer a behavioural check over a source scan wherever one is
+possible, and mutate the source scan before trusting it.
+
+## Giving `scent` a reader: the largest behavioural change of the tranche, and no win-rate move
+
+`runtime/scent.py` diffused the player's trail through walkable space, decayed it, blocked it
+on walls and exposed `scent_at` and `strongest_neighbour` every turn of every run. The only
+things that touched any of it were `runtime/behavior.py`, a utility-oracle module **imported by
+nothing but two test files**, and the `scent_mask` consumable, which deletes the grid rather
+than reading it. The grid was built and thrown away.
+
+`system_activity.py` already had the shape of this: busy and mute, acting on 11.1% of its
+classic calls while emitting and logging nothing, which is why dropping `scent` left all 24
+ablation arms unchanged. **That reads as "this system does not matter" and it meant "this system
+has no reader".** Those are different diagnoses with different fixes, and the ablation could not
+tell them apart.
+
+The signal was never thin. Measured over one classic seeker run before any change: **23,770
+investigation steps, the observer standing on a live scent tile in 12,022 of them** and with a
+followable trail adjacent in 12,163.
+
+### Two things had to be true
+
+`strongest_neighbour` scanned four orthogonals in an eight-directional game. A tracker that can
+only step orthogonally along a trail is strictly slower than the prey that laid it: it loses
+ground on every diagonal and can never close. After the fix, **907 of 2,716 followed steps are
+diagonal**, a third that could not previously have happened. Diffusion stays orthogonal on
+purpose, being a kernel where diagonals are correctly two steps away.
+
+`SenseField.scent` and `ScentSystem` are not duplicates, and the split is the design.
+`SenseField` marks per actor and answers "something passed near", which is **detection** and
+already fed `Perception.leads`. `ScentSystem` answers "and it went that way", which is a
+**gradient**. Straight-lining at a detection walks into the wall between you and it; following a
+gradient rounds the corner the prey rounded.
+
+### 144 runs paired on seed
+
+| | before | after |
+|---|---|---|
+| wins | 93/144 [56, 72] | 87/144 [52, 68] |
+| deaths | 47 | 53 |
+| floor sd | 8.5 | **8.6** |
+| floor med [IQR] | 26 [13, 26] | 26 [**11, 27**] |
+| turns per run | 7,347 | **6,749** |
+| **runs differing at all** | | **108/144** |
+| `commune` wins | 22 | **11** |
+| `standing` wins | 27 | 31 |
+
+**Wins 93 to 87 at p = 0.34, which is not a move**, and it should not be reported as one. What
+did move is everything else: **108 of 144 runs play out differently**, against 4 of 144 for the
+flee fix in the same tranche. Deaths are up 6, runs are 8% shorter, and the spread is marginally
+wider rather than narrower.
+
+The largest route shift is `commune`, halved from 22 wins to 11. A plausible mechanism is
+available and is not established here: commune requires standing at a landmark, and a creature
+following your trail arrives to interrupt it. That is a hypothesis the route table suggests, not
+a finding, and it would need its own instrument to confirm.
+
+### Why this is the best result of the session against the stated criterion
+
+The criterion is that the game be winnable **by using the systems that are implemented**, and
+that their use **introduce variance**. A system went from computing a rich signal nobody read to
+driving 108 of 144 runs, the outcome envelope did not shift, and the spread did not collapse.
+That is both halves moving the right way at once, which the quality sweep never managed:
+there, every arm that raised wins flattened the endings.
+
+It is also the clearest case yet that **the win column is the wrong instrument for this
+project**. Two changes in one tranche, one touching 4 runs and one touching 108, are
+indistinguishable in the aggregate and both read as p above 0.3.
+
+## Sweeping the shrine `_worth` gains: the knob is inert and it says which knob is not
+
+The five `_worth` gains were literals chosen to be state-driven rather than measured, which was
+said plainly when they landed. Swept as a single scalar (`VC_SHRINE_GAIN_PCT`) at 60 / 100 / 160,
+144 runs per arm, paired on `(agent, seed)`.
+
+One scalar rather than five knobs was deliberate: five gains swept independently is a
+five-dimensional space, roughly one shrine fires per run, and the arms would be indistinguishable
+long before the space was covered.
+
+| | gain 60 | gain 100 | gain 160 |
+|---|---|---|---|
+| wins | 84/144 [50, 66] | 88/144 [53, 69] | 81/144 [48, 64] |
+| deaths | 56 | 51 | 56 |
+| floor sd | 8.5 | 8.7 | 8.5 |
+| floor med [IQR] | 26 [11, 27] | 26 [11, 27] | 26 [11, 27] |
+| shrines offered | 137 | 141 | 146 |
+| **uptake** | **98%** | **99%** | **100%** |
+
+**The knob does nothing.** Uptake moves 98 to 100 percent across a 2.7x range of gains, wins
+overlap completely (p = 0.48 against control), and the floor IQR is byte-identical across all
+three arms. A parameter that cannot change behaviour over that range is not a tuning parameter.
+
+### What the sweep found instead
+
+| offering | chosen / dealt at 60 | at 100 | at 160 |
+|---|---|---|---|
+| `matter` | 64/94 | 73/94 | 79/102 |
+| `rest` | 56/92 | 53/93 | 50/98 |
+| `note` | 14/68 | 13/73 | 17/73 |
+| **`sigil`** | **0/80** | **0/88** | **0/84** |
+| **`effect`** | **0/77** | **0/75** | **0/81** |
+
+**Two of five offerings are dealt 252 and 233 times across the sweep and chosen zero times, at
+every gain level.** That is not sampling noise and it is not a preference: it is arithmetic.
+
+Measured at live shrine resolutions, the agent's state is `slots` median **0** (range 0 to 1)
+and `effects` median **1** (range 0 to 1), against `known` 12 to 13, `matter` 0 to 2 and HP 91
+to 99 percent. Put those into the cost terms:
+
+* `sigil` costs `max(0, 12 - 2 * slots)`, which at 0 slots is **12**. The gain is 8, and 12 at
+  the top arm. It can never be positive.
+* `effect` costs `max(0, 8 - 3 * held)`, which at 1 effect is **5**. The gain is 5, and 8 at the
+  top arm, so its best case is exactly zero, and zero is refused.
+
+**Both dead offerings have cost formulas calibrated against a state the agent never reaches.**
+`sigil` assumes an agent with several spare slots and `effect` assumes several collected
+effects; the agent arrives at shrines with neither. Scaling the gains cannot fix a cost written
+to the wrong scale, which is exactly what the flat sweep shows.
+
+### The recommendation, which is not a gain change
+
+Leave `GAIN_PCT` at 100. The sweep is unambiguous that it is not the lever.
+
+The cleaner fix is not to retune the costs either. **`_OFFERINGS` is sampled without reference
+to what the agent holds, so the shrine offers to take a sigil slot from an agent with no sigil
+slots**, and `apply` then guards that with `if sigs and sigs.slots` and silently does the
+nothing half of the trade. Filtering the sample to renunciations the agent can actually make
+would make all five offerings live and would make the choice a real one, where today it is
+`matter` against `rest` and nothing else. That is a design change rather than a tuning change
+and it is not taken here.
+
+### The transferable part
+
+This is the fourth time in this project that a tuning sweep has returned "wrong knob". The
+pattern is now clear enough to state: **before sweeping a parameter, check that the thing it
+gates is reachable at the state the parameter will be read in.** The per-kind uptake table cost
+one extra field in the row capture and it answered in one sweep what three arms of outcome
+statistics could not.
+
+### Filtering `_OFFERINGS` to what the agent holds
+
+`_OFFERINGS` was sampled with no reference to the agent, so a shrine offered to take a sigil
+slot from an agent with none. `apply` guarded the cost with `if sigs and sigs.slots` and granted
+the reward unconditionally, so the trade was free. `can_renounce` now gates every offering on
+the agent holding the thing, filtered at the moment of the choice rather than at placement,
+since placement happens on floor entry and the agent arrives hundreds of turns later carrying
+something else.
+
+144 runs paired on seed against the same build with the filter off:
+
+| | unfiltered | filtered |
+|---|---|---|
+| wins | 88/144 | 83/144 (p = 0.27) |
+| floor sd | 8.7 | 8.5 |
+| shrines offered | 141 | 137 |
+| **refused** | **2** | **10** |
+| **uptake** | **99%** | **93%** |
+
+| offering | chosen/dealt before | after |
+|---|---|---|
+| `matter` | 73/94 | **18/40** |
+| `note` | 13/73 | **50/78** |
+| `rest` | 53/93 | 59/71 |
+| `sigil` | 0/88 | 0/25 |
+| `effect` | 0/75 | 0/60 |
+
+**The trade the agent makes is now a different trade.** `matter` was the dominant choice, 73 of
+139 takes, and is now a minor third at 18: an agent almost never carries matter at a shrine, so
+the offer that used to be free is now usually not on the table at all. `note` went from 13 wins
+to 50. Refusals went from 2 to 10, which is the first time the shrine has had an expressible
+"no". None of this is visible in the win column, which is the third such case this session.
+
+### A prediction of mine that was wrong, and the arithmetic that says why
+
+I wrote that filtering "would make all five offerings live". **It does not.** `sigil` and
+`effect` are still chosen zero times, out of 25 and 60 dealings.
+
+The filter admits an offering at **1** held. The offering becomes worth taking at:
+
+| offering | admitted at | first positive at | worth at the admit floor |
+|---|---|---|---|
+| `sigil` | 1 slot | **3 slots** | -2 |
+| `effect` | 1 effect | **2 effects** | 0 |
+| `note` | 1 note | 5 notes | -3, but agents hold 12 to 13 |
+| `matter` | 1 matter | any | +8 |
+| `rest` | can camp | any, when healthy | +7 |
+
+So the filter and the pricing disagree by a band, and for `sigil` and `effect` the agent lives
+inside that band: median 0 slots and 1 effect at shrine time. Being able to make a trade and
+wanting to are different questions, correctly answered by different functions, and fixing the
+first does not fix the second.
+
+That band is not obviously a bug. An offering the agent holds but declines is a real choice, and
+the shrine refusing 7% of the time is healthier than the 1% it managed before. What is a
+question for the design is that **`sigil` and `effect` are priced for an agent that hoards, and
+this agent does not**: it ends runs with 0 to 1 sigil slots and 0 to 1 effects. Either the rest
+of the game should make hoarding happen, or those two costs should be priced for the agent that
+actually arrives. That is a claim about the economy, not about the shrine, and it is not settled
+here.
+
+### The bug the filter would have made reachable
+
+`apply("effect")` called `.discard(nid)` on `EffectSystem.collected`, which is a **dict**.
+AttributeError on every call, the same shape as `structures.crystals.discard` in
+`clear_weather`. It never fired because `effect` was chosen 0 times in 233 dealings, and
+`dispatch`'s `except Exception` would have swallowed it if it had. Filtering the pool is exactly
+what would have made it reachable. **A reachability fix to a system with an unfinished consumer
+is a regression**, and this is the second time that rule has paid out in one session.
+
+One test also had to change, and the reason is the finding rather than an inconvenience.
+`test_a_shrine_underfoot_outranks_the_weather` passed on a fresh game only because the shrine
+offered to take matter from an agent holding none and granted +3 DEF for it. The assertion was
+reading a free reward and calling it the shrine working.
+
+### Pricing `sigil` and `effect` for the agent that actually arrives
+
+Both were dead by arithmetic rather than preference. The gain sweep came back flat across a
+2.7x range for exactly this reason: scaling a gain cannot rescue a cost written to the wrong
+scale.
+
+Measured over **4,710 sampled shrine states**, the agent holds:
+
+| | 0 | 1 | 2 | 3 | 4 | more |
+|---|---|---|---|---|---|---|
+| sigil slots | 88% | 5.6% | 1.1% | 2.0% | 2.8% | never |
+| effects | 68% | 32% | **never** | never | never | never |
+
+The old formulas reached zero cost at **6 slots** and **3 effects**. The first is beyond
+anything observed; the second never happens at all. So `sigil` was worth -2 at the holding it
+commonly saw, and `effect` was worth exactly **0** at the only holding it ever sees, which is
+refused. Dead by one point, for the life of the project.
+
+The shape was always right and only the scale was wrong: giving up your last one is dear,
+giving up a spare is cheap. The zero point moves from six to four, the top of the observed
+range.
+
+| | 1 held | 2 | 3 | 4 |
+|---|---|---|---|---|
+| `sigil` | +2 | +4 | +6 | +8 |
+| `effect` | +3 | (never occurs) | | |
+
+Against `rest` at +7 while healthy and `note` at +6, a last sigil slot at +2 is a marginal call
+that usually loses and a spare fourth at +8 beats everything, which is what the fiction says it
+should do.
+
+### 144 runs paired on seed: all five offerings are live for the first time
+
+| offering | win rate when dealt, filtered | repriced |
+|---|---|---|
+| `rest` | 59/71 = 83% | 58/72 = 81% |
+| `note` | 50/78 = 64% | 45/77 = 58% |
+| `matter` | 18/40 = 45% | 19/40 = 48% |
+| **`effect`** | **0/60 = 0%** | **8/56 = 14%** |
+| **`sigil`** | **0/25 = 0%** | **3/25 = 12%** |
+
+Share of takes went from `matter` 53% (before the filter) to `rest` 44% (now), with all five
+represented. **No offering above 44%**, against 53% before.
+
+`sigil`'s low absolute count, 3 takes, is a dealing-frequency fact rather than a pricing one:
+it is only offerable when the agent holds a slot, which is 12% of states, so it is dealt 25
+times where `rest` is dealt 72. Its 12% win-when-dealt is in the same band as `matter`'s 48%
+being the third choice, and appropriate for the most severe trade in the pool.
+
+Outcomes did not move: wins 88 / 83 / 85 across before, filtered and repriced, all intervals
+overlapping, floor sd 8.7 / 8.5 / 8.5, floor IQR identical. **Fourth mechanism change this
+session that is invisible in the win column.**
+
+### Two things this cost, stated rather than buried
+
+**The expressible "no" mostly went away again.** Refusals were 2 before the filter, rose to 10
+with it, and are back to 2 now: uptake 99%, 93%, 99%. Making two dead offerings live means the
+agent nearly always finds something worth taking. Whether a shrine that is refused 1% of the
+time is healthy is a design question this does not answer, and the two effects are genuinely in
+tension: a richer pool and a meaningful refusal pull opposite ways.
+
+**`rest` is now the imbalance.** It wins 81% of the times it is dealt and is dealt more than
+anything else, because it is the only offering that requires no possessions: it takes a
+capability, so it is always payable, and it is worth +7 whenever the agent is above 70% HP,
+which is nearly always. That is the next thing to price, and it is not touched here.
+
+### Pricing `rest`: it had no cost at all, and fixing that moved the monoculture
+
+`rest` won 81% of the times it was dealt and was dealt more often than anything else. That
+read as an imbalance to tune. It was not one.
+
+`_cant_camp` gates the `on_town` branch of `Game.wait` and nothing else. `on_town` requires
+`_on_surface()`. `_on_surface()` is `self.sandbox and self._dungeon is None`. **Classic descent
+is never on the surface**, so in the mode every measurement in this project runs in, renouncing
+rest takes away exactly nothing and grants +5 max HP, +5 HP and +0.2 speed permanently. It won
+because it was free, and a `_worth` reporting +7 was telling the truth.
+
+Measured over 4,710 sampled shrine states: **town-rest healing is 0 in 100% of them**, while
+ordinary out-of-town resting had healed a median of **485 HP** by the time a shrine was reached.
+The renunciation protects none of that.
+
+So `rest` is gated like the other four, on camping having actually paid off, and its cost stops
+reading current HP (inert at 99% of shrine states above 70%) and reads reliance instead.
+`REST_COST_PER` is flagged UNMEASURED in the source: its shape is evidenced, its scale cannot
+be calibrated from classic runs because the quantity is identically zero there.
+
+### 144 runs paired on seed, and an honest problem with the result
+
+| | original | repriced (sigil/effect) | rest-priced |
+|---|---|---|---|
+| wins | 88/144 | 85/144 | 81/144 (p = 0.12) |
+| deaths | 51 | 55 | 58 |
+| floor sd | 8.7 | 8.5 | 8.5 |
+| uptake | 99% | 99% | 97% |
+| **top offering's share of takes** | matter 53% | rest 44% | **note 57%** |
+
+| offering | original | repriced | rest-priced |
+|---|---|---|---|
+| `note` | 13/73 | 45/77 | **73/84 = 87%** |
+| `matter` | 73/94 | 19/40 | 25/42 |
+| `effect` | 0/75 | 8/56 | 22/64 |
+| `sigil` | 0/88 | 3/25 | 7/21 |
+| `rest` | 53/93 | 58/72 | **0/0, never dealt** |
+
+The gate works exactly as intended: `rest` leaves the classic pool entirely, and the other four
+absorb its share. But **the concentration did not go away, it moved**: `note` now takes 57% of
+choices and wins 87% of its dealings, which is worse than the 44% and 81% that made `rest` worth
+investigating in the first place.
+
+`note` costs `max(0, 10 - known)` and agents carry 12 to 13 notes, so its cost is a constant
+zero and it is a constant +6. **That is the identical defect, for the third time in this one
+function**: `sigil` and `effect` were calibrated below the range the agent occupies, `rest` and
+`note` above it. Four of the five cost curves were priced for an agent that does not exist, and
+three are now fixed.
+
+The win rate drifted 88 to 85 to 81 over the two changes. No single step is significant
+(p = 0.12 for the pair together) and the intervals all overlap, but the direction is consistent
+and it has a plain cause: two free permanent rewards were removed. Deaths rose 51 to 58 over the
+same steps. That is the price of the shrine becoming a trade rather than a gift, and it should
+not be reported as noise even though the aggregate cannot distinguish it from noise.
+
+**The remaining work is `note`, and it is a one-line analogue of what was just done twice.**
+
+### Pricing `note`: the concentration finally breaks
+
+`note` cost `max(0, 10 - known)` and agents carry **11 to 15** notes, so the cost was zero
+across the entire observed range and the offering a constant +6. Once `rest` left the pool that
+made it take 54% of all choices and win 85% of its dealings. Third constant cost curve in this
+one function.
+
+It is the third and it is **not the same fix**. `sigil` and `effect` were repriced by moving
+their zero point into a range the agent occupies; `known` has no such room, spanning only 11 to
+15 across 4,807 sampled states. Any curve over it is nearly flat, and repricing cannot
+manufacture discrimination the input does not have. The base is instead placed **inside** the
+span, turning the five values the game actually produces into five answers:
+
+| known | 11 | 12 | 13 | 14 | 15 |
+|---|---|---|---|---|---|
+| worth | +1 | +2 | +3 | +4 | +5 |
+
+The underlying asymmetry is recorded rather than fixed: the player's base attack is **4**, so
+`note`'s +1 ATK is a permanent **+25% damage** against a cost of one of thirteen interchangeable
+notes. That is by some distance the strongest reward for the cheapest price in the pool, against
++8 max HP on a base of 100, or +2 sight. Raising the cost brings the trade into line; making the
+five rewards comparable is a design pass this is not.
+
+### 138 runs on 23 shared seeds
+
+| offering, chosen/dealt | original | rest-priced | note-priced |
+|---|---|---|---|
+| `sigil` | 0/80 = 0% | 6/19 = 32% | 6/17 = 35% |
+| `note` | 13/62 = 21% | 63/74 = **85%** | 39/81 = 48% |
+| `matter` | 73/94 = 78% | 25/42 = 60% | 28/39 = 72% |
+| `rest` | 41/81 = 51% | 0/0 | 0/0 |
+| `effect` | 0/70 = 0% | 22/62 = 35% | 42/60 = 70% |
+| **top offering's share of takes** | **matter 57%** | **note 54%** | **effect 37%** |
+
+**No offering is above 37% of takes for the first time.** Four are live, win-when-dealt spans 35
+to 72%, and the `diplomacy` route reopened. Two offerings that were dead at 0 of 80 and 0 of 70
+dealings now take a third of their chances.
+
+Outcomes did not move at all: wins 77 against 77, **p = 1.000**, with 9 runs flipping each way,
+floor sd 8.6 in both arms, IQR identical. Across the whole shrine tranche wins drifted 84 to 77
+(p = 0.12), which is not significant but is a consistent direction with a plain cause: two free
+permanent rewards were removed, and deaths rose 49 to 55.
+
+**23 of 24 seeds.** Seed 7 holds two runs above 10,000 turns that land on one worker, so the
+chunk deterministically exceeds the harness window; every arm is restricted to the same 23 seeds
+so all comparisons stay paired.
+
+### What the four reprices amount to
+
+Every one of the five `_worth` cost curves was calibrated against a holdings range the agent
+does not occupy. `sigil` and `effect` zeroed above it and were dead. `rest` and `note` zeroed
+below it and were constants, one of them free outright. Only `matter` was priced in range, and
+it is the one that never needed touching.
+
+The general form is worth keeping: **a cost curve is only a curve where its input varies.**
+Everywhere else it is a constant wearing a formula, and the way to tell is to measure the input
+distribution before reading the formula, not after.
+
+### A measurement hazard that nearly produced a false result
+
+Four mutants of `NOTE_COST_BASE` (10, 14, 18, 22) are all two characters, the same length as
+16. `cp` restoring the file left byte-size unchanged and the mtime granularity collided, so
+Python reused the cached bytecode and one whole mutant round reported the previous arm's
+results. It surfaced only because a restored, verified-correct file still failed its tests.
+**Clear `__pycache__` between mutants when the mutation preserves file length.** No earlier
+result in this session is affected, since those mutations all changed line lengths, but the
+check is cheap and the failure is silent.
+
+## Making the five rewards comparable, and what that did not do
+
+Each reward granted from turn 0, 24 runs paired on `(agent, seed)`, against a control that won
+10 of 24 at mean floor 19.4:
+
+| reward | wins/24 | vs control | mean floor | per seed |
+|---|---|---|---|---|
+| control | 10 | +0 | 19.4 | [2, 3, 4, 1] |
+| **+8 max HP** | **10** | **+0** | 19.4 | [2, 3, 4, 1] |
+| **+0.2 speed** | **10** | **+0** | 19.4 | byte-identical |
+| +2 sight | 14 | +4 | 21.4 | [4, 4, 4, 2] |
+| +1 ATK | 17 | +7 | 22.0 | [4, 4, 3, 6] |
+| +3 DEF | 19 | +9 | 23.8 | [4, 6, 5, 4] |
+
+**Two of the five rewards were worth nothing.** `sigil` paid +8 max HP and `rest` paid +5 max HP
+plus +0.2 speed. The agent sits at 83% average HP, so a higher ceiling changes no outcome, and
++8 max HP scored identically to the control on every single seed. Speed is worse than weak, it
+is **unread**: `enemies_act` spends an energy budget over `self.actors` and the player is not in
+that list, so player speed is a stored attribute nothing consumes; `weather.py` also resets it
+to 1.0 outright. The offering text advertised "+1 speed" while `apply` granted 0.2 of it.
+
+The `SHRINE_GAIN` weights were close to **inversely ordered** against the measured value:
+`effect` priced lowest at 5 while being the third strongest, `sigil` at 8 while being worth
+zero. The costs had been carrying the whole balance.
+
+Repriced onto the three currencies that move the outcome, into a +4 to +9 band: `sigil` pays
++2 DEF, `rest` pays +2 sight, `effect` pays +3 sight, `note` and `matter` keep +1 ATK and +3 DEF.
+
+### The result: nothing, and the reason matters more than the result
+
+138 runs on the same 23 seeds: **77 wins, identical to the arm before it**, same floor sd 8.6,
+same IQR, same label count, and a choice mix that barely moves (`effect` 44 against 42, `note`
+39 against 39, `matter` 27 against 28, `sigil` 6 against 6).
+
+The choice mix was never going to move: the agent picks on `SHRINE_GAIN`, which this change did
+not touch. It changes what `apply` hands over, not what the agent wants. But the *outcome* was
+expected to move, and it did not.
+
+**The turn-0 instrument measures a reward's ceiling, not its in-situ value.** A shrine fires
+about **once per run** and only past half depth, so a grant has roughly half a run to act rather
+than all of it, and only two of the five offerings changed at all. +3 DEF from turn 0 is +9 wins
+in 24; the same currency handed over once at floor 13 or later is worth so much less that a
+138-run arm cannot see it. That is a caveat on the method, not a defect in it: granting from
+turn 0 is the right way to rank currencies against each other, and the wrong way to predict what
+one late grant will do.
+
+So the honest claim is narrow and worth making anyway: **no renunciation is now a cost with no
+reward**, which two of five were. Whether that is worth anything to a run is below the
+resolution of this instrument.
+
+### Where the shrine tranche ended up
+
+Across the whole sequence, 84 to 77 wins (p = 0.17), deaths 49 to 55, floor sd 8.8 to 8.6, and
+the top offering's share of takes from **57% to 38%** with all four classic-reachable offerings
+live. The win drift is not significant and has a plain cause: two free permanent rewards were
+removed and one dead-in-classic offering left the pool. The concentration result is the one that
+holds up.
+
+## Measuring the shrine reward in situ: it is worth nothing, and the reason is the damage floor
+
+The turn-0 instrument ranks currencies against each other; it cannot say what one late grant is
+worth. `VC_SHRINE_REWARD_MULT` scales every reward at the moment it is handed over, so the
+question can be asked directly. Three arms, 138 runs each on the same 23 seeds:
+
+| arm | wins | deaths | floor mean | floor sd | shrines taken |
+|---|---|---|---|---|---|
+| **reward 0x** | **76** | 58 | 20.2 | 8.6 | 115 |
+| shipped 1x | 77 | 55 | 20.3 | 8.6 | 116 |
+| **reward 4x** | **78** | 53 | 20.3 | 8.8 | 111 |
+
+**Removing the shrine reward entirely costs one win in 138. Quadrupling it gains one.** 0x
+against 1x is p = 1.000; 0x against 4x is 18 discordant pairs split 8 to 10. Wins and deaths are
+both monotone across the three arms, which is weak corroboration that the effect is real rather
+than absent, but the magnitude is roughly a quarter of a win per 138 runs per unit of multiplier.
+
+### Why, and it is not "the sample is too small"
+
+`dmg = max(1, att.atk - dfn.defense)`. Measured over live runs:
+
+| | mean player DEF | incoming hits **already at the damage floor** |
+|---|---|---|
+| all floors | 3.1 | **86%** |
+| floor 13+, where shrines are | 3.3 | **91%** |
+
+Mean foe attack is 3.08 and the player's DEF is already 3 by the time a shrine appears, so
+**nine incoming hits in ten are already reduced to the minimum of 1 and additional DEF is
+arithmetically inert.** +3 DEF from turn 0 is +9 wins in 24 because the player starts near DEF 0
+and the subtraction still has room; the identical +3 DEF at floor 13 changes almost nothing,
+because the term it feeds is pinned at its floor.
+
+That is the whole discrepancy. A naive extrapolation from the turn-0 numbers predicts about +22
+wins for the shrine's exposure (0.84 grants per run over roughly half a run); the observed value
+is +1 at four times the magnitude, an overestimate of more than an order of magnitude.
+
+### What this means for the design, stated as a constraint rather than a fix
+
+**A late reward must be paid in a currency that does not saturate.** DEF saturates against the
+damage floor and is effectively capped at the average foe's attack; by mid-run the player is
+already there. Two of the five renunciations now pay in DEF, which the previous section chose
+precisely because DEF measured strongest from turn 0. That choice was correct on its instrument
+and wrong for the position the reward is granted in, and this is the second time in this
+sequence that a defensible measurement produced a number that did not mean what it appeared to.
+
+ATK does not saturate the same way: player damage per hit is 3.93 against a base attack of 4, so
+foe DEF is near zero and every +1 ATK is +1 damage on every swing. Sight does not saturate
+arithmetically either, though its value falls as the map becomes known.
+
+**The shrine's rewards are late-game grants of early-game currencies.** Repricing them into ATK
+and sight is the indicated next step; it is a design change, it is not taken here, and it should
+be measured with `VC_SHRINE_REWARD_MULT` rather than from turn 0.
+
+### Repricing into ATK and sight: the currency was not the constraint either
+
+DEF was removed from the reward table because it is arithmetically dead at shrine depth. ATK
+was verified non-saturating **at the depth that matters**: past floor 13, mean foe DEF is 0.09
+and **0% of player hits sit at the damage floor**, so every +1 ATK is a full +1 damage against a
+mean of 4.56. Early floors are 6% floored, so ATK is if anything better late than early.
+
+Repriced: `sigil` +2 ATK, `note` +1 ATK, `matter` +4 sight, `rest` +3 sight, `effect` +4 sight.
+Then the same suppression and amplification arms, 138 runs each on the same 23 seeds:
+
+| arm | wins | deaths | floor mean | floor sd |
+|---|---|---|---|---|
+| DEF 0x | 76 | 58 | 20.2 | 8.6 |
+| DEF 4x | 78 | 53 | 20.3 | 8.8 |
+| **ATK+sight 0x** | **74** | 60 | 20.2 | 8.5 |
+| **ATK+sight 4x** | **78** | 55 | 20.2 | 8.8 |
+
+**The reprice did not rescue it.** The dose-response is +4 wins across a fourfold range against
+DEF's +2, on 14 discordant pairs split 5 to 9, and neither is remotely significant. Removing a
+provably-dead currency was worth doing, and it bought almost nothing.
+
+### The constraint is the position, not the currency
+
+Put the two instruments side by side:
+
+| | grant | exposure | effect |
+|---|---|---|---|
+| turn 0 | +1 ATK | the whole run | **+7 wins in 24**, +29 points |
+| shrine at 4x | +8 ATK, 0.84 times per run | past floor 13, so about half a run | **+4 wins in 138**, +3 points |
+
+**Eight times the magnitude, delivered late, is worth a tenth as much per run.** That is not a
+currency problem and no reward table fixes it. A shrine fires about once, past half depth, into
+a run whose trajectory is largely settled: the floors where a buff compounds into more kills,
+more matter, more knowledge and a deeper descent are already behind it.
+
+So the design constraint, stated plainly and not acted on here: **a once-per-run grant of a flat
+stat, delivered past half depth, cannot matter whatever it pays.** For the shrine to be worth
+its place it would have to fire earlier, fire more often, or grant something that compounds, a
+sigil slot, knowledge, standing, rather than a number added to a stat line. That is a change to
+what the shrine IS, not to what it pays, and it should be measured with
+`VC_SHRINE_REWARD_MULT` at the new position rather than from turn 0.
+
+The reprice is kept. It is not better in any significant sense, but it removes a currency
+measured at exactly zero and the direction of the dose-response is marginally larger, so
+reverting would restore a known-dead reward for no gain.
+
+### Three instruments, three different answers, all correct
+
+Worth recording as a method note, since this sequence produced it three times.
+
+1. **Turn-0 grant** ranks currencies against each other. It said DEF +9, ATK +7, sight +4, max
+   HP and speed 0. Every one of those rankings held up.
+2. **Shrine-position multiplier** says what a grant is worth where it is actually handed over.
+   It said all of them are worth about nothing.
+3. **The damage formula** says why DEF specifically is dead late, which neither aggregate could.
+
+Each answered the question it was built for and none of them answered the others'. The failure
+mode this sequence kept hitting was using answer 1 to predict answer 2, which overstated by more
+than an order of magnitude every time.
+
+### Something that compounds: the slot, and a claim of mine that did not replicate
+
+Four candidates granted at **floor 13**, the depth a shrine actually fires at, 24 runs each
+paired on `(agent, seed)` against a control that won 11 of 24:
+
+| granted at floor 13 | wins/24 | win paths | routes |
+|---|---|---|---|
+| nothing | 11 | standing 3, boss 7, commune 1 | 3 |
+| +2 standing, all houses | 12 | standing 6, boss 4, commune 2 | 3 |
+| +3 known notes | 9 | standing 2, boss 7 | 2 |
+| **+1 sigil slot** | 12 | standing 5, commune 2, boss 2, truths 2, diplomacy 1 | **5** |
+
+No candidate moved the win rate. The slot appeared to double route diversity, which is the
+stated criterion moving where the win column did not, so `matter` was repriced to grant a sigil
+slot bearing Ward instead of +4 sight.
+
+**At 138 runs that did not replicate.** With 28 slots actually granted:
+
+| arm | wins | routes | top route's share of wins |
+|---|---|---|---|
+| no reward at all | 74 | 5 | **38%** |
+| ATK + sight, 4x | 78 | 4 | 41% |
+| DEF, 1x | 77 | 5 | 42% |
+| **sigil slot, 1x** | **75** | **5** | **43%** |
+
+The baseline already has five routes at this sample size; the slot arm has five as well and its
+top route is marginally more concentrated, not less. The caveat recorded with the original
+claim, that 24 runs and 12 wins across five routes is a thin basis for a composition result, was
+the correct read, and the replication is what settled it. **The source comment and the test
+docstring that cited the 24-run result have been corrected in place rather than left to age.**
+
+The slot is kept, and the reason is now a design one rather than a measured one. It is not
+better and not worse, 75 wins against 74 with no reward at all, and it is the only reward in the
+pool that compounds mechanically rather than numerically: a slot holds a sigil, and a sigil can
+be cast, forged, upgraded, broken down, deployed and recovered. That is a reason to prefer it
+between two options measured as equal. It is not evidence, and it is labelled as not evidence.
+
+### The shrine, finally
+
+Everything that could be varied about the reward has been:
+
+| varied | result |
+|---|---|
+| magnitude, 0x against 1x against 4x | 76 / 77 / 78 |
+| currency, saturating DEF against non-saturating ATK and sight | 76 to 78 against 74 to 78 |
+| kind, a flat stat against a compounding mechanic | 78 against 75 |
+
+**None of it matters.** A reward handed over once, past half depth, into a run whose trajectory
+is already set, is worth nothing this instrument can see, whatever it is or however large. The
+binding constraint is the position and the frequency, and both are properties of what the shrine
+IS rather than of what it pays.
+
+What would actually test that: place shrines from floor 1, or allow more than one per run, and
+measure the same three arms again. That is a change to the system, not to a table, and it is not
+taken here.
+
+The work was not wasted, and it is worth being precise about what it bought. Two rewards that
+were literally inert are gone, one currency that is arithmetically dead at depth is gone, an
+offering that was a free permanent buff is gone, two offerings that could never be chosen are
+live, and the top offering's share of takes fell from 57% to 38%. Every one of those is a real
+defect closed. **None of them shows up in the win column, and that is the honest summary of the
+entire shrine sequence.**
+
+## Shrines from floor 1: the position was the answer
+
+Every reward experiment came back flat. Magnitude 0x / 1x / 4x gave 76 / 77 / 78 wins; a
+saturating currency against a non-saturating one gave 76-78 against 74-78; a flat stat against a
+compounding sigil slot gave 78 against 75. The same currencies measured from turn 0 are worth a
+great deal. The conclusion drawn from those nulls, that **the position and frequency are the
+binding constraint and both are properties of what the shrine IS**, is now tested rather than
+inferred. 138 runs per arm, paired on `(agent, seed)`:
+
+| depth | chance | taken/run | wins | deaths | floor | floor sd | floor IQR | labels |
+|---|---|---|---|---|---|---|---|---|
+| (no reward at all) | | 0.84 | 74 | 60 | 20.2 | 8.5 | [11, 26] | 31.3 |
+| 0.5 | 0.30 | 0.79 | 75 | 57 | 20.0 | 8.7 | [10, 27] | 31.0 |
+| **0.0** | **0.30** | **2.38** | **88** | 46 | 21.7 | 7.8 | [18, 27] | 31.8 |
+| 0.0 | 0.60 | 4.45 | **92** | 42 | 21.7 | 8.1 | [18, 27] | 31.7 |
+
+Both position arms move: 88 against 75 at **p = 0.0725** and 92 against 75 at **p = 0.0300**,
+both surviving BH at FDR 10%. **This is the first change in the entire shrine sequence to move
+the win column**, and it confirms what four null results implied rather than merely restating
+them.
+
+### Position, not frequency
+
+The two are easy to conflate and the arms separate them. Doubling the placement rate **on top
+of** the depth change is 88 to 92 at **p = 0.6835**: not distinguishable. Going from 2.38 to
+4.45 renunciations per run buys nothing measurable, so the shipped rate stays at 0.30 and only
+the depth gate moves. Past a couple of shrines per run, more shrines cost the fiction and return
+nothing.
+
+### Both halves of the criterion, honestly
+
+Systems-in-use improved unambiguously: shrines taken per run 0.79 to **2.38**, distinct labels
+31.0 to 31.8, and every win route present with `commune` 6 to 13 and `truths` 8 to 12.
+
+Variance is the mixed part and needs stating carefully. Floor **sd falls 8.7 to 7.8**, which is
+the flattening signal this project watches for. But the shape of the narrowing is not the
+degenerate kind: the IQR goes [10, 27] to [18, 27], which is the 25th percentile rising while
+the top holds, so **fewer runs die shallow and the spread is still nine floors wide**. Compare
+creature quality base 5, which was rejected for an IQR of [26, 27], every run ending in the same
+place. This is a different thing and should not be filed with it. At the higher rate sd recovers
+to 8.1 with the same IQR, which suggests the dip at 0.30 is not a trend.
+
+### What the whole shrine sequence adds up to
+
+Ten changes, one number moved.
+
+Nothing about the reward mattered: not its magnitude, not its currency, not whether it was a
+flat stat or a compounding mechanic. What mattered was letting it arrive early enough to
+compound. That is a general shape worth carrying: **when every variation of a thing measures at
+nothing, stop varying the thing and vary where it sits.** Four arms of reward tuning were the
+cost of learning that, and the tuning was not wasted, it just was not the answer: two inert
+rewards, one arithmetically dead currency, a free permanent buff and two never-choosable
+offerings were all removed on the way, and the top offering's share of takes fell from 57% to
+38%. None of those showed in the win column either.

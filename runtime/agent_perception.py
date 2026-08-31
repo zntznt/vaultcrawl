@@ -184,7 +184,20 @@ def agent_state(game, actor) -> dict:
     caches_list.sort(key=lambda c: c["dist"])
 
     # -- pois ------------------------------------------------------------------
-    pois = points_of_interest(game)
+    # Nearest first. `sense.points_of_interest` concatenates each system's list in STACK
+    # ORDER, and the brain takes `pois[0]`, so which point of interest an agent walked to was
+    # decided by where its provider happens to sit in the system list. Measured over 400
+    # sampled decisions that had more than one candidate: the chosen point was the nearest
+    # zero times, median distance 9 against a nearest of 2, with a median of 23 on offer.
+    #
+    # Two consequences. The agent crossed the map past closer things, and any system whose
+    # list is appended late was unreachable in practice however correctly it placed. That is
+    # what kept the renunciation shrine dead after its depth gate was fixed.
+    #
+    # Chebyshev, because the game is eight-directional everywhere else. The cache list ten
+    # lines above already sorts by exactly this, which is what the intent here was.
+    pois = sorted(points_of_interest(game),
+                  key=lambda pt: max(abs(pt[0] - px), abs(pt[1] - py)))
 
     # -- tension ---------------------------------------------------------------
     tension = getattr(game, "_tension", 0)
@@ -565,6 +578,30 @@ def agent_state(game, actor) -> dict:
 
     nearby_landmark = game.commune_landmark() is not None
 
+    # Renunciation shrines. Reported with the best offer on the table, not merely with a
+    # position, because walking to a shrine whose every offer this run would refuse is pure
+    # waste. `SacrificeSystem._worth` already scores an offer from game state, so the brain
+    # can be told what the trip is worth before taking it rather than after.
+    nearest_shrine = None
+    sac_sys = game.system("sacrifice")
+    if sac_sys is not None:
+        for (sx, sy), offers in (getattr(sac_sys, "shrines", {}) or {}).items():
+            d = max(abs(sx - actor.x), abs(sy - actor.y))
+            if nearest_shrine is not None and d >= nearest_shrine[2]:
+                continue
+            try:
+                # The FILTERED offers, the same list the shrine will present on arrival.
+                # Scoring the raw placement draw made the agent walk to shrines for trades
+                # it could not pay: `sigil` and `effect` were dealt 485 times across a
+                # 432-run sweep and chosen zero, because their costs assume holdings the
+                # agent does not have.
+                live = sac_sys.offers_for(game, offers)
+                worth = max((sac_sys._worth(game, kind) for _n, kind, _t in live),
+                            default=0)
+            except Exception:
+                worth = 0
+            nearest_shrine = (sx, sy, d, worth)
+
     # Loci: polymorphic encounter nodes
     loci_sys = game.system("loci")
     loci_count = 0
@@ -655,6 +692,8 @@ def agent_state(game, actor) -> dict:
         "nearby_landmark": nearby_landmark,
         "loci_count": loci_count,
         "nearest_locus": nearest_locus,
+        # (x, y, chebyshev distance, best offer worth) or None.
+        "nearest_shrine": nearest_shrine,
         "beacon_on_floor": beacon_on_floor,
         "nearest_beacon": nearest_beacon,
         "nearest_fabricator": nearest_fabricator,

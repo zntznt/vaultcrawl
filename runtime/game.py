@@ -24,6 +24,15 @@ ROOM_NOUN = {"hub": "Hall", "bridge": "Gallery", "orphan": "Sealed Alcove",
 # communion with the deepest thought: either path resolves the run without violence
 COMMUNE_TRUTHS = 2   # marginalia + lore fragments read
 COMMUNE_COST = 4     # total salvaged matter, any mix
+# What a distraction throw costs at an elite encounter, and what it costs when you cannot
+# afford that. The encounter offered `flee` at `matter >= 1` and the branch charged 2, so an
+# agent holding exactly one matter picked flee, paid nothing, saw the elite not move, and the
+# encounter resolved into a silent no-op. The gate is honoured rather than raised, because
+# the mercy clause a few lines below it reads "desperate agents always get a way out" and
+# offers flee at `matter >= 1`: raising the gate to 2 would break that guarantee for exactly
+# the agent it is written for, the one who is nearly out of everything.
+FLEE_COST = 2
+FLEE_MIN = 1
 # What communing with the WARDEN costs, in truths, before the standing discount.
 #
 # It used to be nothing. The code said so: "always free, reaching the boss is enough". Every
@@ -218,6 +227,19 @@ class Game:
         self._aspect: str = ""              # region-granted temporary trait
         self._aspect_turns: int = 0         # turns spent in current region
         self._cant_camp: bool = False       # true if Renounce Rest was chosen
+        # HP recovered specifically through TOWN rest, cumulative for the run. This is the
+        # thing `Renounce Rest` actually takes away: `_cant_camp` gates the `on_town` branch
+        # only, so ordinary out-of-town resting survives the renunciation. Priced against
+        # this rather than against current HP, because how much a run has leaned on camping
+        # is what makes losing it expensive, and current HP says nothing about that.
+        self._town_rest_hp: int = 0
+        # All HP recovered by resting, town or not.
+        self._rest_hp: int = 0
+        # True only when a human front end is driving and will answer a modal prompt.
+        # `runtime/play.py` sets it. Systems that hand a choice to the player must
+        # resolve that choice themselves when this is False, or the choice is
+        # reachable by humans and by nobody else.
+        self.has_ui: bool = False
         self.player = None
         self.level = None
         self._levels = {}
@@ -684,6 +706,11 @@ class Game:
             return
         try:
             from .persistence import save_chronicle
+            from .persistence import chronicle as _chron
+            # The ghost roll is salted with this, so a note's fate depends on the run
+            # rather than on its name. Set here because this is the one place that knows
+            # both the chronicle and the run's identity.
+            _chron().run_seed = str(self.seed)
             fcs = self.system("factions")
             if fcs is not None:
                 from .persistence import chronicle
@@ -831,6 +858,13 @@ class Game:
                     else tiles[len(tiles) // 2])
             self.level.tiles[door[1]][door[0]] = ">"
             self._gates[door] = r["id"]
+        # The generator draws its own `>` at `level.stairs`, which classic descent uses and
+        # the surface has no meaning for: it is not a district door, so it opens on nothing.
+        # A door drawn on the map that goes nowhere lies to a human and livelocks an agent,
+        # since `on_stairs` reads the glyph while `descend` reads `_gates`.
+        stair = getattr(self.level, "stairs", None)
+        if stair and stair not in self._gates and self.level.walkable(*stair):
+            self.level.tiles[stair[1]][stair[0]] = "."
         # where you WAKE is settled ground too — nothing ambushes you at the start
         start_idx = self.room_at(px, py)
         if start_idx is not None:
@@ -1561,26 +1595,33 @@ class Game:
         return max(EGRESS_TRUTHS_MIN,
                    min(EGRESS_TRUTHS_MAX, notes * EGRESS_TRUTHS_TENTHS // 10))
 
-    def descend(self):
+    def descend(self) -> bool:
+        """Go down. True when the player actually moved, False when nothing happened.
+
+        This returned None on every path, and `dispatch` answered True regardless, so a
+        descend that did nothing was indistinguishable from one that worked. Measured in
+        sandbox: one agent standing on an orphaned `>` chose `panic_descend` 49,437 times
+        in a row for 153 game turns, **324 decisions per turn**, because every one of them
+        left the state it had just read untouched. Fifth instance of one shape in this
+        codebase, after commune range, commune price, the egress stair and interact.
+        """
         if self.sandbox:
-            t = self.level.tiles[self.player.y][self.player.x]
-            if t in "><":
+            if self.on_stairs():
                 from .body_parts import is_immobilized
                 if is_immobilized(self.player):
                     self.log("Your legs won't hold; you cannot descend.")
-                    return
-                if self.traverse():
-                    return
-                self._z_descend()
-                return
+                    return False
+                if self.traverse() or self._z_descend():
+                    return self._spend_travel_turn()
+                return False
             self.log("No way through here; doors (>) wait in each district's "
                      "heart, stairs (<) climb home.")
-            return
+            return False
         if self.floor >= self.max_floor and not self.won:
             ok, why, route = self.egress_ready()
             if not ok:
                 self.log(f"The way down is shut. {why}")
-                return
+                return False
             self._egress_route = route
         self.floor += 1
         # Victory: leaving past the warden. Named for the ROUTE that opened the stair.
@@ -1595,7 +1636,7 @@ class Game:
             self.log("You slip past the final warden and into the deep quiet. You escape."
                      " You win."
                      )
-            return
+            return True
         rng = random.Random(f"{self.seed}:spawn:{self.floor}")
         lvl = generate_level(self.width, self.height, self.seed, self.floor)
         self._set_level(lvl, z=0)
@@ -1859,6 +1900,7 @@ class Game:
             s.on_floor_enter(self)
         if self._graves:
             self._animate_graves()
+        return True
 
     # ---- actions ----
     def actor_at(self, x: int, y: int):
@@ -1868,51 +1910,82 @@ class Game:
         return None
 
     def on_stairs(self) -> bool:
+        """Is there a threshold underfoot that `descend`/`ascend` can actually take?
+
+        The glyph alone was the test, and `PortalSystem` registers a gate rendered as `◉`
+        with no `<`/`>` under it. `dispatch` gates the descend verb on this, so an agent
+        standing on a portal was refused before `traverse` was ever consulted: a mechanic a
+        human can use (`play.py` keys off `_gates` membership) that no agent could reach.
+        Sandbox perception even steers the agent at the nearest gate, portals included, so
+        it walked to one it was structurally forbidden to enter.
+        """
         if self.sandbox:
-            return self.level.tiles[self.player.y][self.player.x] in "><"
+            return (self.level.tiles[self.player.y][self.player.x] in "><"
+                    or (self.player.x, self.player.y) in self._gates)
         return (self.player.x, self.player.y) == self.level.stairs
 
-    def ascend(self):
-        if self.sandbox and self.level.tiles[self.player.y][self.player.x] in "<>":
+    def ascend(self) -> bool:
+        """Go up. True when the player actually moved. See `descend` for why this matters."""
+        if self.sandbox and self.on_stairs():
             from .body_parts import is_immobilized
             if is_immobilized(self.player):
                 self.log("Your legs won't hold; you cannot climb.")
-                return
-            if self.traverse():
-                return
-            self._z_ascend()
-            return
+                return False
+            if self.traverse() or self._z_ascend():
+                return self._spend_travel_turn()
         self.log("There is no way up from here.")
+        return False
 
-    def _z_descend(self):
+    def _spend_travel_turn(self) -> bool:
+        """Crossing a threshold takes time, like every other action.
+
+        Sandbox traversal moved the player without touching the clock, so a stair was a
+        free action. Measured: an agent in panic bounced between two z-levels for 98 of its
+        194 decisions and 0 game turns, because arriving put it on the matching stair and
+        the state it re-read was the state it had just left. Cost is the fix; a loop the
+        clock never advances through is not a loop any backstop can see.
+        """
+        self.turn += 1
+        self._tick_effects()
+        self.enemies_act()
+        self._restore_winded()
+        for s in self.systems:
+            s.on_player_act(self)
+        return True
+
+    def _z_descend(self) -> bool:
         """Move one z-level deeper within the current realm."""
         if not self._dungeon:
-            return
+            self.log("There is nothing below this ground.")
+            return False
         nxt = self.current_z - 1
         if nxt not in self._levels:
             self.log("There is no way deeper from here.")
-            return
+            return False
         self._set_level(self._levels[nxt], z=nxt)
         self.player.x, self.player.y = self.level.player_start
         self.player.z = nxt
         self.log(f"-- You descend deeper (z={nxt}). --")
         for s in self.systems:
             s.on_floor_enter(self)
+        return True
 
-    def _z_ascend(self):
+    def _z_ascend(self) -> bool:
         """Move one z-level upward within the current realm."""
         if not self._dungeon:
-            return
+            self.log("There is nothing above this ground.")
+            return False
         nxt = self.current_z + 1
         if nxt not in self._levels:
             self.log("There is no way up from here.")
-            return
+            return False
         self._set_level(self._levels[nxt], z=nxt)
         self.player.x, self.player.y = self.level.player_start
         self.player.z = nxt
         self.log(f"-- You climb back up (z={nxt}). --")
         for s in self.systems:
             s.on_floor_enter(self)
+        return True
 
     def try_move(self, dx: int, dy: int):
         if not self.alive or self.won:
@@ -2244,7 +2317,7 @@ class Game:
                  (getattr(self.system("history"), "read", 0) or 0)
         if source_known or truths >= 2:
             options.append("parley")
-        if matter >= 1:
+        if matter >= FLEE_MIN:
             options.append("flee")
         if truths >= 1:
             options.append("appease")
@@ -2253,7 +2326,7 @@ class Game:
 
         # Mercy: desperate agents always get a way out
         if hp_pct < 30 and not options:
-            if matter >= 1:
+            if matter >= FLEE_MIN:
                 options.append("flee")
             else:
                 options.append("appease")
@@ -2286,15 +2359,33 @@ class Game:
                 self._win("diplomacy")
                 self.log("The final boss lays down its arms. You have won through diplomacy.")
         elif choice == "flee":
-            if salv and salv.inventory(self).total() >= 2:
-                self._spend_matter(salv.inventory(self), 2)
-                self.log(f"You toss matter as a distraction. {target.name} chases the clatter.")
+            # Spend up to FLEE_COST, and everything you have when that is less. Paired with
+            # the FLEE_MIN gate above, this makes the option and its body agree: whenever
+            # flee is offered it does something, and it never charges for nothing.
+            #
+            # The throw is also only paid for once it has somewhere to land. The old order
+            # spent the matter first and then looked for a walkable tile, so an elite boxed
+            # into a corner took the payment and stayed put, which is the same silent
+            # half-failure one line further out.
+            bag = salv.inventory(self) if salv else None
+            held = bag.total() if bag is not None else 0
+            landed = None
+            if held >= FLEE_MIN:
                 for dx, dy in ((5, 0), (-5, 0), (0, 5), (0, -5)):
                     nx, ny = target.x + dx, target.y + dy
                     if self.level.walkable(nx, ny):
-                        target.x, target.y = nx, ny
-                        self.emit("noise", pos=(nx, ny), volume=8)
+                        landed = (nx, ny)
                         break
+            if landed is not None:
+                _spend_matter(bag, min(FLEE_COST, held))
+                target.x, target.y = landed
+                self.emit("noise", pos=landed, volume=8)
+                self.log(f"You toss matter as a distraction. {target.name} chases the clatter.")
+            elif held < FLEE_MIN:
+                self.log(f"You have nothing to throw, and {target.name} does not look away.")
+            else:
+                self.log(f"There is nowhere for the clatter to land. {target.name} holds its "
+                         f"ground.")
         elif choice == "appease":
             self.log(f"You commune briefly. {target.name} lowers its guard.")
             target.allegiance = "wild"
@@ -2482,6 +2573,8 @@ class Game:
                 heal = 3 if self._resting else 2
                 if self._aspect and "Hallowed" in self._aspect:
                     heal *= 2
+                self._town_rest_hp += max(0, heal)
+            self._rest_hp += max(0, heal)
             heal_body(self.player, heal)
             tag = f"+{heal} HP"
             self.log(f"You rest ({tag}).")
@@ -2506,7 +2599,7 @@ class Game:
         for s in self.systems:
             s.on_player_act(self)
 
-    def interact(self):
+    def interact(self) -> bool:
         """Contextual interaction: a Keeper beside you first, then what is underfoot,
         flora, structures, decay and the rest. Iterates all systems, collects handlers,
         and consumes the turn if any fire.
@@ -2515,6 +2608,21 @@ class Game:
         that was later prepended above it, where Python evaluated it as a no-op string
         and no tool read it. tests/test_keys.py::test_no_orphaned_docstrings now fails
         on that shape, because it is how `travel` lost its `def` line and went unnoticed.
+
+        **Returns whether anything happened, and spends no turn when nothing did.** A
+        failed interact must stay free: pressing it on empty ground should not cost a
+        player their turn. But it must be VISIBLE, because the brain re-chooses whatever
+        it cannot tell has failed. Measured: one agent spent 74.2% of its decisions on
+        `interact` at 3.75 decisions per game turn, standing in weather it could not
+        afford to clear. `dispatch` returned True unconditionally, so `note_result` was
+        never told, and the 15-point FATIGUE_FAILED penalty that exists for exactly this
+        never applied.
+
+        Note also that the candidate's gate and this verb ask different questions: the
+        brain offers `interact` when `commune_landmark()` is truthy, while this checks
+        keepers, then weather, then corpses, then handlers, and returns early at each. The
+        two can disagree in both directions, which is the fourth instance in this codebase
+        of a reachability test drifting from the precondition it is meant to mirror.
         """
         # Speaking to whoever is beside you comes first. DialogueSystem.on_event listens
         # for `interact` and nothing in real play ever emitted it, so its entire quest,
@@ -2539,23 +2647,44 @@ class Game:
                     self.enemies_act()
                     for s in self.systems:
                         s.on_player_act(self)
-                    return
+                    return True
         if not self.alive or self.won:
-            return
+            return False
+        # A renunciation shrine UNDERFOOT outranks the weather, and this is a narrow
+        # exception rather than a reordering. `interact` is one overloaded verb with a fixed
+        # precedence, and anything late in that chain is unreachable whenever anything
+        # earlier is live. Shrines sat behind weather, and weather is common: measured over a
+        # full seeker run, both of the two times an agent ever managed to stand on a shrine,
+        # weather was active, `interact` returned into `clear_weather`, and the shrine was
+        # untouched. Uptake stayed at zero after four separate fixes upstream of this line.
+        #
+        # The guard is the exact tile, not a radius, which is what makes it safe. The
+        # cautionary case above, preempting on any adjacent "npc", was broad enough to
+        # hijack everything else `interact` does and cost every profile its run. This
+        # condition is true once or twice in a whole descent, and the weather will still be
+        # there next turn where the shrine will not.
+        sac = self.system("sacrifice")
+        if sac is not None and (self.player.x, self.player.y) in getattr(sac, "shrines", {}):
+            if sac.on_interact(self):
+                self.turn += 1
+                self._tick_effects()
+                self.enemies_act()
+                self._restore_winded()
+                for s in self.systems:
+                    s.on_player_act(self)
+                return True
         weather = self.system("weather")
         if weather:
             props = getattr(weather, 'props_at', None)
             weather_active = (props and props(self.player.x, self.player.y)) or \
                             getattr(weather, 'weather', '') == 'acrid haze'
             if weather_active:
-                self.clear_weather()
-                return
+                return self.clear_weather()
         decay = self.system("decay")
         if decay and hasattr(decay, 'corpses') and (self.player.x, self.player.y) in decay.corpses:
             if (hasattr(self.player, 'body') and self.player.body and
                 any(p['hp'] < p['max'] for p in self.player.body.values())):
-                self.repair_part()
-                return
+                return self.repair_part()
         handled = False
         for s in self.systems:
             try:
@@ -2581,35 +2710,41 @@ class Game:
             CraftSystem.apply_wires(self, "player_hp_check", hp_pct=hp_pct)
         except Exception:
             pass
+        return handled
 
-    def repair_part(self):
+    def repair_part(self) -> bool:
         """Cogmind-style: salvage a corpse at your feet to repair your worst body part.
-        Costs 1 matter from inventory. Heals the most-damaged part by 2 HP."""
+        Costs 1 matter from inventory. Heals the most-damaged part by 2 HP.
+
+        Returns whether it did anything, for the same reason `clear_weather` does: an
+        `interact` that silently no-ops is indistinguishable from one that worked, so the
+        brain re-chooses it from an unchanged state.
+        """
         if not self.alive or self.won:
-            return
+            return False
         corpse = None
         decay = self.system("decay")
         if decay and hasattr(decay, 'corpses'):
             corpse = decay.corpses.get((self.player.x, self.player.y))
         if corpse is None:
             self.log("Nothing to salvage here.")
-            return
+            return False
         if not hasattr(self.player, 'body') or not self.player.body:
             self.log("You have nothing to mend.")
-            return
+            return False
         parts = self.player.body
         worst_name = min(parts.keys(), key=lambda p: parts[p]['hp'] / max(1, parts[p]['max']))
         worst_part = parts[worst_name]
         if worst_part['hp'] >= worst_part['max']:
             self.log("Your body is whole.")
-            return
+            return False
         salv = self.system("salvage")
         if salv is None:
-            return
+            return False
         inv = salv.inventory(self)
         if inv.total() < 1:
             self.log("You need matter to salvage.")
-            return
+            return False
         _spend_matter(inv, 1)
         from .body_parts import heal_body
         heal_body(self.player, 2)
@@ -2622,6 +2757,7 @@ class Game:
         self._restore_winded()
         for s in self.systems:
             s.on_player_act(self)
+        return True
 
     def shield(self):
         """Raise your guard: +1 defense (capped) or a small self-heal once capped.
@@ -3329,11 +3465,18 @@ class Game:
                         if max(abs(ally.x - a.x), abs(ally.y - a.y)) <= 5:
                             ally.atk = getattr(ally, "atk", 0) + 1
 
-    def clear_weather(self, radius: int = 5):
+    def clear_weather(self, radius: int = 5) -> bool:
         """Spend 1 matter to clear weather hazards in a radius around the player.
-        Lasts 20 turns before weather returns."""
+        Lasts 20 turns before weather returns.
+
+        Returns whether it actually did anything. It used to return None on every path,
+        success and failure alike, so `interact` could not tell the difference and neither
+        could the brain: an agent standing in weather it could not afford to clear chose
+        `interact` 74.2% of the time at 3.75 decisions per game turn, because the attempt
+        cost nothing and changed nothing.
+        """
         if not self.alive or self.won:
-            return
+            return False
         salv = self.system("salvage")
         if salv is None or salv.inventory(self).total() < 1:
             structures = self.system("structures")
@@ -3342,13 +3485,13 @@ class Game:
                 px, py = self.player.x, self.player.y
                 for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (0, 0)):
                     if (px + dx, py + dy) in getattr(structures, 'crystals', set()):
-                        structures.crystals.discard((px + dx, py + dy))
+                        structures.crystals.pop((px + dx, py + dy), None)
                         crystal_consumed = True
                         self.log("You channel the crystal's energy — the air clears.")
                         break
             if not crystal_consumed:
                 self.log("You need matter or a nearby crystal to clear the weather.")
-                return
+                return False
         else:
             from .components import inv as get_inv
             bag = get_inv(self.player) if hasattr(self.player, '_inv') else salv.inventory(self)
@@ -3357,7 +3500,7 @@ class Game:
             self.log(f"You spend {richest} to clear the sky.")
         weather = self.system("weather")
         if weather is None:
-            return
+            return False
         if not hasattr(self, '_weather_suppressed'):
             self._weather_suppressed = {}
         px, py = self.player.x, self.player.y
@@ -3371,6 +3514,7 @@ class Game:
         self.enemies_act()
         for s in self.systems:
             s.on_player_act(self)
+        return True
 
     def is_weather_suppressed(self, x: int, y: int) -> bool:
         """Check if weather is suppressed at a given position."""
