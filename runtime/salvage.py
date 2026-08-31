@@ -15,6 +15,7 @@ Self-contained: reads game state, mutates only through the public Game API + the
 """
 from __future__ import annotations
 
+import os
 import random
 
 from runtime.components import Inventory, components_of, inv, world_materials
@@ -22,6 +23,34 @@ from runtime.systems import System
 
 SALVAGE_GLYPH = "*"   # vanilla relic glyph, free because stat-loot is suppressed under systems
 HEAP_GLYPH = "%"      # trash heaps — non-combat matter sources
+
+# How much matter a salvaged tile yields, split by whether it carries a grade. Both default
+# to 1.0, which is the shipped game.
+#
+# These exist because the forge floor is set by the *grade of the units spent*, and the supply
+# is overwhelmingly ungraded: measured over 18 runs, 81.3% of all banked matter is Normal,
+# graded units are 18.7% of the pool, and the forge quotes a floor of 0 on 87.4% of crafts. The
+# forge is not avoiding graded matter, it spends 17.2% graded against a 18.7% share, there is
+# simply almost none. Grading the ungraded sources is a wrong knob and can be priced as one
+# without running it: trash heaps and rubble are 6.2% of banked matter, so grading all of them
+# moves the graded share from 18.7% to at most 24.9%.
+#
+# GRADED lifts the yield of matter that carries a tier. PLAIN lifts the yield of matter that
+# does not, and exists so an arm can add the same *quantity* of matter without adding grade:
+# raising GRADED alone raises the total pool too, and a result from that arm alone could not
+# tell "more grade" from "more matter".
+#
+# Deliberately scoped to world salvage. `breakdown_sigil` is player-driven recycling, and
+# multiplying it would mint matter in a loop against the forge's 2-unit cost.
+GRADED_YIELD = float(os.environ.get("VC_SALVAGE_GRADED_MULT", "1.0"))
+PLAIN_YIELD = float(os.environ.get("VC_SALVAGE_PLAIN_MULT", "1.0"))
+
+
+def _scaled(tile: dict, mult: float) -> dict:
+    """Scale a salvage tile's quantities, never below the one unit it already yielded."""
+    if mult == 1.0:
+        return tile
+    return {m: max(1, int(round(q * mult))) for m, q in tile.items()}
 
 
 def _summary(comps: dict) -> str:
@@ -133,6 +162,7 @@ class SalvageSystem(System):
                 for k in list(tile.keys()):
                     tile[k] += bonus
         except Exception: pass
+        tile = _scaled(tile, GRADED_YIELD if q > 0 else PLAIN_YIELD)
         inv(player).add(tile, quality=q)       # banks the matter's grade for the forge floor
         game.log(f"Salvaged {_summary(tile)}.")
         try:

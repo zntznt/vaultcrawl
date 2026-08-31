@@ -126,3 +126,76 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# --------------------------------------------------------------------------- #
+# Salvage yield knobs. The forge floor is the grade of the units spent, and 81% of banked
+# matter is Normal, so the graded share of the pool is the thing an arm has to move. These
+# two multipliers exist to move it and to separate "more grade" from "more matter".
+# --------------------------------------------------------------------------- #
+
+def _bank_one_tile(monkeypatch_env, quality, qty=4):
+    """Run one _collect against a hand-placed tile and report what got banked."""
+    import importlib
+    import runtime.salvage as S
+    from runtime.stack import reset_run_state
+    importlib.reload(S)
+    # foraging is per-run module state and it grants +1 matter per tier, so without this the
+    # second tile in a test is scored against the skill the first one exercised
+    reset_run_state()
+    from runtime.components import Inventory
+
+    class _Player:
+        x = y = 1
+
+    class _Game:
+        player = _Player()
+
+        def log(self, *a, **k):
+            pass
+
+    sal = S.SalvageSystem()
+    game = _Game()
+    sal.ground[(1, 1)] = {"brass": qty}
+    if quality:
+        sal.ground_q[(1, 1)] = quality
+    bag = Inventory()
+    game.player._inv = bag
+    sal._collect(game)
+    return bag
+
+
+def test_yield_knobs_default_to_the_shipped_game(monkeypatch):
+    monkeypatch.delenv("VC_SALVAGE_GRADED_MULT", raising=False)
+    monkeypatch.delenv("VC_SALVAGE_PLAIN_MULT", raising=False)
+    assert _bank_one_tile(monkeypatch, quality=2).comp["brass"] == 4
+    assert _bank_one_tile(monkeypatch, quality=0).comp["brass"] == 4
+
+
+def test_the_graded_knob_lifts_only_graded_salvage(monkeypatch):
+    monkeypatch.setenv("VC_SALVAGE_GRADED_MULT", "3.0")
+    monkeypatch.delenv("VC_SALVAGE_PLAIN_MULT", raising=False)
+    graded = _bank_one_tile(monkeypatch, quality=2)
+    plain = _bank_one_tile(monkeypatch, quality=0)
+    assert graded.comp["brass"] == 12, "graded salvage scales"
+    assert graded.quality_of("brass") == 2, "and the extra units carry the grade"
+    assert plain.comp["brass"] == 4, "ungraded salvage must not move with it"
+
+
+def test_the_plain_knob_adds_quantity_without_adding_grade(monkeypatch):
+    monkeypatch.delenv("VC_SALVAGE_GRADED_MULT", raising=False)
+    monkeypatch.setenv("VC_SALVAGE_PLAIN_MULT", "1.5")
+    plain = _bank_one_tile(monkeypatch, quality=0)
+    graded = _bank_one_tile(monkeypatch, quality=2)
+    assert plain.comp["brass"] == 6 and plain.quality_of("brass") == 0
+    assert graded.comp["brass"] == 4, "graded salvage must not move with it"
+
+
+def test_scaling_never_erases_a_unit(monkeypatch):
+    """A multiplier below 1 must not round a one-unit tile away to nothing: an arm that
+    silently deletes salvage is measuring a different game than the one it names."""
+    import importlib
+    import runtime.salvage as S
+    monkeypatch.setenv("VC_SALVAGE_PLAIN_MULT", "0.1")
+    importlib.reload(S)
+    assert S._scaled({"brass": 1, "moss": 2}, S.PLAIN_YIELD) == {"brass": 1, "moss": 1}
