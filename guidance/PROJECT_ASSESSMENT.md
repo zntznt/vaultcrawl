@@ -5035,3 +5035,75 @@ answer. This predates the floor fix; the old ratchet hid it by clamping most rol
 regardless. It also means any histogram over rolls is a histogram over *repeats*, weighted by how
 stuck the agent got, which is why `quality_leverage` now prints `distinct` next to `observed`:
 1.31 against the model's 1.26, where `observed` reads 0.78.
+
+## The salvage arm: grade and quantity, separated, and neither result clears
+
+The previous section ended by naming the constraint as how much graded matter exists to spend.
+Measured before running anything: 81.3% of all banked matter is Normal, graded units are 18.7%
+of the pool, and the forge quotes a floor of 0 on 87.4% of crafts. The forge is not avoiding
+graded matter, it spends 17.2% graded against an 18.7% share.
+
+The obvious knob was again the wrong one and could be priced without running it. Trash heaps and
+rubble look like the flood of ungraded matter and are not: they are 6.2% of banked matter, so
+grading every one of them moves the graded share from 18.7% to at most 24.9%. The flood is
+ordinary corpses, 54.7% of the pool in a single material.
+
+Two arms, because raising graded yield raises the total pool as well, and one arm alone could
+not tell "more grade" from "more matter":
+
+| arm | banked units | graded units | graded share | floor 0 quoted |
+|---|---|---|---|---|
+| control | 17195 | 3223 | 18.7% | 87.4% |
+| `GRADED x3` | 19955 (+16.1%) | **7127** | **35.7%** | **68.9%** |
+| `PLAIN x1.5` | 20439 (+18.9%) | 3119 | 15.3% | 83.9% |
+
+The quantity control adds *more* total matter than the grade arm, so "more matter" is ruled out
+by construction rather than by argument.
+
+### 138 runs per arm, 23 shared seeds, paired on `(agent, seed)`
+
+| arm | wins | 95% CI | deaths | floor mean | floor sd | floor IQR | labels | p |
+|---|---|---|---|---|---|---|---|---|
+| control | 87/138 | [55%, 71%] | 48 | 21.9 | 7.5 | [19, 27] | 32.1 | |
+| `GRADED x3` | 97/138 | [62%, 77%] | 39 | 22.2 | 7.9 | [26, 27] | 31.9 | 0.2116 |
+| `PLAIN x1.5` | 90/138 | [57%, 73%] | 42 | 21.8 | 7.7 | [18, 26] | 31.9 | 0.7838 |
+
+**Neither clears.** +10 wins at p = 0.2116 does not survive BH at FDR 10%, and neither does +3
+at p = 0.7838. The defaults stay at 1.0 and nothing ships from this.
+
+What the arms do separate is direction. Grade moves route composition wider, `truths` 8 to 13 and
+`commune` 13 to 16; quantity moves it narrower, `commune` 13 to 22 and `truths` 8 to 5. Both
+raise crafting by about the same amount, `forge_used` per thousand turns 18.70 to 21.09 and
+21.42, which is the quantity match landing as designed: the quantity arm bought slightly more
+crafting and slightly fewer wins. That is the shape you would expect if grade mattered and
+quantity did not, and it is worth exactly as much as its p value, which is to say it is a
+direction to test rather than a result to cite.
+
+### A flattening claim I nearly filed, and the check that stopped it
+
+The grade arm's floor IQR narrows to [26, 27], which is the signature creature quality base 5
+was rejected for. It is not the same thing, and the summary statistic alone would have said it
+was. Base 5 flattened everything: sd 6.9, 79.9% of runs reaching the bottom. Here **sd goes up,
+7.5 to 7.9**, the 5th percentile floor is 5 in both arms, and the number of runs ending below
+floor 15 is **29 in both**. The shallow tail is untouched and the spread is wider. What narrowed
+is the middle: runs that used to end around floor 19 to 25 now reach 26. That is polarising, not
+flattening, and the two have opposite implications. **Read the tail before calling an IQR a
+flattening.**
+
+### The stall tripwire misfires on a matter-rich arm
+
+Runs tripping the tripwire go 5 to 18 in the grade arm and 15 in the quantity arm, which reads
+as a threefold stall regression. **14 of those 18 runs won**, and 11 of the 15. The tripwire's
+`decisions per turn > 1.05` term is a livelock proxy, and it assumes a decision that does not
+spend a turn is a loop. In an arm with more matter it is a craft. This is the eighth instance in
+this project of an instrument reporting its own symptom as the condition it was built to detect,
+and the fix is the same as the last seven: read the second term, here whether the tripped runs
+won.
+
+### Where this leaves the quality axis
+
+Three measurements now agree that item quality is not carrying the outcome: a 6x base sweep
+(p = 0.37 and 0.77), removing the ratchet and cutting delivered tier 3.6x (p = 1.00), and
+tripling the graded supply (p = 0.21). The third is the only one whose point estimate is large
+enough to be worth resolving, and resolving +10 at p = 0.21 needs roughly two to three times the
+seeds, not another arm.

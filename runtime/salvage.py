@@ -42,6 +42,13 @@ HEAP_GLYPH = "%"      # trash heaps — non-combat matter sources
 #
 # Deliberately scoped to world salvage. `breakdown_sigil` is player-driven recycling, and
 # multiplying it would mint matter in a loop against the forge's 2-unit cost.
+#
+# Swept once at 138 runs per arm, 23 shared seeds, paired on (agent, seed). GRADED 3.0 takes the
+# graded share of the pool from 18.7% to 35.7% and wins 97 against the control's 87, p = 0.2116.
+# PLAIN 1.5 adds slightly MORE total matter with no extra grade and wins 90, p = 0.7838. Neither
+# clears BH at FDR 10%, so both stay at 1.0 and nothing here ships. Grade moves route composition
+# wider (truths 8 to 13) where quantity moves it narrower (commune 13 to 22), which is a
+# direction worth resolving with more seeds rather than a result to cite.
 GRADED_YIELD = float(os.environ.get("VC_SALVAGE_GRADED_MULT", "1.0"))
 PLAIN_YIELD = float(os.environ.get("VC_SALVAGE_PLAIN_MULT", "1.0"))
 
