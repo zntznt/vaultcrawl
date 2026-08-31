@@ -4951,4 +4951,87 @@ will show it.
 
 If the item side needs to move, the lever is the floor: whether `min_quality` should reflect
 what is being spent rather than the best thing ever banked. That is a design change, not a
-tuning one, and it is not made here.
+tuning one, and it is made in the next section.
+
+## Spending the grade with the matter: a 3.6x cut to item quality that costs nothing
+
+The previous section ended by naming the floor as the lever. `Inventory` banked a scalar
+high-water mark per material and never decremented it, so one Legendary scrap set that
+material's forge floor for the rest of the run: bank it, spend it, refill with forty Normal, and
+the floor was still Legendary. Grades now live on the units. `tiers` splits each material's
+stock by grade, `spend_plan(cost)` is the single source both `min_quality` and `pay` read so a
+quoted floor can never disagree with the matter burned, grades are spent best-first, and the
+floor counts units rather than materials: a two-unit recipe backed by one graded unit takes the
+second off the Normal pile and is priced accordingly.
+
+### The mechanism moved a very long way
+
+Measured with `runtime.quality_leverage` over real rolls, before and after:
+
+| | before | after |
+|---|---|---|
+| floor histogram | `{0: 875, 1: 230, 2: 929, 3: 63, 4: 506}` | `{0: 3540, 1: 309, 2: 141, 3: 2}` |
+| mean floor | 1.65 | **0.15** |
+| share of the grade that is the floor | 74% | **24%** |
+| rolls clamped Legendary at any base | 19% | **0%** |
+| mean delivered tier | 2.24 | **0.62** |
+| Legendary delivered | 26.4% | **0.6%** |
+
+Floor 4 no longer occurs at all. Item quality fell by a factor of 3.6 and the top tier went from
+the most common outcome to a rounding error.
+
+### The outcome did not move at all
+
+138 runs, 23 shared seeds, paired on `(agent, seed)` against the pre-fix rows at the same
+`ITEM_QUALITY_BASE`:
+
+| arm | wins | 95% CI | deaths | stalls | floor mean | floor sd | floor IQR | labels |
+|---|---|---|---|---|---|---|---|---|
+| before | 88/138 | [55%, 71%] | 46 | 8 | 21.7 | 7.8 | [18, 27] | 31.8 |
+| after | 87/138 | [55%, 71%] | 48 | 5 | 21.9 | 7.5 | [19, 27] | 32.1 |
+
+**88 to 87 at p = 1.0000.** Every structural indicator is flat or slightly better: distinct
+labels 31.8 to 32.1, runs tripping the stall tripwire 8 to 5, worst single-run label share 37.0%
+to 27.9%, `forge_used` per thousand turns 18.2 to 18.7. Route composition stays wide, with
+`diplomacy` going 1 to 3 and `truths` 12 to 8.
+
+The churn is the part worth reading: **25 runs lost and 24 won, so 49 of 138 changed outcome to
+net one win.** This is not an inert change that nothing noticed. It is a change that reshuffles
+which runs succeed without moving how many, which is the shape this project's criterion asks
+for and the win column is structurally unable to show.
+
+### What it says about the quality axis
+
+Item quality was carrying essentially none of the outcome. Cutting the delivered mean tier by
+3.6x costs one win out of 138, which retires the reading that the 6x base sweep was null because
+the base is a weak knob inside a strong system. **The system was weak too; the ratchet was
+supplying grades nothing depended on.**
+
+That is worth stating as a cost as well as a result. Sigils grant one perk per tier, so a mean
+tier of 0.62 means perks are now nearly extinct, and "it costs no wins" is a claim about
+winning, not about the game having content. If graded items should matter, neither
+`ITEM_QUALITY_BASE` nor the floor semantics is the lever: the constraint is how much graded
+matter exists to spend, which is set by salvage. That is the arm to run next, and it is not run
+here.
+
+### A second defect the keyed capture turned up
+
+`qualify_sigil` seeds a fresh `Random` from `(seed, floor, note, ability)`, and every forged
+sigil uses note `"forged"`, so **re-forging the same ability on the same floor is deterministic**.
+A bad craft cannot be retried; it can only be repurchased at the identical grade. Over 2468
+captured rolls there are 294 distinct keys, 8.4 rolls each, and the repeat count is cleanly
+monotone in the tier the key delivers:
+
+| delivered tier | distinct keys | mean re-rolls each |
+|---|---|---|
+| Normal | 79 | 14.3 |
+| Uncommon | 101 | 8.6 |
+| Rare | 66 | 5.7 |
+| Epic | 41 | 2.0 |
+| Legendary | 7 | 1.6 |
+
+The agent re-forges a Normal result fourteen times over, burning matter to rediscover the same
+answer. This predates the floor fix; the old ratchet hid it by clamping most rolls to Legendary
+regardless. It also means any histogram over rolls is a histogram over *repeats*, weighted by how
+stuck the agent got, which is why `quality_leverage` now prints `distinct` next to `observed`:
+1.31 against the model's 1.26, where `observed` reads 0.78.

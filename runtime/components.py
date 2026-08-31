@@ -66,6 +66,10 @@ class Inventory:
     Grades are spent best-first. The alternative, spending the junk and hoarding the good
     matter, would leave the floor pinned at the worst thing you own and make banked grade
     unspendable, which is a bigger change than making it finite.
+
+    Measured at 138 runs paired on (agent, seed): this cuts the mean delivered item tier from
+    2.24 to 0.62 and moves the win column 88 to 87, p = 1.0000, with 49 of 138 runs changing
+    outcome to get there. Item quality was carrying almost none of the result.
     """
 
     def __init__(self):
