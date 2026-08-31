@@ -62,7 +62,10 @@ def capture(world: str, seeds: list, out_path: str) -> list:
 
     def wrapped(self, game, sigil, floor=0, bias=0.0, additives=None):
         tier = original(self, game, sigil, floor, bias, additives)
-        calls.append((int(floor), float(bias), int(sigil.get("quality", 0))))
+        # the same key the roll is seeded from, so the report can separate a distribution
+        # over rolls from a distribution over distinct rolls
+        key = f"{game.seed}:{game.floor}:{sigil.get('note', '')}:{sigil.get('ability', '')}"
+        calls.append((int(floor), float(bias), int(sigil.get("quality", 0)), key))
         return tier
 
     Q.QualitySystem.qualify_sigil = wrapped
@@ -89,35 +92,51 @@ def _row(label, dist, n) -> str:
 
 
 def report(calls: list, bases: list):
+    calls = [tuple(c) for c in calls]
     n = len(calls)
     if not n:
         print("no calls captured")
         return
-    mean_floor = sum(f for f, _, _ in calls) / n
-    mean_tier = sum(t for _, _, t in calls) / n
-    pinned = sum(1 for f, _, t in calls if f >= t)
-    clamped = sum(1 for f, _, _ in calls if f >= LEGENDARY)
+    keyed = len(calls[0]) > 3
+    mean_floor = sum(c[0] for c in calls) / n
+    mean_tier = sum(c[2] for c in calls) / n
+    pinned = sum(1 for c in calls if c[0] >= c[2])
+    clamped = sum(1 for c in calls if c[0] >= LEGENDARY)
 
     print(f"{n} rolls captured")
-    print(f"  floor histogram        {dict(sorted(collections.Counter(f for f, _, _ in calls).items()))}")
+    print(f"  floor histogram        {dict(sorted(collections.Counter(c[0] for c in calls).items()))}")
     print(f"  mean floor {mean_floor:.2f} of mean delivered tier {mean_tier:.2f} "
           f"({100 * mean_floor / mean_tier:.0f}% of the grade is the floor)")
     print(f"  rolls the floor already guaranteed: {pinned} ({100 * pinned / n:.0f}%)")
     print(f"  rolls clamped Legendary at any base: {clamped} ({100 * clamped / n:.0f}%)")
 
+    # `qualify_sigil` seeds a fresh Random per (seed, floor, note, ability), so two rolls
+    # sharing a key return the identical tier. A distribution over rolls therefore weights
+    # each distinct roll by how often the agent repeated it, and the analytic column, which
+    # assumes independent draws, is only comparable to the deduplicated row.
+    distinct = calls
+    if keyed:
+        first: dict = {}
+        for c in calls:
+            first.setdefault(c[3], c)
+        distinct = list(first.values())
+        print(f"  distinct rolls: {len(distinct)} of {n} "
+              f"({n / len(distinct):.1f} rolls per distinct key)")
+
     header = "".join(f"{name:>9}" for name in NAMES)
     print(f"\n{'base':>9}  {header}   mean tier")
-    observed = collections.Counter(t for _, _, t in calls)
-    print(_row("observed", observed, n))
+    print(_row("observed", collections.Counter(c[2] for c in calls), n))
+    if keyed and len(distinct) != n:
+        print(_row("distinct", collections.Counter(c[2] for c in distinct), len(distinct)))
     for base in bases:
         agg: dict = collections.defaultdict(float)
-        for floor, bias, _ in calls:
-            for tier, weight in exact(base, floor, bias).items():
+        for c in distinct:
+            for tier, weight in exact(base, c[0], c[1]).items():
                 agg[tier] += weight
         label = f"{base}*" if base == ITEM_QUALITY_BASE else str(base)
-        print(_row(label, agg, n))
-    print("\n  * = the shipped ITEM_QUALITY_BASE. The `observed` row should track it; a gap"
-          " means the capture and the build disagree.")
+        print(_row(label, agg, len(distinct)))
+    print("\n  * = the shipped ITEM_QUALITY_BASE. Compare it to `distinct`, not to"
+          " `observed`: the model draws independently and the game does not.")
 
 
 def main(argv=None):
