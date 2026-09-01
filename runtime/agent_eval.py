@@ -38,7 +38,22 @@ def _register_brains():
 
 AGENT_NAMES = ["artisan", "cartographer", "emergent", "exploiter", "seeker", "whisper"]
 DEFAULT_RUNS = 100
-DEFAULT_MAX_FLOOR = 99
+
+# Classic descent's floor budget. Classic is the retired mode, kept reachable so the numbers
+# taken under it stay reproducible; nothing defaults to it any more.
+CLASSIC_MAX_FLOOR = 99
+DEFAULT_MAX_FLOOR = CLASSIC_MAX_FLOOR   # back-compat alias for callers that named it
+
+# Sandbox's floor budget, and it is not cosmetic. `run_agent` budgets a run at
+# `max_floor * max_turns_per_floor` decisions, and in sandbox `descend` never moves `floor`, so
+# all 99 classic floors are phantom and an unresolved run costs 49,599 decisions.
+#
+# 16 floors is 8,016 decisions, and the cut is outcome-neutral on everything measured so far:
+# over 48 sandbox runs the longest WIN took 1,149 turns and not one exceeded 8,000, while every
+# run past that budget had already lost. It converts wanderers into fast losses and truncates no
+# victory. If a sandbox win ever lands past 8,000 turns this constant is wrong and every number
+# taken under it needs re-reading.
+SANDBOX_MAX_FLOOR = 16
 
 
 @dataclass
@@ -82,16 +97,27 @@ class RunResult:
 
 
 def run_agent(world_json: str, agent_name: str,
-              max_floor: int = DEFAULT_MAX_FLOOR,
-              max_turns_per_floor: int = 500, run_seed=None) -> RunResult:
-    """Run a single agent through a world descent and return the run's statistics.
+              max_floor: int = None,
+              max_turns_per_floor: int = 500, run_seed=None,
+              sandbox: bool = True) -> RunResult:
+    """Run a single agent through a world and return the run's statistics.
+
+    Sandbox is the game. This used to hardcode `sandbox=False`, so every number this project
+    produced described classic descent while the mode a person actually played was the grown
+    Alexander world, and no agent had ever been run against it. The two are not close: measured
+    on the same seeds, sandbox won 10 of 48 against classic's 25, mean floor 1.6 against 20.1,
+    and 33 of 48 sandbox runs burned the harness budget without resolving. Those numbers are the
+    reason to fix sandbox, not a reason to keep measuring something else.
 
     Args:
         world_json: path to world.json
         agent_name: brain tier to wire (one of the 6 agent names)
-        max_floor: descend at most this many floors
+        max_floor: floor budget; defaults to the mode's own (16 sandbox, 99 classic)
         max_turns_per_floor: max decisions per floor (anti-stall)
+        sandbox: the grown world. False selects retired classic descent.
     """
+    if max_floor is None:
+        max_floor = SANDBOX_MAX_FLOOR if sandbox else CLASSIC_MAX_FLOOR
     from collections import deque
     from runtime.agent_action import AgentAction, dispatch
     from runtime.attractors import tracker as attractor_tracker
@@ -102,7 +128,7 @@ def run_agent(world_json: str, agent_name: str,
     _register_brains()
 
     manifest = load_manifest(world_json)
-    game = Game(manifest, systems=systems, sandbox=False, run_seed=run_seed)
+    game = Game(manifest, systems=systems, sandbox=sandbox, run_seed=run_seed)
     game.player.brain = make_brain(game, game.player, name=agent_name)
     game.player.brain.name = agent_name
     game.starting_kit(agent_name)
@@ -326,8 +352,9 @@ class _Sentinel:
 
 
 def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
-                    max_floor: int = DEFAULT_MAX_FLOOR,
-                    agents: list[str] | None = None) -> dict[str, Any]:
+                    max_floor: int = None,
+                    agents: list[str] | None = None,
+                    sandbox: bool = True) -> dict[str, Any]:
     """Run each agent n_runs times and compute aggregate statistics.
 
     Returns a dict with per-agent stats and per-floor survival curves,
@@ -347,7 +374,7 @@ def evaluate_agents(world_json: str, n_runs: int = DEFAULT_RUNS,
             # the reported win rate could only ever be 0% or 100%. The apparent bimodality
             # across profiles was that artifact, not a property of the game.
             result = run_agent(world_json, agent_name, max_floor,
-                               run_seed=run_idx_for_agent)
+                               run_seed=run_idx_for_agent, sandbox=sandbox)
             results[agent_name].append(result)
             run_idx += 1
             elapsed = time.monotonic() - t0
@@ -594,15 +621,19 @@ def main(argv=None):
     ap.add_argument("world", help="path to world.json")
     ap.add_argument("--runs", type=int, default=DEFAULT_RUNS,
                     help=f"runs per agent (default {DEFAULT_RUNS})")
-    ap.add_argument("--floors", type=int, default=DEFAULT_MAX_FLOOR,
-                    help=f"max floors per run (default {DEFAULT_MAX_FLOOR})")
+    ap.add_argument("--floors", type=int, default=0,
+                    help=f"max floors per run (default: the mode's own, "
+                         f"{SANDBOX_MAX_FLOOR} sandbox / {CLASSIC_MAX_FLOOR} classic)")
+    ap.add_argument("--classic", action="store_true",
+                    help="evaluate the retired classic descent instead of the sandbox")
     ap.add_argument("--agent", choices=AGENT_NAMES,
                     help="evaluate a single agent only")
     args = ap.parse_args(argv)
 
     world_json = args.world
-    evaluate_agents(world_json, args.runs, args.floors,
-                    agents=[args.agent] if args.agent else None)
+    evaluate_agents(world_json, args.runs, args.floors or None,
+                    agents=[args.agent] if args.agent else None,
+                    sandbox=not args.classic)
 
 
 if __name__ == "__main__":

@@ -1349,6 +1349,18 @@ def interactive(game: Game) -> int:
     return 0
 
 
+def mode_is_sandbox(descent: bool, headless: bool = False) -> bool:
+    """Which world to grow. The sandbox (ARCHITECTURE_SPEC) is the game, in every mode.
+
+    `headless` is accepted and deliberately ignored. This used to and-in `not headless`, which
+    quietly made classic descent the mode for every agent, demo and evaluation while a person at
+    a terminal played the sandbox. One term, and it meant no number this project produced
+    described the game anyone played. The parameter stays so the caller reads honestly and so a
+    test can pin that it does not matter.
+    """
+    return not descent
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Play a baked vaultcrawl world.")
     ap.add_argument("world", help="path to world.json")
@@ -1363,7 +1375,8 @@ def main(argv=None) -> int:
     ap.add_argument("--no-systems", action="store_true",
                     help="disable the Qud/Cogmind-inspired systems layer (sigils, reactions, ...)")
     ap.add_argument("--descent", action="store_true",
-                    help="play the classic floor-descent instead of the grown sandbox world")
+                    help="retired classic floor-descent; kept reachable so the numbers taken "
+                         "under it stay reproducible, but the sandbox is the game")
     ap.add_argument("--embody", metavar="WHO",
                     help="play AS any entity: a name or note-id substring "
                          "(its stats, faction, and relations become yours)")
@@ -1406,9 +1419,7 @@ def main(argv=None) -> int:
         systems = build_systems()
 
     headless = a.auto or not sys.stdin.isatty() or not sys.stdout.isatty()
-    # The grown sandbox (ARCHITECTURE_SPEC) is the interactive game; the auto demo
-    # and its brains still ride the classic descent (they steer by stairs).
-    sandbox = not headless and not a.descent
+    sandbox = mode_is_sandbox(a.descent, headless)
     game = Game(manifest, a.width, a.height, upheaval=upheaval, systems=systems,
                 sandbox=sandbox, sprawl=a.sprawl,
                 site_cache=(a.world + ".site.json") if sandbox else None,

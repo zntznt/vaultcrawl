@@ -20,10 +20,12 @@ Run both from the repo root so the packages import.
 ```bash
 python3 -m vaultcrawl.bake sample_vault -o examples/world.json   # bake a world
 python3 -m runtime.play examples/world.json                       # interactive play
-python3 -m runtime.play examples/world.json --auto --brain seeker # headless agent
-python3 -m runtime.agent_eval examples/world.json --runs 20       # evaluation harness
+python3 -m runtime.play examples/world.json --auto --brain seeker # headless agent (sandbox)
+python3 -m runtime.play examples/world.json --descent             # retired classic descent
+python3 -m runtime.agent_eval examples/world.json --runs 20       # evaluation harness (sandbox)
+python3 -m runtime.agent_eval examples/world.json --classic       # ... against retired classic
 python3 run_agents.py                                             # multi-agent runner
-python3 -m pytest tests/ -q                                       # 336 tests, 50 of 70 modules
+python3 -m pytest tests/ -q                                       # 625 tests + 16 xfail
 PYTHONPATH=. python3 tests/test_integration.py                    # the other 20 are scripts
 ```
 
@@ -84,8 +86,8 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
    is real going forward and a lie about the past. Do not cite existing files as precedent.
 4. **Determinism first.** No `random.seed()`, no `hash()`-seeded ordering, no wall-clock
    in the bake path. Seed RNG from SHA-256 of stable keys.
-5. **The suite is split, and pytest only sees two thirds of it.** `python3 -m pytest tests/ -q`
-   collects 336 tests across 50 of 70 modules and runs in about 90 seconds. The other 20,
+5. **The suite is split, and pytest only sees most of it.** `python3 -m pytest tests/ -q`
+   collects 625 tests and runs in about 100 seconds. The other 20,
    including `test_integration.py` and the whole brain ladder, use a `main()` plus
    `if __name__` script style pytest cannot discover; run those as
    `PYTHONPATH=. python3 tests/<name>.py`. **16 collected tests currently fail**, and they
@@ -186,23 +188,35 @@ The agent communicates with the game via a 19-verb `AgentAction` vocabulary
 - **Privacy is enforced.** `#nogame`/`#private` tags exclude notes at ingest.
 - **Real-LLM path is unproven.** No Anthropic-backed `complete_json` exists. The offline
   stub is the default. A `_named()` fallback prevents crashes when LLM output is missing keys.
-- **`runtime/arch/` is LIVE.** The Alexander compiler powers sandbox mode
-  (`Game(sandbox=True)`, the default interactive mode). Classic descent (`--descent`,
-  `--auto`) still uses the original dungeon generator. Still unwired: §10 word-level
-  flow, the `siteplan` bake block, continuous-megastructure mode.
-- **Every number in this file describes classic descent, not the mode people play.**
-  `agent_eval` hardcodes `sandbox=False`, so the 130 of 288 baseline, the seven health
-  conditions and every sweep are all classic. Sandbox is the default interactive mode and had
-  never been run with an agent until `runtime/sandbox_eval.py`. The first batch that did found
-  **533 decisions per game turn**, three stacked defects deep, plus a sixth instance of the
-  reachability-versus-precondition class and a Berlin gap where no agent could take a portal a
-  human walks through. Fixed and pinned in `tests/test_sandbox_stairs.py`. Measured after, 48
-  runs per arm on the same seeds: sandbox **10/48** against classic **25/48**, McNemar exact
-  **p = 0.004**, mean floor **1.6** against **20.1**, and **33 of 48 sandbox runs burn the
-  harness budget without resolving**, all of them losses. Coupling density is the one number
-  that favours sandbox, 0.749 against 0.678. Read
+- **`runtime/arch/` is LIVE, and the sandbox is now the only default.** The Alexander
+  compiler grows the world in every mode: interactive, `--auto`, `agent_eval`, `ablate`,
+  `system_activity`. Classic descent is retired and reachable only through an explicit
+  `--descent` / `--classic`, kept so the numbers taken under it stay reproducible. Still
+  unwired: §10 word-level flow, the `siteplan` bake block, continuous-megastructure mode.
+- **Every number written down before that flip describes classic descent, which is not the
+  mode anyone plays.** `run_agent` hardcoded `sandbox=False` and `play.py` computed
+  `not headless and not a.descent`, so a person at a terminal played the grown world while
+  every agent, demo, sweep and evaluation played the descent. Two expressions, and they meant
+  **the 130 of 288 baseline, the seven health conditions, every sweep in this file and every
+  arm in `PROJECT_ASSESSMENT.md` describe the retired mode.** Treat all of them as historical
+  until re-measured. The split is now pinned by `tests/test_default_mode.py`.
+- **Sandbox is much harder, and that is the work.** Measured 48 runs per arm on the same
+  seeds: sandbox **10/48** against classic **25/48**, McNemar exact **p = 0.004**, mean floor
+  **1.6** against **20.1**, and **33 of 48 sandbox runs burn the harness budget without
+  resolving**, all of them losses. One seed after the flip, same agent: sandbox reached floor 3
+  and lost in 8,002 turns where classic reached floor 26 and won. Coupling density is the one
+  number that favours sandbox, 0.749 against 0.678. The first agent batch ever run against it
+  found **533 decisions per game turn**, three stacked defects deep, plus a sixth instance of
+  the reachability-versus-precondition class and a Berlin gap where no agent could take a portal
+  a human walks through (fixed, pinned in `tests/test_sandbox_stairs.py`). Read
   `guidance/PROJECT_ASSESSMENT.md` §Sandbox mode before touching either mode; the shortfall is
   a missing descent gradient, not a tuning gap, and there is still no target win rate.
+- **The sandbox floor budget is not cosmetic.** `run_agent` budgets a run at
+  `max_floor * max_turns_per_floor` decisions and in sandbox `descend` never moves `floor`, so
+  classic's 99 floors are phantom there and an unresolved run costs 49,599 decisions instead of
+  8,016. `SANDBOX_MAX_FLOOR = 16` lives in `runtime/agent_eval.py` and every harness reads it.
+  If a sandbox win ever lands past 8,000 turns that constant is wrong and every number taken
+  under it needs re-reading.
 - **The stall tripwire needs two terms, not one.** Decisions-per-turn above 1.05 catches loops
   that fail to spend a turn, which was all five of them before sandbox. seeker/sbx-0 spent
   **87.1% of its decisions on `keeper` at 1.00 d/t**: a loop that pays for every iteration and

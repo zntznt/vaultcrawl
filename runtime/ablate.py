@@ -45,17 +45,8 @@ from runtime.leverage import FDR, _bh
 # read as "this system matters enormously" when it only means the run could not start.
 UNDROPPABLE = {"senses", "memory"}
 
-# `run_agent` budgets a run at max_floor times max_turns_per_floor decisions, and in sandbox
-# `descend` never moves `floor`, so all 99 of the default floors are phantom and an unresolved
-# run costs 49,599 decisions. Two thirds of sandbox runs are exactly that, which puts a 28-arm
-# sweep out of reach.
-#
-# 16 floors is 8,016 decisions, and the cut is outcome-neutral on everything measured so far:
-# over 48 sandbox runs the longest WIN took 1,149 turns and not one exceeded 8,000, while every
-# run past that budget had already lost. It converts 34 wanderers into fast losses and
-# truncates no victory. If a sandbox win ever lands past 8,000 turns this constant is wrong and
-# every number taken under it needs re-reading.
-SANDBOX_MAX_FLOOR = 16
+# The sandbox floor budget now lives with the runner that reads it.
+from runtime.agent_eval import SANDBOX_MAX_FLOOR  # noqa: E402  (re-exported for callers)
 
 # Wall-clock ceiling on a single run, in seconds. The decision budget bounds the DECISION loop
 # and cannot bound a loop inside one decision: dropping `loci` sent a worker into a CPU-bound
@@ -87,15 +78,11 @@ def _run_slice(args):
     os.environ["HOME"] = state_dir
 
     import runtime.agent_eval as ev
-    from runtime.game import Game as RealGame
     from runtime.stack import build_systems
 
-    if sandbox:
-        def SandboxGame(manifest, *a, **kw):
-            kw["sandbox"] = True
-            return RealGame(manifest, *a, **kw)
-        ev.Game = SandboxGame
-
+    # `run_agent` takes the mode directly now. This used to monkeypatch `ev.Game` because the
+    # runner hardcoded `sandbox=False`, and a patch that a caller forgot silently measured the
+    # other game.
     if drop:
         def _dropped():
             return [s for s in build_systems() if getattr(s, "name", "") != drop]
@@ -117,7 +104,8 @@ def _run_slice(args):
         if can_time_out:
             signal.alarm(RUN_TIMEOUT)
         try:
-            r = ev.run_agent(world, agent, run_seed=f"sbx-{seed}", max_floor=max_floor)
+            r = ev.run_agent(world, agent, run_seed=f"sbx-{seed}", max_floor=max_floor,
+                             sandbox=sandbox)
         except _RunTimeout:
             print(f"    TIMEOUT {agent} sbx-{seed} after {RUN_TIMEOUT}s "
                   f"(drop={drop or 'baseline'})", flush=True)
@@ -145,7 +133,7 @@ def _checkpoint_path(home: str, drop: str, sandbox: bool) -> str:
     return os.path.join(home, f"arm_{mode}_{drop or 'baseline'}.json")
 
 
-def _arm(world: str, runs: int, home: str, drop: str = "", sandbox: bool = False,
+def _arm(world: str, runs: int, home: str, drop: str = "", sandbox: bool = True,
          max_floor: int = 99, workers: int = 0, resume: bool = True) -> list:
     """One ablation arm, checkpointed to disk the moment it finishes.
 
@@ -317,9 +305,8 @@ def main(argv=None) -> int:
     ap.add_argument("--drop", action="append", default=[],
                     help="system name to ablate; repeatable, or 'all'")
     ap.add_argument("--json", default="")
-    ap.add_argument("--sandbox", action="store_true",
-                    help="ablate sandbox mode, the default interactive one, instead of "
-                         "classic descent")
+    ap.add_argument("--classic", action="store_true",
+                    help="ablate the retired classic descent instead of the sandbox")
     ap.add_argument("--max-floor", type=int, default=0,
                     help="harness budget, as floors of 500 decisions. Defaults to 99 for "
                          "classic and 16 for sandbox; see SANDBOX_MAX_FLOOR")
@@ -346,16 +333,17 @@ def main(argv=None) -> int:
     if unknown:
         raise SystemExit(f"unknown or undroppable system(s): {unknown}\navailable: {names}")
 
-    max_floor = args.max_floor or (SANDBOX_MAX_FLOOR if args.sandbox else 99)
-    mode = "sandbox" if args.sandbox else "classic"
+    sandbox = not args.classic
+    max_floor = args.max_floor or (99 if args.classic else SANDBOX_MAX_FLOOR)
+    mode = "classic" if args.classic else "sandbox"
     print(f"=== ablation ({mode}, budget {max_floor * 500} decisions): baseline plus "
           f"{len(drops)} arm(s), {args.runs * 6} runs each ===")
     resume = not args.no_resume
-    base = _arm(args.world, args.runs, home, "", args.sandbox, max_floor, args.workers,
+    base = _arm(args.world, args.runs, home, "", sandbox, max_floor, args.workers,
                 resume)
     results, raw = [], {"baseline": base}
     for d in drops:
-        arm = _arm(args.world, args.runs, home, d, args.sandbox, max_floor, args.workers,
+        arm = _arm(args.world, args.runs, home, d, sandbox, max_floor, args.workers,
                    resume)
         raw[d] = arm
         results.append(compare(base, arm, d))

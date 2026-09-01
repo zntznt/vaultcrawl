@@ -59,18 +59,11 @@ def _run_slice(args):
 
     import runtime.agent as A
     import runtime.agent_eval as ev
-    from runtime.game import Game as RealGame
 
-    def SandboxGame(manifest, *a, **kw):
-        kw["sandbox"] = True
-        return RealGame(manifest, *a, **kw)
-
-    # `--classic` leaves the constructor alone, so the classic arm runs through exactly this
-    # instrumentation rather than through `agent_eval`'s own reporting. The two arms then
-    # differ in the mode and in nothing else, which is the only way the contrast is worth
-    # quoting.
-    if sandbox:
-        ev.Game = SandboxGame
+    # `run_agent` takes the mode directly now, so both arms run through exactly this
+    # instrumentation and differ in the mode and in nothing else, which is the only way the
+    # contrast is worth quoting. This used to monkeypatch `ev.Game` because the runner
+    # hardcoded `sandbox=False`.
 
     calls = collections.Counter()
     picked = collections.Counter()
@@ -107,7 +100,7 @@ def _run_slice(args):
             signal.alarm(RUN_TIMEOUT)
         # The same run seed in both arms, so the comparison is paired.
         try:
-            r = ev.run_agent(world, agent, run_seed=f"sbx-{seed}")
+            r = ev.run_agent(world, agent, run_seed=f"sbx-{seed}", sandbox=sandbox)
         except _RunTimeout:
             print(f"    TIMEOUT {agent} sbx-{seed} after {RUN_TIMEOUT}s", flush=True)
             rows.append(dict(agent=agent, seed=seed, won=False, floor=0, turns=1,

@@ -146,11 +146,10 @@ def verdict(c: collections.Counter) -> str:
     return "active"
 
 
-def measure(world: str, sandbox: bool = False, agent: str = "seeker",
+def measure(world: str, sandbox: bool = True, agent: str = "seeker",
             run_seed: str = "activity", max_floor: int = 0) -> tuple:
     """Run one instrumented game. Returns (stats, RunResult)."""
     import runtime.agent_eval as ev
-    from runtime.game import Game as RealGame
     from runtime.stack import build_systems
 
     systems = build_systems()
@@ -161,11 +160,6 @@ def measure(world: str, sandbox: bool = False, agent: str = "seeker",
     # The harness owns descent, so the harness has to drive. A hand-rolled stepping loop spent
     # 2,500 decisions on floor 1 and made every system that only wakes at depth look dead for
     # entirely the wrong reason.
-    if sandbox:
-        def SandboxGame(manifest, *a, **kw):
-            kw["sandbox"] = True
-            return RealGame(manifest, *a, **kw)
-        ev.Game = SandboxGame
     ctor = ev.Game
 
     def CountingGame(manifest, *a, **kw):
@@ -188,10 +182,8 @@ def measure(world: str, sandbox: bool = False, agent: str = "seeker",
 
     ev.Game = CountingGame
     ev._build_systems = lambda: systems
-    if not max_floor:
-        from runtime.ablate import SANDBOX_MAX_FLOOR
-        max_floor = SANDBOX_MAX_FLOOR if sandbox else 99
-    result = ev.run_agent(world, agent, run_seed=run_seed, max_floor=max_floor)
+    result = ev.run_agent(world, agent, run_seed=run_seed, max_floor=max_floor or None,
+                          sandbox=sandbox)
     return stats, result
 
 
@@ -221,12 +213,13 @@ def report(stats: dict, result=None, mode: str = "classic") -> None:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("world", nargs="?", default="examples/world.json")
-    ap.add_argument("--sandbox", action="store_true")
+    ap.add_argument("--classic", action="store_true",
+                    help="measure the retired classic descent instead of the sandbox")
     ap.add_argument("--agent", default="seeker")
     ap.add_argument("--seed", default="activity")
     args = ap.parse_args(argv)
-    stats, result = measure(args.world, args.sandbox, args.agent, args.seed)
-    report(stats, result, "sandbox" if args.sandbox else "classic")
+    stats, result = measure(args.world, not args.classic, args.agent, args.seed)
+    report(stats, result, "classic" if args.classic else "sandbox")
     return 0
 
 
