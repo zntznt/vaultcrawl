@@ -883,11 +883,28 @@ class UniversalBrain(Brain):
             candidates.append(("poi", score, ("poi", ppx, ppy)))
 
         # ---- WORKSPACES + PORTALS ----
+        # Each workspace needs a REASON, not just proximity. These scored on `12 - dist`
+        # alone, so a tile at distance 0 scored a permanent 12 whether or not the agent had
+        # anything to do there. Fabricators and terminals are single-use and remove themselves
+        # on arrival, so they cannot loop; town tiles and depleted loci are permanent records
+        # and both did. Measured: 122 of 138 sandbox runs made no progress, mean floor 1.3,
+        # the median run never leaving the first floor.
+        wounded = s["vitals"]["hp_pct"] < 100
+        has_effect_to_spend = bool(s.get("effects", {}).get("collected"))
+        ws_reason = {
+            # A camp heals 2 to 3 HP a turn. At full HP the trip is worth nothing.
+            "workspace_camp": wounded,
+            # A depleted locus trades one collected effect for the kill-heal wire. With
+            # nothing to sacrifice it just logs a refusal, once per turn, forever.
+            "workspace_depleted": has_effect_to_spend,
+        }
         for ws_key, ws_field in [("workspace_fabricator", "nearest_fabricator"),
                                   ("workspace_terminal", "nearest_terminal"),
                                   ("workspace_depleted", "nearest_depleted"),
                                   ("workspace_camp", "nearest_camp"),
                                   ("stairs", "nearest_portal")]:  # portals = floor skips
+            if not ws_reason.get(ws_key, True):
+                continue
             ws = s.get(ws_field)
             if ws and len(ws) >= 3 and ws[2] is not None:
                 dist = ws[2]
@@ -1105,6 +1122,15 @@ class UniversalBrain(Brain):
                 # it. That is the shape of the recover bug and of two livelocks before it.
                 if kind == "shrine" and (actor.x, actor.y) == (tx, ty):
                     return AgentAction("interact")
+                # And the workspaces, for the same reason. Camp and depleted-locus rituals
+                # both fire from `on_player_act`, so the agent has to SPEND the turn standing
+                # there; `rest` is the verb that spends it. Without this the agent walked to
+                # the tile, produced no step because it had arrived, and returned None every
+                # turn for the rest of the run. `_craft_camp` needs `_consecutive_rest >= 4`,
+                # which no agent could ever accumulate, so a ritual a human can perform was
+                # unreachable by every profile.
+                if kind == "workspace" and (actor.x, actor.y) == (tx, ty):
+                    return AgentAction("rest")
                 step = step_toward(game, actor, tx, ty, safe=True)
                 if step != (0, 0):
                     return AgentAction("move", dx=step[0], dy=step[1])
