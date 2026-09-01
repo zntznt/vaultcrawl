@@ -58,12 +58,26 @@ def test_walking_to_a_workspace_still_steps_toward_it():
     assert act is not None and act.kind == "move", f"approach must still path, got {act}"
 
 
-def test_a_camp_is_not_worth_walking_to_at_full_health():
-    """A camp heals 2 to 3 HP a turn. At full HP the trip is worth nothing, and it used to
-    outscore descending."""
-    reasons = _ws_reasons(hp_pct=100, collected=[])
-    assert reasons["workspace_camp"] is False
+def test_a_camp_needs_a_real_deficit_not_just_any_deficit():
+    """The first gate was `< 100`, and it gated nothing: the runs that still stalled here
+    averaged 89.1% HP, walking eight tiles each way for two or three points. A cleared room
+    already heals as fast as a camp, so only a real deficit justifies the trip."""
+    assert _ws_reasons(hp_pct=100, collected=[])["workspace_camp"] is False
+    assert _ws_reasons(hp_pct=89, collected=[])["workspace_camp"] is False, (
+        "89% HP is the average of the runs that stalled on this")
     assert _ws_reasons(hp_pct=40, collected=[])["workspace_camp"] is True
+
+
+def test_the_camp_gate_leaves_room_for_four_consecutive_rests():
+    """`_craft_camp` needs `_consecutive_rest >= 4`. An agent that only ever arrives near
+    full health rests once and leaves, so a loose gate keeps that ritual unreachable even
+    with the arrival case in place. The threshold has to leave a real deficit to heal."""
+    # heal is at most 3 a turn in town, so the deficit has to be worth four or more turns
+    assert _ws_reasons(hp_pct=A.CAMP_HP_PCT, collected=[])["workspace_camp"] is False
+    assert _ws_reasons(hp_pct=A.CAMP_HP_PCT - 1, collected=[])["workspace_camp"] is True
+    assert A.CAMP_HP_PCT <= 75, (
+        "the deficit must be big enough that healing it takes 4+ rests, or _craft_camp "
+        "stays unreachable")
 
 
 def test_a_depleted_locus_is_not_worth_walking_to_with_nothing_to_sacrifice():
@@ -74,10 +88,10 @@ def test_a_depleted_locus_is_not_worth_walking_to_with_nothing_to_sacrifice():
 
 
 def _ws_reasons(hp_pct: int, collected: list) -> dict:
-    """Rebuild the gate the candidate loop applies, from the same inputs it reads."""
-    wounded = hp_pct < 100
-    has_effect_to_spend = bool(collected)
-    return {"workspace_camp": wounded, "workspace_depleted": has_effect_to_spend}
+    """The REAL gate, called with the state shape it reads. Reimplementing it here would
+    make every assertion below pass against a copy rather than against the game."""
+    return A.workspace_reasons({"vitals": {"hp_pct": hp_pct},
+                                "effects": {"collected": collected}})
 
 
 def test_the_single_use_workspaces_keep_no_precondition():

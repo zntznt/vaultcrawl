@@ -246,6 +246,37 @@ def _score(profile, key, state_bonus, turn_bonus, reachable: bool = True) -> flo
             + floor * PROFILE_BIAS)
 
 
+# A camp is only worth the walk on a real deficit. `< 100` was the first version of this gate
+# and it did not gate anything: the 37 runs that still stalled on `workspace_camp` averaged
+# 89.1% HP, walking up to eight tiles each way to collect two or three points. A precondition
+# that is almost always true is the same defect as no precondition, one step further in.
+#
+# 70 is priced against what the trip buys. Resting in a cleared room already heals up to 3 a
+# turn, the same as a camp's best rate, so the walk only pays on a real deficit. It also
+# repairs a ritual: `_craft_camp` needs `_consecutive_rest >= 4`, and an agent that arrives at
+# 99% rests once and leaves, so the loose gate kept that mechanic unreachable even once the
+# arrival case existed. Healing up from 70% takes four or more rests, so the craft now fires as
+# a consequence of a genuine one.
+CAMP_HP_PCT = 70
+
+
+def workspace_reasons(s: dict) -> dict:
+    """Which workspaces are worth walking to, given the agent's state.
+
+    Each workspace needs a REASON, not just proximity. These scored on `max(0, 12 - dist)`
+    alone, so a tile at distance 0 scored a permanent 12 whether or not there was anything to
+    do there. Fabricators and terminals are single-use and remove themselves on arrival, so
+    they cannot loop and are deliberately absent here: gating a reachable system is the other
+    half of this bug class.
+    """
+    return {
+        "workspace_camp": s["vitals"]["hp_pct"] < CAMP_HP_PCT,
+        # A depleted locus trades one collected effect for the kill-heal wire. With nothing to
+        # sacrifice it logs a refusal, once per turn, and never marks itself done.
+        "workspace_depleted": bool(s.get("effects", {}).get("collected")),
+    }
+
+
 class UniversalBrain(Brain):
     def __init__(self, name: str = "seeker"):
         self._name = name
@@ -889,15 +920,7 @@ class UniversalBrain(Brain):
         # on arrival, so they cannot loop; town tiles and depleted loci are permanent records
         # and both did. Measured: 122 of 138 sandbox runs made no progress, mean floor 1.3,
         # the median run never leaving the first floor.
-        wounded = s["vitals"]["hp_pct"] < 100
-        has_effect_to_spend = bool(s.get("effects", {}).get("collected"))
-        ws_reason = {
-            # A camp heals 2 to 3 HP a turn. At full HP the trip is worth nothing.
-            "workspace_camp": wounded,
-            # A depleted locus trades one collected effect for the kill-heal wire. With
-            # nothing to sacrifice it just logs a refusal, once per turn, forever.
-            "workspace_depleted": has_effect_to_spend,
-        }
+        ws_reason = workspace_reasons(s)
         for ws_key, ws_field in [("workspace_fabricator", "nearest_fabricator"),
                                   ("workspace_terminal", "nearest_terminal"),
                                   ("workspace_depleted", "nearest_depleted"),
