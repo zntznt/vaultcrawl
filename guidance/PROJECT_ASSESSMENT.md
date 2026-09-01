@@ -5107,3 +5107,86 @@ Three measurements now agree that item quality is not carrying the outcome: a 6x
 tripling the graded supply (p = 0.21). The third is the only one whose point estimate is large
 enough to be worth resolving, and resolving +10 at p = 0.21 needs roughly two to three times the
 seeds, not another arm.
+
+## Sandbox becomes the only mode, and the first thing measured there is a livelock
+
+`run_agent` hardcoded `sandbox=False` and `play.py` computed `not headless and not a.descent`.
+Between them, a person at a terminal played the grown Alexander world while every agent, demo,
+sweep and evaluation played classic descent. Two expressions, and they meant **no number this
+project had ever produced described the game anyone plays**. The mode is now an argument, classic
+is retired behind an explicit flag, and `tests/test_default_mode.py` pins it.
+
+### The first baseline for the default mode
+
+138 runs, 23 seeds, against the classic arm on the same seeds:
+
+| | sandbox | classic |
+|---|---|---|
+| wins | 9/138 | 87/138 |
+| deaths | 5 | 48 |
+| no-progress runs | 122 | 0 |
+| mean floor | 1.3, IQR [1, 1] | 21.9, IQR [19, 27] |
+| distinct labels | 16.0 | 32.1 |
+| win routes open | 2 of 5 | 5 of 5 |
+
+**The agent was not dying, it was never going anywhere.** Five deaths in 138.
+
+### The tripwire said everything was fine
+
+Both existing terms trip **0 of 54** sandbox runs. `workspace_camp` had no arrival case, so an
+agent standing on a camp tile re-targeted it every turn for the rest of the run, and every one
+of those wasted decisions still SPENT a turn: d/t sat at exactly 1.000, under the 1.05 rate term
+by construction rather than by luck, and the label share was 44 to 47% against a 60% threshold.
+
+The third term is turns per floor reached, and the threshold is read off the data rather than
+chosen: over 738 runs no resolved run exceeds 1,344 turns per floor while stalls sit at about
+8,013, so 2,000 has zero false positives on 685 resolved runs. Its limit is written into the
+source: it is a whole-run average, so it catches a run that never descends and misses one that
+descends deep and then locks up.
+
+### The fix, and what it was worth
+
+Two changes: workspaces need a reason rather than only proximity, and arriving returns `rest`
+so the positional rituals fire. This also reopened `_craft_camp`, which needs
+`_consecutive_rest >= 4` and was unreachable by every profile while arrival produced no rest,
+though a human walking to town could perform it.
+
+| arm | wins | no-progress | mean floor | p vs baseline |
+|---|---|---|---|---|
+| baseline | 9/138 | 122 | 1.3 | |
+| **livelock fix** | **24/138** | 89 | 1.7 | **0.0007** |
+| camp gate at 70 | 15/138 | 111 | 1.3 | 0.1796 |
+
+**9 to 24, p = 0.0007**, and the `commune` route reopened. That is roughly a fifth of the gap to
+classic, so the livelock was a large piece and not the whole story.
+
+### A tightening that was reasoned, plausible, and wrong
+
+Under the fix, 37 runs still stalled on `workspace_camp` averaging **89.1% HP**. That reads as an
+agent walking eight tiles each way to collect two or three points, from a gate of `hp_pct < 100`
+that is almost always true. A cleared room already heals up to 3 a turn, the same as a camp's
+best rate, so the trip looked unpriced. Tightening to 70 also promised to repair the ritual,
+since an agent arriving at 99% rests once and never reaches four consecutive rests.
+
+Every step of that is true and the conclusion was still wrong. Measured, 138 runs on the same
+seeds: **24 wins to 15, p = 0.1221 head to head**, the arm falling from p = 0.0007 to p = 0.1796
+against the baseline, `commune` closing again, and 22 more no-progress runs. Reverted to 100.
+
+The mistake is worth naming because it is the session's recurring one wearing new clothes. **The
+89.1% average is high BECAUSE the agent keeps itself topped up, not despite it.** Reading a
+summary statistic over a run's decisions and concluding the behaviour producing it is
+unnecessary is exactly the error that read `recall` at 0.00% and called an emergency verb dead.
+An average conditioned on a behaviour cannot be used as evidence against that behaviour.
+
+### Where the remaining shortfall is
+
+89 no-progress runs at the shipped configuration, against classic's 0. The stall labels move
+each time one is fixed, which is the same promote-the-next-bottleneck pattern the recall chain
+showed: `workspace_depleted` was 21% of stalls and is now 0%, `workspace_camp` was 18% and became
+42%, and `locus` is now 34%. Every remaining stall label is a navigation candidate.
+
+One structural asymmetry is worth checking next and is stated as a hypothesis rather than a
+finding: `decide()` does fall through to the next candidate when a resolve returns None, and
+fatigue penalises a target each time it is *taken*, so a candidate that resolves to None is
+retried at full score every turn and never penalised. Confirming that needs per-run
+instrumentation on attempted-and-failed candidates, which the rows do not carry.

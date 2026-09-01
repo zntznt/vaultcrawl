@@ -246,18 +246,21 @@ def _score(profile, key, state_bonus, turn_bonus, reachable: bool = True) -> flo
             + floor * PROFILE_BIAS)
 
 
-# A camp is only worth the walk on a real deficit. `< 100` was the first version of this gate
-# and it did not gate anything: the 37 runs that still stalled on `workspace_camp` averaged
-# 89.1% HP, walking up to eight tiles each way to collect two or three points. A precondition
-# that is almost always true is the same defect as no precondition, one step further in.
+# The camp gate, and the number in it is measured rather than argued. It reads `< 100`, which
+# suppresses the candidate only at exactly full health and is otherwise almost always true.
 #
-# 70 is priced against what the trip buys. Resting in a cleared room already heals up to 3 a
-# turn, the same as a camp's best rate, so the walk only pays on a real deficit. It also
-# repairs a ritual: `_craft_camp` needs `_consecutive_rest >= 4`, and an agent that arrives at
-# 99% rests once and leaves, so the loose gate kept that mechanic unreachable even once the
-# arrival case existed. Healing up from 70% takes four or more rests, so the craft now fires as
-# a consequence of a genuine one.
-CAMP_HP_PCT = 70
+# That looked like a defect and it is not. Under this gate 37 runs still stalled on
+# `workspace_camp` averaging 89.1% HP, which reads as an agent walking eight tiles to collect
+# two or three points, so it was tightened to 70 on the argument that a cleared room already
+# heals as fast as a camp. Measured on 138 runs paired on the same 23 seeds, that cost nine
+# wins: 24 against 15, p = 0.1221 head to head, and the arm fell from p = 0.0007 against the
+# pre-fix baseline to p = 0.1796, closing the `commune` route again and adding 22 no-progress
+# runs. The camp trips are load-bearing. The 89.1% average is high BECAUSE the agent keeps
+# itself topped up, not despite it, which is the same trap as reading a label share and
+# concluding a verb is unused.
+#
+# So: 100 ships, and lowering this number needs an arm, not a rationale.
+CAMP_HP_PCT = 100
 
 
 def workspace_reasons(s: dict) -> dict:
