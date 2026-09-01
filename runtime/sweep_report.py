@@ -29,8 +29,44 @@ from runtime.leverage import FDR, _bh
 
 # A run that neither won nor died burned the harness budget. In sandbox that is most runs and
 # it is the mode's characteristic outcome; in classic it is a stall worth naming.
+#
+# Three terms, because two of them together missed the dominant sandbox failure completely.
+# `workspace_camp` had no arrival case, so an agent standing on a camp tile re-targeted it every
+# turn for the rest of the run. Every one of those wasted decisions still SPENT a turn, so d/t
+# sat at exactly 1.000 and the first term cannot fire on it by construction; the label share was
+# 44 to 47%, comfortably under the second term's 60%. The runs burned 8,016 turns on floor 1 and
+# were recorded as ordinary losses.
 STALL_DT = 1.05
 STALL_SHARE = 0.60
+
+# Turns spent per floor reached. A loop that pays for every iteration is invisible to a rate
+# term and to a share term, but it cannot hide from how little ground it covered.
+#
+# Threshold picked from the data rather than chosen: over 738 runs across both modes, no
+# resolved run (won or died) exceeds 1,344 turns per floor, while stalled runs sit at about
+# 8,013. The band between is empty apart from three runs at 2,520, 3,796 and 7,513, all of them
+# unresolved. 2,000 therefore has zero false positives on 685 resolved runs and catches every
+# stall above it.
+#
+# Known limit, stated because the number will get quoted: this is a whole-run average, so it
+# catches a run that never descends and misses one that descends deep and only then locks up.
+# A run that reaches floor 8 and then burns 8,000 turns averages 1,002 and reads as healthy.
+# Catching that needs the longest no-progress stretch recorded per run, which the rows do not
+# carry.
+STALL_TURNS_PER_FLOOR = 2000
+
+
+def turns_per_floor(r: dict) -> float:
+    """How much ground a run covered for what it spent. `floor` is the depth reached, so a run
+    that never leaves the first floor scores its entire turn count."""
+    return r.get("turns", 0) / max(1, r.get("floor", 0))
+
+
+def _stalled(r: dict) -> bool:
+    """Any of the three terms. A run only has to fail one way to be a guaranteed loss."""
+    return (r.get("per_turn", 0) > STALL_DT
+            or r.get("top_share", 0) >= STALL_SHARE
+            or turns_per_floor(r) > STALL_TURNS_PER_FLOOR)
 
 
 def wilson(k: int, n: int, z: float = 1.96) -> tuple:
@@ -61,8 +97,7 @@ def summarise(rows: list) -> dict:
     turns = [r.get("turns", 0) for r in rows]
     mean_f = sum(floors) / n
     sd_f = math.sqrt(sum((f - mean_f) ** 2 for f in floors) / n)
-    stalls = [r for r in rows
-              if r.get("per_turn", 0) > STALL_DT or r.get("top_share", 0) >= STALL_SHARE]
+    stalls = [r for r in rows if _stalled(r)]
     # Rows written before the capture was widened carry no `events` key at all. That is not
     # the same as an event never firing, and printing 0.00 for it invites exactly the wrong
     # conclusion, so absence is tracked and rendered as "-".
@@ -83,6 +118,8 @@ def summarise(rows: list) -> dict:
         stall_runs=len(stalls),
         max_dt=max((r.get("per_turn", 0) for r in rows), default=0),
         max_share=max((r.get("top_share", 0) for r in rows), default=0),
+        max_tpf=max((turns_per_floor(r) for r in rows), default=0),
+        no_progress=sum(1 for r in rows if turns_per_floor(r) > STALL_TURNS_PER_FLOOR),
         labels=sum(r.get("labels", 0) for r in rows) / n,
         coupling=sum(r.get("coupling", 0) for r in rows) / n,
         avg_hp=sum(r.get("avg_hp", 0) for r in rows) / n,
@@ -124,12 +161,14 @@ def report(arms: dict, control: str) -> None:
         s = summarise(rows)
         print(f"     {name:12} {s['paths'] or 'no wins'}")
 
-    print("\n  stall tripwire, both terms:")
+    print("\n  stall tripwire, all three terms:")
     for name, rows in arms.items():
         s = summarise(rows)
         flag = "  LOOK" if s["stall_runs"] else ""
         print(f"     {name:12} runs tripped {s['stall_runs']:3}/{s['n']}   "
-              f"max d/t {s['max_dt']:5.2f}   max top-label {s['max_share']:5.1%}{flag}")
+              f"max d/t {s['max_dt']:5.2f}   max top-label {s['max_share']:5.1%}   "
+              f"no-progress {s['no_progress']:3} (worst {s['max_tpf']:6.0f} turns/floor)"
+              f"{flag}")
 
     ctrl = arms[control]
     others = [(k, v) for k, v in arms.items() if k != control]
